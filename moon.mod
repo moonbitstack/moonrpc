@@ -1,10 +1,10 @@
 name = "Lfan-ke/moonrpc"
 
-version = "0.10.0"
+version = "0.10.1"
 
 readme = "README.md"
 
-repository = "https://github.com/Lfan-ke/moonrpc"
+repository = "https://github.com/moonbitstack/moonrpc"
 
 license = "Apache-2.0"
 
