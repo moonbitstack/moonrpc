@@ -6,5 +6,5 @@ import {
   "moonbitlang/async/socket",
   "moonbitlang/async/aqueue",
   "moonbitlang/core/buffer",
-  "Lfan-ke/moonrpc",
+  "moonbitstack/moonrpc",
 }

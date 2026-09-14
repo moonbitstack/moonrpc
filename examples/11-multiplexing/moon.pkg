@@ -1,5 +1,5 @@
 import {
-  "Lfan-ke/moonrpc",
+  "moonbitstack/moonrpc",
 }
 
 pkgtype(kind: "executable")

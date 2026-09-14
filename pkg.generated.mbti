@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "Lfan-ke/moonrpc"
+package "moonbitstack/moonrpc"
 
 import {
   "moonbitlang/core/buffer",

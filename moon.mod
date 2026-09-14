@@ -1,4 +1,4 @@
-name = "Lfan-ke/moonrpc"
+name = "moonbitstack/moonrpc"
 
 version = "0.10.1"
 

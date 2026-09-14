@@ -1,6 +1,6 @@
 import {
-  "Lfan-ke/moonrpc",
-  "Lfan-ke/moonrpc/net",
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/net",
   "moonbitlang/async",
   "moonbitlang/core/env",
   "moonbitlang/core/string",
