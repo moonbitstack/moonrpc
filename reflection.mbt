@@ -281,3 +281,9 @@ pub fn ReflectionService::install(
   server.register_handler(reflection_v1_path, self.handler())
   server.register_handler(reflection_v1alpha_path, self.handler())
 }
+
+///|
+pub extend ReflectionRequest with Eq::{not_equal, equal}
+
+///|
+pub extend ReflectionResponse with Eq::{not_equal, equal}

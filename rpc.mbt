@@ -165,3 +165,6 @@ pub(all) struct Method {
 pub fn Method::path(self : Method) -> String {
   "/" + self.service + "/" + self.name
 }
+
+///|
+pub extend Status with Eq::{not_equal, equal}

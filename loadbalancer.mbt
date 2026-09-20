@@ -49,3 +49,9 @@ pub fn LoadBalancer::pick(self : LoadBalancer) -> String? {
 pub fn LoadBalancer::size(self : LoadBalancer) -> Int {
   self.addresses.length()
 }
+
+///|
+pub extend LbPolicy with Debug::{to_repr}
+
+///|
+pub extend LbPolicy with Eq::{not_equal, equal}

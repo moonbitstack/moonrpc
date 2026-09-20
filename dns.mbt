@@ -213,3 +213,15 @@ pub fn DnsResponse::addresses(self : DnsResponse) -> Array[String] {
   }
   out
 }
+
+///|
+pub extend DnsRecord with Debug::{to_repr}
+
+///|
+pub extend DnsRecord with Eq::{not_equal, equal}
+
+///|
+pub extend DnsResponse with Debug::{to_repr}
+
+///|
+pub extend DnsResponse with Eq::{not_equal, equal}

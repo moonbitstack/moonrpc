@@ -187,6 +187,10 @@ pub suberror FrameError {
   FrameSizeError(String)
   ProtocolError(String)
 } derive(Eq)
+pub fn FrameError::equal(Self, Self) -> Bool
+pub fn FrameError::not_equal(Self, Self) -> Bool
+pub fn FrameError::output(Self, &Logger) -> Unit
+pub fn FrameError::to_string(Self) -> String
 pub impl Show for FrameError
 
 pub suberror GzError {
@@ -197,6 +201,10 @@ pub suberror HpackError {
   HuffmanError(String)
   HpackDecodeError(String)
 } derive(Eq)
+pub fn HpackError::equal(Self, Self) -> Bool
+pub fn HpackError::not_equal(Self, Self) -> Bool
+pub fn HpackError::output(Self, &Logger) -> Unit
+pub fn HpackError::to_string(Self) -> String
 pub impl Show for HpackError
 
 pub suberror PbError {
@@ -205,11 +213,19 @@ pub suberror PbError {
   Overflow
   BadUtf8
 } derive(Eq)
+pub fn PbError::equal(Self, Self) -> Bool
+pub fn PbError::not_equal(Self, Self) -> Bool
+pub fn PbError::output(Self, &Logger) -> Unit
+pub fn PbError::to_string(Self) -> String
 pub impl Show for PbError
 
 pub suberror StreamError {
   InvalidTransition(String)
 } derive(Eq)
+pub fn StreamError::equal(Self, Self) -> Bool
+pub fn StreamError::not_equal(Self, Self) -> Bool
+pub fn StreamError::output(Self, &Logger) -> Unit
+pub fn StreamError::to_string(Self) -> String
 pub impl Show for StreamError
 
 // Types and methods
@@ -276,6 +292,9 @@ pub(all) enum ConnectivityState {
   TransientFailure
   Shutdown
 } derive(Eq, @debug.Debug)
+pub fn ConnectivityState::equal(Self, Self) -> Bool
+pub fn ConnectivityState::not_equal(Self, Self) -> Bool
+pub fn ConnectivityState::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DnsRecord {
   name : String
@@ -283,6 +302,9 @@ pub(all) struct DnsRecord {
   ttl : Int
   address : String
 } derive(Eq, @debug.Debug)
+pub fn DnsRecord::equal(Self, Self) -> Bool
+pub fn DnsRecord::not_equal(Self, Self) -> Bool
+pub fn DnsRecord::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DnsResponse {
   id : Int
@@ -290,6 +312,9 @@ pub(all) struct DnsResponse {
   answers : Array[DnsRecord]
 } derive(Eq, @debug.Debug)
 pub fn DnsResponse::addresses(Self) -> Array[String]
+pub fn DnsResponse::equal(Self, Self) -> Bool
+pub fn DnsResponse::not_equal(Self, Self) -> Bool
+pub fn DnsResponse::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DynamicTable {
   mut entries : Array[(Bytes, Bytes)]
@@ -311,6 +336,8 @@ pub(all) struct FieldDescriptor {
 } derive(Eq)
 pub fn FieldDescriptor::decode(Bytes) -> Self raise PbError
 pub fn FieldDescriptor::encode(Self) -> Bytes
+pub fn FieldDescriptor::equal(Self, Self) -> Bool
+pub fn FieldDescriptor::not_equal(Self, Self) -> Bool
 pub fn FieldDescriptor::scalar(String, Int, FieldType, label? : FieldLabel) -> Self
 
 pub(all) enum FieldLabel {
@@ -319,7 +346,9 @@ pub(all) enum FieldLabel {
   LabelRepeated
 } derive(Eq)
 pub fn FieldLabel::code(Self) -> Int
+pub fn FieldLabel::equal(Self, Self) -> Bool
 pub fn FieldLabel::from_code(Int) -> Self
+pub fn FieldLabel::not_equal(Self, Self) -> Bool
 
 pub(all) enum FieldType {
   TypeDouble
@@ -341,7 +370,9 @@ pub(all) enum FieldType {
   TypeSint64
 } derive(Eq)
 pub fn FieldType::code(Self) -> Int
+pub fn FieldType::equal(Self, Self) -> Bool
 pub fn FieldType::from_code(Int) -> Self
+pub fn FieldType::not_equal(Self, Self) -> Bool
 
 pub(all) struct FileDescriptor {
   name : String
@@ -352,7 +383,9 @@ pub(all) struct FileDescriptor {
 } derive(Eq)
 pub fn FileDescriptor::decode(Bytes) -> Self raise PbError
 pub fn FileDescriptor::encode(Self) -> Bytes
+pub fn FileDescriptor::equal(Self, Self) -> Bool
 pub fn FileDescriptor::new(String, String, messages? : Array[MessageDescriptor], services? : Array[ServiceDescriptor]) -> Self
+pub fn FileDescriptor::not_equal(Self, Self) -> Bool
 pub fn FileDescriptor::service_names(Self) -> Array[String]
 pub fn FileDescriptor::symbols(Self) -> Array[String]
 
@@ -370,7 +403,9 @@ pub(all) enum Frame {
   Unknown(ftype~ : Int, flags~ : Int, stream_id~ : Int, payload~ : Bytes)
 } derive(Eq)
 pub fn Frame::encode(Self) -> Bytes
+pub fn Frame::equal(Self, Self) -> Bool
 pub fn Frame::frame_type(Self) -> Int
+pub fn Frame::not_equal(Self, Self) -> Bool
 
 pub(all) struct FrameHeader {
   length : Int
@@ -379,6 +414,8 @@ pub(all) struct FrameHeader {
   stream_id : Int
 } derive(Eq)
 pub fn FrameHeader::encode(Self) -> Bytes
+pub fn FrameHeader::equal(Self, Self) -> Bool
+pub fn FrameHeader::not_equal(Self, Self) -> Bool
 
 pub struct H2Client {
   encoder : HpackEncoder
@@ -461,6 +498,9 @@ pub(all) struct Header {
   name : Bytes
   value : Bytes
 } derive(Eq, @debug.Debug)
+pub fn Header::equal(Self, Self) -> Bool
+pub fn Header::not_equal(Self, Self) -> Bool
+pub fn Header::to_repr(Self) -> @debug.Repr
 
 pub struct HealthService {
   statuses : Map[String, ServingStatus]
@@ -514,6 +554,9 @@ pub(all) enum LbPolicy {
   PickFirst
   RoundRobin
 } derive(Eq, @debug.Debug)
+pub fn LbPolicy::equal(Self, Self) -> Bool
+pub fn LbPolicy::not_equal(Self, Self) -> Bool
+pub fn LbPolicy::to_repr(Self) -> @debug.Repr
 
 pub struct LoadBalancer {
   addresses : Array[String]
@@ -530,6 +573,8 @@ pub(all) struct MessageDescriptor {
 } derive(Eq)
 pub fn MessageDescriptor::decode(Bytes) -> Self raise PbError
 pub fn MessageDescriptor::encode(Self) -> Bytes
+pub fn MessageDescriptor::equal(Self, Self) -> Bool
+pub fn MessageDescriptor::not_equal(Self, Self) -> Bool
 
 pub(all) struct Method {
   service : String
@@ -546,6 +591,8 @@ pub(all) struct MethodDescriptor {
 } derive(Eq)
 pub fn MethodDescriptor::decode(Bytes) -> Self raise PbError
 pub fn MethodDescriptor::encode(Self) -> Bytes
+pub fn MethodDescriptor::equal(Self, Self) -> Bool
+pub fn MethodDescriptor::not_equal(Self, Self) -> Bool
 
 pub struct PbReader {
   data : Bytes
@@ -602,6 +649,8 @@ pub(all) struct Priority {
   stream_dependency : Int
   weight : Int
 } derive(Eq)
+pub fn Priority::equal(Self, Self) -> Bool
+pub fn Priority::not_equal(Self, Self) -> Bool
 
 pub(all) enum ReflectionRequest {
   ListServices(String)
@@ -609,12 +658,16 @@ pub(all) enum ReflectionRequest {
   FileContainingSymbol(String)
   Unsupported
 } derive(Eq)
+pub fn ReflectionRequest::equal(Self, Self) -> Bool
+pub fn ReflectionRequest::not_equal(Self, Self) -> Bool
 
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
   ReflectionError(Int, String)
 } derive(Eq)
+pub fn ReflectionResponse::equal(Self, Self) -> Bool
+pub fn ReflectionResponse::not_equal(Self, Self) -> Bool
 
 pub struct ReflectionService {
   files : Array[FileDescriptor]
@@ -661,6 +714,8 @@ pub(all) struct ServiceDescriptor {
 } derive(Eq)
 pub fn ServiceDescriptor::decode(Bytes) -> Self raise PbError
 pub fn ServiceDescriptor::encode(Self) -> Bytes
+pub fn ServiceDescriptor::equal(Self, Self) -> Bool
+pub fn ServiceDescriptor::not_equal(Self, Self) -> Bool
 
 pub(all) enum ServingStatus {
   StatusUnknown
@@ -669,7 +724,9 @@ pub(all) enum ServingStatus {
   ServiceUnknown
 } derive(Eq)
 pub fn ServingStatus::code(Self) -> Int
+pub fn ServingStatus::equal(Self, Self) -> Bool
 pub fn ServingStatus::from_code(Int) -> Self
+pub fn ServingStatus::not_equal(Self, Self) -> Bool
 
 pub(all) struct SrvStream {
   id : Int
@@ -725,9 +782,11 @@ pub(all) enum Status {
   Unauthenticated
 } derive(Eq)
 pub fn Status::code(Self) -> Int
+pub fn Status::equal(Self, Self) -> Bool
 pub fn Status::from_h2_error(Int) -> Self
 pub fn Status::from_http(Int) -> Self
 pub fn Status::name(Self) -> String
+pub fn Status::not_equal(Self, Self) -> Bool
 
 pub(all) struct Stream {
   id : Int
@@ -743,6 +802,8 @@ pub(all) enum StreamEvent {
   Reserve
   RstStream
 } derive(Eq)
+pub fn StreamEvent::equal(Self, Self) -> Bool
+pub fn StreamEvent::not_equal(Self, Self) -> Bool
 
 pub(all) enum StreamState {
   Idle
@@ -753,8 +814,13 @@ pub(all) enum StreamState {
   HalfClosedRemote
   Closed
 } derive(Eq, @debug.Debug)
+pub fn StreamState::equal(Self, Self) -> Bool
+pub fn StreamState::not_equal(Self, Self) -> Bool
 pub fn StreamState::on_recv(Self, StreamEvent) -> Self raise StreamError
 pub fn StreamState::on_send(Self, StreamEvent) -> Self raise StreamError
+pub fn StreamState::output(Self, &Logger) -> Unit
+pub fn StreamState::to_repr(Self) -> @debug.Repr
+pub fn StreamState::to_string(Self) -> String
 pub impl Show for StreamState
 
 pub struct SubConn {
@@ -776,7 +842,11 @@ pub(all) enum WireType {
   Fixed32
 } derive(Eq)
 pub fn WireType::code(Self) -> Int
+pub fn WireType::equal(Self, Self) -> Bool
 pub fn WireType::from_code(Int) -> Self?
+pub fn WireType::not_equal(Self, Self) -> Bool
+pub fn WireType::output(Self, &Logger) -> Unit
+pub fn WireType::to_string(Self) -> String
 pub impl Show for WireType
 
 // Type aliases

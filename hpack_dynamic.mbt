@@ -381,3 +381,9 @@ pub fn HpackEncoder::encode(
   }
   buf.to_bytes()
 }
+
+///|
+pub extend Header with Debug::{to_repr}
+
+///|
+pub extend Header with Eq::{not_equal, equal}

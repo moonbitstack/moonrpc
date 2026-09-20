@@ -611,3 +611,18 @@ pub fn decode_frame(
   }
   (frame, 9 + hdr.length)
 }
+
+///|
+pub extend Frame with Eq::{not_equal, equal}
+
+///|
+pub extend FrameError with Eq::{not_equal, equal}
+
+///|
+pub extend FrameError with Show::{to_string, output}
+
+///|
+pub extend FrameHeader with Eq::{not_equal, equal}
+
+///|
+pub extend Priority with Eq::{not_equal, equal}

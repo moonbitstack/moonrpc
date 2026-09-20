@@ -482,3 +482,15 @@ pub fn PbReader::read_packed_int32(self : PbReader) -> Array[Int] raise PbError 
   }
   out
 }
+
+///|
+pub extend PbError with Eq::{not_equal, equal}
+
+///|
+pub extend PbError with Show::{to_string, output}
+
+///|
+pub extend WireType with Eq::{not_equal, equal}
+
+///|
+pub extend WireType with Show::{to_string, output}

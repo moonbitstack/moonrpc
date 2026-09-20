@@ -193,3 +193,6 @@ pub fn HealthService::install(self : HealthService, server : H2Server) -> Unit {
     server.register_handler(entry.0, entry.1)
   }
 }
+
+///|
+pub extend ServingStatus with Eq::{not_equal, equal}

@@ -72,3 +72,9 @@ pub fn SubConn::shutdown(self : SubConn) -> Unit {
 pub fn SubConn::is_ready(self : SubConn) -> Bool {
   self.state is Ready
 }
+
+///|
+pub extend ConnectivityState with Debug::{to_repr}
+
+///|
+pub extend ConnectivityState with Eq::{not_equal, equal}

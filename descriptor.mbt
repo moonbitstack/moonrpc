@@ -413,3 +413,24 @@ pub fn decode_file_descriptor_set(
   }
   files
 }
+
+///|
+pub extend FieldDescriptor with Eq::{not_equal, equal}
+
+///|
+pub extend FieldLabel with Eq::{not_equal, equal}
+
+///|
+pub extend FieldType with Eq::{not_equal, equal}
+
+///|
+pub extend FileDescriptor with Eq::{not_equal, equal}
+
+///|
+pub extend MessageDescriptor with Eq::{not_equal, equal}
+
+///|
+pub extend MethodDescriptor with Eq::{not_equal, equal}
+
+///|
+pub extend ServiceDescriptor with Eq::{not_equal, equal}

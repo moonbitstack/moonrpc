@@ -215,3 +215,21 @@ pub fn stream_id_valid_for_initiator(id : Int, by_client~ : Bool) -> Bool {
     stream_is_server_initiated(id)
   }
 }
+
+///|
+pub extend StreamError with Eq::{not_equal, equal}
+
+///|
+pub extend StreamError with Show::{to_string, output}
+
+///|
+pub extend StreamEvent with Eq::{not_equal, equal}
+
+///|
+pub extend StreamState with Debug::{to_repr}
+
+///|
+pub extend StreamState with Eq::{not_equal, equal}
+
+///|
+pub extend StreamState with Show::{to_string, output}

@@ -412,3 +412,9 @@ pub fn huffman_decode(input : Bytes) -> Bytes raise HpackError {
   }
   out.to_bytes()
 }
+
+///|
+pub extend HpackError with Eq::{not_equal, equal}
+
+///|
+pub extend HpackError with Show::{to_string, output}
