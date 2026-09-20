@@ -7,10 +7,6 @@ import {
 }
 
 // Values
-pub fn base64_decode(Bytes) -> Bytes
-
-pub fn base64_encode(Bytes) -> Bytes
-
 pub let connection_preface : Bytes
 
 pub fn decode_file_descriptor_set(Bytes) -> Array[FileDescriptor] raise PbError

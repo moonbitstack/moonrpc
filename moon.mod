@@ -1,6 +1,6 @@
 name = "moonbitstack/moonrpc"
 
-version = "0.10.1"
+version = "0.11.0"
 
 readme = "README.md"
 
@@ -14,4 +14,5 @@ description = "moonrpc — a real gRPC implementation for MoonBit (← gRPC). v0
 
 import {
   "moonbitlang/async@0.20.3",
+  "moonbitstack/moonbase@0.4.0",
 }

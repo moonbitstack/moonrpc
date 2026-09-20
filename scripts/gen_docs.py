@@ -85,9 +85,9 @@ SECTIONS = [
      "The native client transports: a multiplexing channel that demultiplexes "
      "concurrent calls on one connection, a managed channel that dials several "
      "backends and routes around the dead ones, and the resolver behind it."),
-    ("codecs", ("gzip.mbt", "base64.mbt"), "Codecs",
-     "The gzip message compression gRPC negotiates and the base64 used by "
-     "binary metadata, written here so the wire format needs no native binding."),
+    ("codecs", ("gzip.mbt", "metadata.mbt"), "Codecs",
+     "The gzip message compression gRPC negotiates, and the metadata rules that "
+     "decide which keys travel base64 encoded."),
 ]
 KIND = {"struct": "struct", "enum": "enum", "fn": "fn", "type": "type", "let": "let"}
 

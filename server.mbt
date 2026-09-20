@@ -1276,7 +1276,7 @@ fn H2Server::produce(
       if s.status_code != 0 {
         tr.push({
           name: b"grpc-status-details-bin",
-          value: base64_encode(
+          value: @base64.encode_bytes(
             encode_status_details(
               s.status_code,
               s.status_message,
@@ -1349,7 +1349,7 @@ fn H2Server::produce(
     if s.status_code != 0 {
       trailers.push({
         name: b"grpc-status-details-bin",
-        value: base64_encode(
+        value: @base64.encode_bytes(
           encode_status_details(
             s.status_code,
             s.status_message,
