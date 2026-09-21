@@ -619,7 +619,7 @@ fn drain_messages(s : SrvStream) -> Unit {
     if compressed {
       let body = all[off + 5:off + 5 + len].to_owned()
       if s.req_encoding == b"gzip" {
-        let plain = Some(gunzip(body)) catch { _ => None }
+        let plain = Some(@gzip.gunzip(body[:])) catch { _ => None }
         match plain {
           Some(m) => s.req_msgs.push(m)
           None => s.compressed_unsupported = true

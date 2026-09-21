@@ -766,7 +766,7 @@ fn drain_call_messages(c : ClientCall) -> Unit {
     // were the message (gRPC's answer for an undecodable reply).
     if compressed {
       if c.resp_encoding == b"gzip" {
-        match (Some(gunzip(body)) catch { _ => None }) {
+        match (Some(@gzip.gunzip(body[:])) catch { _ => None }) {
           Some(m) => c.messages.push(m)
           None => c.decode_failed = true
         }

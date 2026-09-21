@@ -50,9 +50,9 @@ fn run() -> Unit raise {
   let named = unhex(
     "1f8b08080000000002ff68692e74787400cb4bcc4d4d51c84dcd4d4a2d522848acccc94f4c01004e5eca2a14000000",
   )
-  println("gunzip fixed-Huffman: \{ascii(@moonrpc.gunzip(fixed))}")
-  println("gunzip stored block:  \{ascii(@moonrpc.gunzip(stored))}")
-  println("gunzip FNAME member:  \{ascii(@moonrpc.gunzip(named))}")
+  println("gunzip fixed-Huffman: \{ascii(@gzip.gunzip(fixed[:]))}")
+  println("gunzip stored block:  \{ascii(@gzip.gunzip(stored[:]))}")
+  println("gunzip FNAME member:  \{ascii(@gzip.gunzip(named[:]))}")
 
   // The client-side path: a peer replies `grpc-encoding: gzip` with a compression-flagged
   // message; the caller gets the plaintext, never the gzip bytes.

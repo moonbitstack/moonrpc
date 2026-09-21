@@ -109,8 +109,6 @@ pub let frame_settings : Int
 
 pub let frame_window_update : Int
 
-pub fn gunzip(Bytes) -> Bytes raise GzError
-
 pub fn has_connection_preface(Bytes) -> Bool
 
 pub let health_check_path : String
@@ -192,10 +190,6 @@ pub fn FrameError::not_equal(Self, Self) -> Bool
 pub fn FrameError::output(Self, &Logger) -> Unit
 pub fn FrameError::to_string(Self) -> String
 pub impl Show for FrameError
-
-pub suberror GzError {
-  GzError(String)
-}
 
 pub suberror HpackError {
   HuffmanError(String)
