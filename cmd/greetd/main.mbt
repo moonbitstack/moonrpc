@@ -69,8 +69,8 @@ fn greet_file() -> @moonrpc.FileDescriptor {
 ///|
 fn main {
   let port = match @env.args() {
-    [_, p, ..] => @string.parse_int(p[:]) catch { _ => 50051 }
-    _ => 50051
+    [_, p, ..] => @string.parse_int(p[:]) catch { _ => @net.port }
+    _ => @net.port
   }
   @async.run_async_main(() => {
     let server = @net.GrpcServer::new()

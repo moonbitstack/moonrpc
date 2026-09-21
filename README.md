@@ -36,7 +36,7 @@ server.register_bidi("/chat.C/Echo", ctx => @moonrpc.BidiHandler::{
   on_end: () => [b"bye"],
 })
 
-server.serve(port=50051)   // a real gRPC / in-process client gets the replies
+server.serve()             // listens on 12000; a real gRPC or in-process client gets the replies
 ```
 
 The handler sees the call's `RpcContext`: the request metadata, the `grpc-timeout` deadline in milliseconds, and slots for response initial and trailing metadata.
@@ -46,7 +46,7 @@ The handler sees the call's `RpcContext`: the request metadata, the `grpc-timeou
 A `Channel` is one long-lived h2c connection; every call multiplexes over it on its own client-allocated stream id, sharing the connection's HPACK and flow-control state.
 
 ```moonbit
-let chan = @net.Channel::connect("127.0.0.1", 50051)
+let chan = @net.Channel::connect("127.0.0.1", @net.port)
 
 // unary.
 let reply = chan.unary("/greet.Greeter/SayHello", request)
