@@ -178,13 +178,21 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
 }
 
 ///|
+/// The port a gRPC server listens on unless told otherwise.
+///
+/// gRPC runs on HTTP/2, which shares a TCP listener with HTTP/1.1 and
+/// WebSocket, so it takes the family's number rather than gRPC's conventional
+/// 50051: one port for every protocol a server speaks.
+pub let port : Int = 12000
+
+///|
 /// Serve gRPC over h2c on `host:port`, blocking in the accept loop until the running
 /// task is cancelled or `graceful_stop` drains the server. Each connection is driven
 /// by `drive`; a failure on one connection is isolated and does not stop the server.
 pub async fn GrpcServer::serve(
   self : GrpcServer,
   host? : String = "127.0.0.1",
-  port? : Int = 50051,
+  port? : Int = port,
 ) -> Unit {
   let server = @socket.TcpServer::TcpServer(
     @socket.Addr::parse(host + ":" + port.to_string()),
