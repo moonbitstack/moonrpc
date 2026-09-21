@@ -115,11 +115,11 @@ pub async fn ManagedChannel::unary(
   path : String,
   request : Bytes,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
-  retry? : @moonrpc.RetryPolicy? = None,
+  timeout_millis? : Int,
+  retry? : @moonrpc.RetryPolicy,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
-  ch.unary(path, request, metadata~, timeout_millis~, retry~)
+  ch.unary(path, request, metadata~, timeout_millis?, retry?)
 }
 
 ///|
@@ -133,7 +133,7 @@ pub async fn ManagedChannel::unary_hedged(
   request : Bytes,
   hedging : @moonrpc.HedgingPolicy,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   @async.with_task_group(g => {
     let tasks : Array[@async.Task[@moonrpc.CallReply]] = []
@@ -147,7 +147,7 @@ pub async fn ManagedChannel::unary_hedged(
       claimed.push(address)
       started = started + 1
       let t = g.spawn(() => {
-        let reply = ch.unary(path, request, metadata~, timeout_millis~)
+        let reply = ch.unary(path, request, metadata~, timeout_millis?)
         if hedging.should_commit(reply.grpc_status) {
           g.return_immediately(reply)
         }
@@ -173,10 +173,10 @@ pub async fn ManagedChannel::server_streaming(
   path : String,
   request : Bytes,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
-  ch.server_streaming(path, request, metadata~, timeout_millis~)
+  ch.server_streaming(path, request, metadata~, timeout_millis?)
 }
 
 ///|
@@ -186,10 +186,10 @@ pub async fn ManagedChannel::client_streaming(
   path : String,
   requests : Array[Bytes],
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
-  ch.client_streaming(path, requests, metadata~, timeout_millis~)
+  ch.client_streaming(path, requests, metadata~, timeout_millis?)
 }
 
 ///|
@@ -199,10 +199,10 @@ pub async fn ManagedChannel::bidi(
   path : String,
   requests : Array[Bytes],
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
-  ch.bidi(path, requests, metadata~, timeout_millis~)
+  ch.bidi(path, requests, metadata~, timeout_millis?)
 }
 
 ///|

@@ -432,13 +432,13 @@ pub fn H2Client::has_messages(Self, Int) -> Bool
 pub fn H2Client::is_done(Self, Int) -> Bool
 pub fn H2Client::is_retryable(Self, Int) -> Bool
 pub fn H2Client::new() -> Self
-pub fn H2Client::open(Self, String, metadata? : Array[Header], authority? : String, timeout_millis? : Int?) -> Int
+pub fn H2Client::open(Self, String, metadata? : Array[Header], authority? : String, timeout_millis? : Int) -> Int
 pub fn H2Client::preface(Self) -> Array[Frame]
 pub fn H2Client::release(Self, Int) -> Unit
 pub fn H2Client::reply(Self, Int) -> CallReply
 pub fn H2Client::send(Self, Int, Bytes, end? : Bool) -> Array[Frame]
 pub fn H2Client::take_messages(Self, Int) -> Array[Bytes]
-pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[Header], authority? : String, timeout_millis? : Int?) -> (Int, Array[Frame])
+pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[Header], authority? : String, timeout_millis? : Int) -> (Int, Array[Frame])
 
 pub struct H2Server {
   handlers : Map[String, Handler]

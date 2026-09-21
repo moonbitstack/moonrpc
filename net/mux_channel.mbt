@@ -93,13 +93,13 @@ pub async fn MuxChannel::unary(
   path : String,
   request : Bytes,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   let (id, frames) = self.engine.unary(
     path,
     request,
     metadata~,
-    timeout_millis~,
+    timeout_millis?,
   )
   let inbox : @aqueue.Queue[Unit] = @aqueue.Queue::Queue(kind=Unbounded)
   self.inboxes[id] = inbox

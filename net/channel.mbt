@@ -102,7 +102,7 @@ async fn Channel::unary_once(
     path,
     request,
     metadata~,
-    timeout_millis~,
+    timeout_millis?,
   )
   write_frames(self.conn, frames)
   self.drive(id, timeout_millis)
@@ -122,8 +122,8 @@ pub async fn Channel::unary(
   path : String,
   request : Bytes,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
-  retry? : @moonrpc.RetryPolicy? = None,
+  timeout_millis? : Int,
+  retry? : @moonrpc.RetryPolicy,
 ) -> @moonrpc.CallReply {
   match retry {
     None => self.unary_once(path, request, metadata, timeout_millis)
@@ -170,9 +170,9 @@ pub async fn Channel::server_streaming(
   path : String,
   request : Bytes,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis~)
+  let id = self.engine.open(path, metadata~, timeout_millis?)
   write_frames(self.conn, self.engine.send(id, request, end=true))
   self.drive(id, timeout_millis)
 }
@@ -191,10 +191,10 @@ pub async fn Channel::stream_take(
   request : Bytes,
   count : Int,
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
   half_close? : Bool = true,
 ) -> Array[Bytes] {
-  let id = self.engine.open(path, metadata~, timeout_millis~)
+  let id = self.engine.open(path, metadata~, timeout_millis?)
   write_frames(self.conn, self.engine.send(id, request, end=half_close))
   let collected : Array[Bytes] = []
   while collected.length() < count && !self.engine.is_done(id) {
@@ -215,9 +215,9 @@ pub async fn Channel::client_streaming(
   path : String,
   requests : Array[Bytes],
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis~)
+  let id = self.engine.open(path, metadata~, timeout_millis?)
   for m in requests {
     write_frames(self.conn, self.engine.send(id, m))
   }
@@ -238,9 +238,9 @@ pub async fn Channel::bidi(
   path : String,
   requests : Array[Bytes],
   metadata? : Array[@moonrpc.Header] = [],
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis~)
+  let id = self.engine.open(path, metadata~, timeout_millis?)
   for m in requests {
     write_frames(self.conn, self.engine.send(id, m))
   }

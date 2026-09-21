@@ -230,7 +230,7 @@ pub fn H2Client::open(
   path : String,
   metadata? : Array[Header] = [],
   authority? : String = "127.0.0.1",
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> Int {
   // A draining connection (the peer sent GOAWAY) starts no new stream: it would race
   // the shutdown and never be processed. Refuse with the reserved stream id 0 (§5.1.1,
@@ -301,9 +301,9 @@ pub fn H2Client::unary(
   request : Bytes,
   metadata? : Array[Header] = [],
   authority? : String = "127.0.0.1",
-  timeout_millis? : Int? = None,
+  timeout_millis? : Int,
 ) -> (Int, Array[Frame]) {
-  let id = self.open(path, metadata~, authority~, timeout_millis~)
+  let id = self.open(path, metadata~, authority~, timeout_millis?)
   (id, self.send(id, request, end=true))
 }
 

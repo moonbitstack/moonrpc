@@ -159,7 +159,7 @@ async test "channel: a unary call retries a retryable failure and then succeeds"
       backoff_multiplier: 2.0,
       retryable: [@moonrpc.Status::code(Unavailable)],
     }
-    let reply = chan.unary("/retry.R/Do", b"x", retry=Some(policy))
+    let reply = chan.unary("/retry.R/Do", b"x", retry=policy)
     assert_eq(reply.grpc_status, 0)
     assert_eq(reply.messages[0] == b"ok", true)
     // one failure plus one successful retry.
@@ -191,7 +191,7 @@ async test "channel: retries are exhausted and the last retryable status is retu
       backoff_multiplier: 2.0,
       retryable: [@moonrpc.Status::code(Unavailable)],
     }
-    let reply = chan.unary("/retry.R/Never", b"x", retry=Some(policy))
+    let reply = chan.unary("/retry.R/Never", b"x", retry=policy)
     assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
     assert_eq(attempts.val, 2)
     chan.close()
@@ -220,12 +220,7 @@ async test "channel: retries stop at the absolute deadline, not once per attempt
       backoff_multiplier: 1.0,
       retryable: [@moonrpc.Status::code(Unavailable)],
     }
-    let reply = chan.unary(
-      "/r.R/Down",
-      b"x",
-      timeout_millis=Some(120),
-      retry=Some(policy),
-    )
+    let reply = chan.unary("/r.R/Down", b"x", timeout_millis=120, retry=policy)
     // The deadline fires during the first backoff; the call ends DEADLINE_EXCEEDED
     // rather than grinding through all five attempts.
     assert_eq(reply.grpc_status, @moonrpc.Status::code(DeadlineExceeded))
@@ -253,7 +248,7 @@ async test "channel: a call past its deadline is cancelled with DEADLINE_EXCEEDE
     @async.sleep(300)
     let chan = Channel::connect("127.0.0.1", 18084)
     // the server takes ~400ms to answer; the client's deadline is 120ms.
-    let reply = chan.unary("/slow.S/Wait", b"x", timeout_millis=Some(120))
+    let reply = chan.unary("/slow.S/Wait", b"x", timeout_millis=120)
     assert_eq(reply.grpc_status, @moonrpc.Status::code(DeadlineExceeded))
     chan.close()
     task.cancel()

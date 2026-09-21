@@ -108,7 +108,7 @@ fn run() -> Unit raise {
   let (id, initial) = client.unary(
     "/slow.Slow/Wait",
     b"work",
-    timeout_millis=Some(233),
+    timeout_millis=233,
   )
   drive(server, client, id, initial)
   let reply = client.reply(id)
