@@ -19,12 +19,6 @@ SECTIONS = [
      "FileDescriptorProto / FileDescriptorSet wire bytes of descriptor.proto — the unit "
      "Server Reflection returns, encoding from a programmatic model and decoding a "
      "protoc-produced FileDescriptorSet through the same types."),
-    ("frame", "frame.mbt", "HTTP/2 frame layer",
-     "The RFC 7540 frame codec: the 9-octet header and all ten frame types "
-     "(DATA / HEADERS / PRIORITY / RST_STREAM / SETTINGS / PUSH_PROMISE / PING / "
-     "GOAWAY / WINDOW_UPDATE / CONTINUATION) with their flags and payloads."),
-    ("preface", "preface.mbt", "HTTP/2 connection preface",
-     "The fixed 24-octet client connection preface (RFC 7540 §3.5)."),
     ("stream", "stream.mbt", "HTTP/2 stream state machine",
      "The RFC 7540 §5.1 stream lifecycle (idle / open / half-closed / closed) and "
      "the §5.1.1 stream-identifier parity rules."),
