@@ -12,10 +12,10 @@
 /// handler can set before it returns.
 pub(all) struct RpcContext {
   path : String
-  metadata : Array[Header]
+  metadata : Array[@header.Header]
   deadline_millis : Int?
-  resp_headers : Array[Header]
-  resp_trailers : Array[Header]
+  resp_headers : Array[@header.Header]
+  resp_trailers : Array[@header.Header]
   // Set by a handler that wants to end the call with a non-OK gRPC status
   // (`(code, message)`); the server emits it as the `grpc-status` / `grpc-message`
   // trailer and discards any reply the handler also returned.

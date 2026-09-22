@@ -4,6 +4,8 @@
 // framing and the status model. Pure logic; the h2 stack (h2c path, since the
 // async TLS layer exposes no ALPN) is sequenced after.
 import {
+  "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
   "moonbitlang/core/buffer",
   "moonbitstack/moonbase",

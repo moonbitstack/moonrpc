@@ -19,7 +19,7 @@ fn ascii(bs : Bytes) -> String {
 ///|
 fn open_call(
   server : @moonrpc.H2Server,
-  enc : @moonrpc.HpackEncoder,
+  enc : @hpack.Encoder,
   id : Int,
   end_stream : Bool,
 ) -> Array[@moonrpc.Frame] {
@@ -59,7 +59,7 @@ fn describe(f : @moonrpc.Frame) -> String {
 fn stream_error() -> Unit {
   let server = @moonrpc.H2Server::new()
   server.register("/echo.Echo/Say", req => req)
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = server.feed(Settings(params=[], ack=false))
   let _ = open_call(server, enc, 1, false)
 
@@ -142,7 +142,7 @@ fn client_status() -> Unit raise {
 
   // A proxy answering on the gRPC port sends an HTTP status and no gRPC trailers at
   // all (gRPC http-grpc-status-mapping).
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   for http in [b"401", b"404", b"503"] {
     let client = @moonrpc.H2Client::new()
     let (id, _req) = client.unary("/echo.Echo/Say", b"emm")

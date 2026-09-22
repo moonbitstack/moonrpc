@@ -79,7 +79,7 @@ test "client: a gzip-encoded response message is inflated for the caller" {
   let client = H2Client::new()
   let (id, _req) = client.unary("/echo.Echo/Say", b"x")
   let _ = client.feed(Settings(params=[], ack=false))
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let hblock = enc.encode([
     { name: b":status", value: b"200", },
     { name: b"content-type", value: b"application/grpc", },
@@ -132,7 +132,7 @@ test "client: a response header block split across HEADERS + CONTINUATION is rea
   let client = H2Client::new()
   let (id, _req) = client.unary("/echo.Echo/Say", b"x")
   let _ = client.feed(Settings(params=[], ack=false))
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":status", value: b"200", },
     { name: b"content-type", value: b"application/grpc", },
@@ -181,7 +181,7 @@ test "client: a compressed reply under an unsupported encoding fails INTERNAL, n
   let client = H2Client::new()
   let (id, _req) = client.unary("/echo.Echo/Say", b"x")
   let _ = client.feed(Settings(params=[], ack=false))
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let hblock = enc.encode([
     { name: b":status", value: b"200", },
     { name: b"content-type", value: b"application/grpc", },
@@ -317,7 +317,11 @@ test "client+server: request metadata reaches the handler; response metadata rea
 
 ///|
 /// Whether `headers` contains an exact `(name, value)` pair.
-fn header_present(headers : Array[Header], name : Bytes, value : Bytes) -> Bool {
+fn header_present(
+  headers : Array[@header.Header],
+  name : Bytes,
+  value : Bytes,
+) -> Bool {
   for h in headers {
     if h.name == name && h.value == value {
       return true
@@ -378,7 +382,7 @@ test "client: a reply split across two DATA frames is reassembled into one messa
   let client = H2Client::new()
   let id = client.open("/x.Y/Z")
   let _ = client.send(id, b"q", end=true)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   // initial response HEADERS.
   let _ = client.feed(
     Headers(
@@ -501,11 +505,15 @@ test "an oversized request header block is split into CONTINUATION frames" {
 
 ///|
 /// Feed `client` a complete response header block for call `id`, ending the stream.
-fn respond(client : H2Client, id : Int, headers : Array[Header]) -> Unit raise {
+fn respond(
+  client : H2Client,
+  id : Int,
+  headers : Array[@header.Header],
+) -> Unit raise {
   let _ = client.feed(
     Headers(
       stream_id=id,
-      fragment=HpackEncoder::new().encode(headers),
+      fragment=@hpack.Encoder::new().encode(headers),
       end_stream=true,
       end_headers=true,
       priority=None,

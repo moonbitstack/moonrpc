@@ -173,8 +173,8 @@ fn SrvStream::retire(self : SrvStream) -> Unit {
 /// HPACK and flow control are stateful.
 pub struct H2Server {
   handlers : Map[String, Handler]
-  encoder : HpackEncoder
-  decoder : HpackDecoder
+  encoder : @hpack.Encoder
+  decoder : @hpack.Decoder
   streams : Map[Int, SrvStream]
   unary_interceptors : Array[UnaryInterceptor]
   stream_interceptors : Array[StreamInterceptor]
@@ -211,8 +211,8 @@ pub struct H2Server {
 pub fn H2Server::new() -> H2Server {
   {
     handlers: Map([]),
-    encoder: HpackEncoder::new(),
-    decoder: HpackDecoder::new(),
+    encoder: @hpack.Encoder::new(),
+    decoder: @hpack.Decoder::new(),
     streams: Map([]),
     unary_interceptors: [],
     stream_interceptors: [],
@@ -511,7 +511,7 @@ fn cat(a : Bytes, b : Bytes) -> Bytes {
 
 ///|
 /// The value of the first header named `name` in `headers`, or `None`.
-fn header_value(headers : Array[Header], name : Bytes) -> Bytes? {
+fn header_value(headers : Array[@header.Header], name : Bytes) -> Bytes? {
   for h in headers {
     if h.name == name {
       return Some(h.value)
@@ -542,7 +542,7 @@ fn starts_with(b : Bytes, prefix : Bytes) -> Bool {
 /// spec gives a status of its own (415), and it is the load-bearing one: without it a
 /// browser form post or a health-checking GET is dispatched as a call and answered
 /// 200 + `grpc-status`, which every non-gRPC client reads as success.
-fn request_reject(headers : Array[Header]) -> (Int, Int, String)? {
+fn request_reject(headers : Array[@header.Header]) -> (Int, Int, String)? {
   match header_value(headers, b"content-type") {
     Some(ct) if starts_with(ct, b"application/grpc") => ()
     _ =>
@@ -676,7 +676,7 @@ fn H2Server::apply_setting(self : H2Server, id : Int, value : Int) -> Unit {
     }
   } else if id == settings_header_table_size {
     if value >= 0 {
-      self.encoder.table.set_max_size(value)
+      self.encoder.table.resize(value)
     }
   }
 }
@@ -1079,7 +1079,7 @@ fn H2Server::complete_headers(
     s.response_ended = true
     return
   }
-  let metadata : Array[Header] = []
+  let metadata : Array[@header.Header] = []
   for h in headers {
     if !is_reserved_header(h.name) {
       // A `-bin` metadata value arrives base64-encoded; surface the raw bytes.
@@ -1266,7 +1266,7 @@ fn H2Server::produce(
   let frames : Array[Frame] = []
   if s.trailers_only {
     if !s.trailers_sent {
-      let tr : Array[Header] = [
+      let tr : Array[@header.Header] = [
         { name: b":status", value: int_to_ascii_bytes(s.http_status), },
         { name: b"content-type", value: b"application/grpc", },
         { name: b"grpc-accept-encoding", value: b"identity,gzip", },
@@ -1295,7 +1295,7 @@ fn H2Server::produce(
     return frames
   }
   if s.started_response && !s.headers_sent {
-    let headers : Array[Header] = [
+    let headers : Array[@header.Header] = [
       { name: b":status", value: b"200", },
       { name: b"content-type", value: b"application/grpc", },
       { name: b"grpc-encoding", value: b"identity", },
@@ -1335,7 +1335,7 @@ fn H2Server::produce(
     s.out_off >= s.out.length() &&
     s.headers_sent &&
     !s.trailers_sent {
-    let trailers : Array[Header] = [
+    let trailers : Array[@header.Header] = [
       { name: b"grpc-status", value: int_to_ascii_bytes(s.status_code), },
     ]
     // A non-OK status that surfaced after the body already started rides the closing

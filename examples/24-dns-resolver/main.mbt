@@ -39,7 +39,7 @@ fn hex(bs : Bytes) -> String {
 /// (`0xC00C`) back to the question name at offset 12.
 fn build_response() -> Bytes {
   let buf = Buffer()
-  // Header: id, flags (response, RD, RA, NOERROR), QD=1, AN=3, NS=0, AR=0.
+  // @header.Header: id, flags (response, RD, RA, NOERROR), QD=1, AN=3, NS=0, AR=0.
   be16(buf, 0x1234)
   be16(buf, 0x8180)
   be16(buf, 1)

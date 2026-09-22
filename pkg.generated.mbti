@@ -4,6 +4,8 @@ package "moonbitstack/moonrpc"
 import {
   "moonbitlang/core/buffer",
   "moonbitlang/core/debug",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonhttp/hpack",
 }
 
 // Values
@@ -115,34 +117,6 @@ pub let health_check_path : String
 
 pub let health_watch_path : String
 
-pub fn hpack_decode_int(Bytes, Int, Int) -> (Int, Int) raise HpackError
-
-pub fn hpack_decode_string(Bytes, Int) -> (Bytes, Int) raise HpackError
-
-pub fn hpack_encode_int(Int, Int) -> Bytes
-
-pub fn hpack_encode_size_update(Int) -> Bytes
-
-pub fn hpack_encode_string(Bytes) -> Bytes
-
-pub fn hpack_encode_string_auto(Bytes) -> Bytes
-
-pub fn hpack_encode_string_huffman(Bytes) -> Bytes
-
-pub fn hpack_read_string(Bytes, Int) -> (Bytes, Int) raise HpackError
-
-pub fn hpack_static_entry(Int) -> (String, String)?
-
-pub fn hpack_static_table() -> Array[(String, String)]
-
-pub fn hpack_string_is_huffman(Bytes, Int) -> Bool
-
-pub fn huffman_decode(Bytes) -> Bytes raise HpackError
-
-pub fn huffman_encode(Bytes) -> Bytes
-
-pub fn huffman_encoded_length(Bytes) -> Int
-
 pub fn is_binary_metadata(Bytes) -> Bool
 
 pub let max_header_list_size : Int
@@ -191,16 +165,6 @@ pub fn FrameError::output(Self, &Logger) -> Unit
 pub fn FrameError::to_string(Self) -> String
 pub impl Show for FrameError
 
-pub suberror HpackError {
-  HuffmanError(String)
-  HpackDecodeError(String)
-} derive(Eq)
-pub fn HpackError::equal(Self, Self) -> Bool
-pub fn HpackError::not_equal(Self, Self) -> Bool
-pub fn HpackError::output(Self, &Logger) -> Unit
-pub fn HpackError::to_string(Self) -> String
-pub impl Show for HpackError
-
 pub suberror PbError {
   Truncated
   BadWireType(Int)
@@ -232,16 +196,16 @@ pub(all) struct CallReply {
   status : Bytes
   grpc_status : Int
   grpc_message : String
-  headers : Array[Header]
+  headers : Array[@header.Header]
   messages : Array[Bytes]
-  trailers : Array[Header]
+  trailers : Array[@header.Header]
 }
 
 pub(all) struct ClientCall {
   id : Int
   path : Bytes
   authority : Bytes
-  metadata : Array[Header]
+  metadata : Array[@header.Header]
   timeout : Bytes?
   mut out : Bytes
   mut out_off : Int
@@ -257,8 +221,8 @@ pub(all) struct ClientCall {
   mut grpc_status : Int?
   mut grpc_message : String
   mut resp_encoding : Bytes
-  resp_headers : Array[Header]
-  resp_trailers : Array[Header]
+  resp_headers : Array[@header.Header]
+  resp_trailers : Array[@header.Header]
   mut headers_seen : Bool
   header_block : @buffer.Buffer
   mut in_headers : Bool
@@ -309,17 +273,6 @@ pub fn DnsResponse::addresses(Self) -> Array[String]
 pub fn DnsResponse::equal(Self, Self) -> Bool
 pub fn DnsResponse::not_equal(Self, Self) -> Bool
 pub fn DnsResponse::to_repr(Self) -> @debug.Repr
-
-pub(all) struct DynamicTable {
-  mut entries : Array[(Bytes, Bytes)]
-  mut size : Int
-  mut max_size : Int
-}
-pub fn DynamicTable::add(Self, Bytes, Bytes) -> Unit
-pub fn DynamicTable::count(Self) -> Int
-pub fn DynamicTable::current_size(Self) -> Int
-pub fn DynamicTable::new(max_size? : Int) -> Self
-pub fn DynamicTable::set_max_size(Self, Int) -> Unit
 
 pub(all) struct FieldDescriptor {
   name : String
@@ -412,8 +365,8 @@ pub fn FrameHeader::equal(Self, Self) -> Bool
 pub fn FrameHeader::not_equal(Self, Self) -> Bool
 
 pub struct H2Client {
-  encoder : HpackEncoder
-  decoder : HpackDecoder
+  encoder : @hpack.Encoder
+  decoder : @hpack.Decoder
   calls : Map[Int, ClientCall]
   mut next_id : Int
   mut conn_send_window : Int
@@ -432,18 +385,18 @@ pub fn H2Client::has_messages(Self, Int) -> Bool
 pub fn H2Client::is_done(Self, Int) -> Bool
 pub fn H2Client::is_retryable(Self, Int) -> Bool
 pub fn H2Client::new() -> Self
-pub fn H2Client::open(Self, String, metadata? : Array[Header], authority? : String, timeout_millis? : Int) -> Int
+pub fn H2Client::open(Self, String, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> Int
 pub fn H2Client::preface(Self) -> Array[Frame]
 pub fn H2Client::release(Self, Int) -> Unit
 pub fn H2Client::reply(Self, Int) -> CallReply
 pub fn H2Client::send(Self, Int, Bytes, end? : Bool) -> Array[Frame]
 pub fn H2Client::take_messages(Self, Int) -> Array[Bytes]
-pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[Header], authority? : String, timeout_millis? : Int) -> (Int, Array[Frame])
+pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> (Int, Array[Frame])
 
 pub struct H2Server {
   handlers : Map[String, Handler]
-  encoder : HpackEncoder
-  decoder : HpackDecoder
+  encoder : @hpack.Encoder
+  decoder : @hpack.Decoder
   streams : Map[Int, SrvStream]
   unary_interceptors : Array[(RpcContext, Bytes, (RpcContext, Bytes) -> Bytes) -> Bytes]
   stream_interceptors : Array[(RpcContext, Bytes, (RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]]
@@ -488,14 +441,6 @@ pub(all) enum Handler {
   Bidi((RpcContext) -> BidiHandler)
 }
 
-pub(all) struct Header {
-  name : Bytes
-  value : Bytes
-} derive(Eq, @debug.Debug)
-pub fn Header::equal(Self, Self) -> Bool
-pub fn Header::not_equal(Self, Self) -> Bool
-pub fn Header::to_repr(Self) -> @debug.Repr
-
 pub struct HealthService {
   statuses : Map[String, ServingStatus]
 }
@@ -515,20 +460,6 @@ pub fn HedgingPolicy::can_start_another(Self, Int) -> Bool
 pub fn HedgingPolicy::default() -> Self
 pub fn HedgingPolicy::delay_millis(Self) -> Int
 pub fn HedgingPolicy::should_commit(Self, Int) -> Bool
-
-pub(all) struct HpackDecoder {
-  table : DynamicTable
-  limit : Int
-}
-pub fn HpackDecoder::decode(Self, Bytes) -> Array[Header] raise HpackError
-pub fn HpackDecoder::new(max_size? : Int) -> Self
-
-pub(all) struct HpackEncoder {
-  table : DynamicTable
-  mut huffman : Bool
-}
-pub fn HpackEncoder::encode(Self, Array[Header]) -> Bytes
-pub fn HpackEncoder::new(max_size? : Int, huffman? : Bool) -> Self
 
 pub struct Keepalive {
   keepalive_time : Int64
@@ -688,10 +619,10 @@ pub fn RetryPolicy::should_retry(Self, Int, Int) -> Bool
 
 pub(all) struct RpcContext {
   path : String
-  metadata : Array[Header]
+  metadata : Array[@header.Header]
   deadline_millis : Int?
-  resp_headers : Array[Header]
-  resp_trailers : Array[Header]
+  resp_headers : Array[@header.Header]
+  resp_trailers : Array[@header.Header]
   mut status_fail : (Int, String)?
   error_details : Array[Bytes]
 }

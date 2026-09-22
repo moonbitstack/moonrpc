@@ -15,11 +15,11 @@ fn concat(a : Bytes, b : Bytes) -> Bytes {
 /// the server insists on, plus whatever the test is actually about. A block missing any
 /// of them is not a gRPC call and gets an HTTP status instead of a dispatch.
 fn req_block(
-  enc : HpackEncoder,
+  enc : @hpack.Encoder,
   path : Bytes,
-  extra? : Array[Header] = [],
+  extra? : Array[@header.Header] = [],
 ) -> Bytes {
-  let headers : Array[Header] = [
+  let headers : Array[@header.Header] = [
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
     { name: b":path", value: path, },
@@ -37,7 +37,7 @@ fn req_block(
 test "engine: a unary request dispatches and is framed as HEADERS + DATA + trailers" {
   let engine = H2Server::new()
   engine.register("/echo.Echo/Say", req => concat(b"echo:", req))
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -63,7 +63,7 @@ test "engine: a unary request dispatches and is framed as HEADERS + DATA + trail
   )
   // the response is exactly HEADERS, DATA, trailer-HEADERS.
   assert_eq(out.length(), 3)
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut status = b""
   let mut grpc_status = b""
   let mut ctype = b""
@@ -129,7 +129,7 @@ test "engine: SETTINGS is acknowledged; PING is answered" {
 ///|
 test "engine: an unknown method gets a trailers-only UNIMPLEMENTED response" {
   let engine = H2Server::new()
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/nope.Svc/Method")
   let _ = engine.feed(Settings(params=[], ack=false))
   let out = engine.feed(
@@ -144,7 +144,7 @@ test "engine: an unknown method gets a trailers-only UNIMPLEMENTED response" {
   )
   // trailers-only: a single END_STREAM HEADERS, no DATA.
   assert_eq(out.length(), 1)
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut grpc_status = b""
   match out[0] {
     Headers(fragment~, end_stream~, ..) => {
@@ -178,7 +178,7 @@ test "engine: a small send window splits the reply and a WINDOW_UPDATE releases 
   let engine = H2Server::new()
   // a 20-byte reply, larger than the window we advertise.
   engine.register("/big.Svc/M", _req => b"0123456789ABCDEFGHIJ")
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/big.Svc/M")
   // peer advertises a tiny 5-octet initial window before opening the stream.
   let _ = engine.feed(
@@ -238,7 +238,7 @@ test "percent_encode follows the grpc-message spec" {
 test "engine: a compressed request under an unsupported encoding gets UNIMPLEMENTED" {
   let engine = H2Server::new()
   engine.register("/echo.Echo/Say", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/echo.Echo/Say", extra=[
     { name: b"grpc-encoding", value: b"snappy", },
   ])
@@ -260,7 +260,7 @@ test "engine: a compressed request under an unsupported encoding gets UNIMPLEMEN
   let out = engine.feed(
     Data(stream_id=1, data=compressed, end_stream=true, padding=0),
   )
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut grpc_status = b""
   for f in out {
     match f {
@@ -288,7 +288,7 @@ test "add_window saturates at 2^31-1 instead of wrapping negative" {
 ///|
 test "engine: a CONTINUATION past the header-size cap is rejected, not buffered forever" {
   let engine = H2Server::new()
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/e.E/M")
   let _ = engine.feed(Settings(params=[], ack=false))
   let _ = engine.feed(
@@ -320,7 +320,7 @@ test "engine: a CONTINUATION past the header-size cap is rejected, not buffered 
 test "engine: a HEADERS on an even (server-initiated) stream id is a protocol error" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/e.E/M")
   let _ = engine.feed(Settings(params=[], ack=false))
   // Stream id 2 is even, so server-initiated — a client must not open it.
@@ -346,7 +346,7 @@ test "engine: a HEADERS on an even (server-initiated) stream id is a protocol er
 test "engine: a message length prefix past the cap gets RESOURCE_EXHAUSTED, not a crash" {
   let engine = H2Server::new()
   engine.register("/echo.Echo/Say", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/echo.Echo/Say")
   let _ = engine.feed(Settings(params=[], ack=false))
   let _ = engine.feed(
@@ -365,7 +365,7 @@ test "engine: a message length prefix past the cap gets RESOURCE_EXHAUSTED, not 
   let out = engine.feed(
     Data(stream_id=1, data=hostile, end_stream=true, padding=0),
   )
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut grpc_status = b""
   for f in out {
     match f {
@@ -388,7 +388,7 @@ test "engine: a gzip-compressed request is inflated and reaches the handler" {
   // The handler echoes whatever bytes it receives; a correct decode means the reply
   // equals the original plaintext, not the gzip bytes.
   engine.register("/echo.Echo/Say", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/echo.Echo/Say", extra=[
     { name: b"grpc-encoding", value: b"gzip", },
   ])
@@ -417,7 +417,7 @@ test "engine: a gzip-compressed request is inflated and reaches the handler" {
       padding=0,
     ),
   )
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut grpc_status = b""
   let mut body = b""
   for f in out {
@@ -506,8 +506,8 @@ test "goaway emits a NO_ERROR GOAWAY carrying the last processed stream id" {
 /// back with, so a test can show the connection is still serving after a stream error.
 fn call_once(
   engine : H2Server,
-  enc : HpackEncoder,
-  dec : HpackDecoder,
+  enc : @hpack.Encoder,
+  dec : @hpack.Decoder,
   id : Int,
   path : Bytes,
   body : Bytes,
@@ -545,8 +545,8 @@ fn call_once(
 test "engine: a zero-increment WINDOW_UPDATE resets that stream and spares the connection" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => concat(b"re:", req))
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   // RFC 9113 §6.9: a zero increment credits nothing, and on a stream it costs only
   // that stream.
@@ -568,8 +568,8 @@ test "engine: a zero-increment WINDOW_UPDATE resets that stream and spares the c
 test "engine: a frame on a finished stream is a stream error, not a connection one" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   assert_eq(call_once(engine, enc, dec, 1, b"/e.E/M", b"hhh") == b"0", true)
   // Stream 1 is closed; §5.1 makes more DATA on it a STREAM_CLOSED stream error.
@@ -678,8 +678,8 @@ test "engine: a field block that will not decode is a COMPRESSION_ERROR" {
 test "engine: a stream opened after our own GOAWAY is refused, not served" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   assert_eq(call_once(engine, enc, dec, 1, b"/e.E/M", b"hhh") == b"0", true)
   // The drain names stream 1 as the last one we will handle.
@@ -711,8 +711,8 @@ test "engine: a stream opened after our own GOAWAY is refused, not served" {
 test "engine: a reset stream stops mid-call and sends nothing more" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => concat(b"re:", req))
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let block = req_block(enc, b"/e.E/M")
   let _ = engine.feed(
@@ -761,7 +761,7 @@ test "engine: a reset stream stops mid-call and sends nothing more" {
 test "a peer's RST_STREAM inside an open field block ends the connection" {
   let e = H2Server::new()
   e.register("/echo.E/Say", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = req_block(enc, b"/echo.E/Say")
   let _ = e.feed(Settings(params=[], ack=false))
   // Open a block and deliberately leave it open.
@@ -798,8 +798,8 @@ test "engine: a handler that outruns its deadline gets DEADLINE_EXCEEDED, not it
     now.val = now.val + 5000L
     concat(b"late:", req)
   })
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/slow.S/Wait", extra=[
     { name: b"grpc-timeout", value: b"2S", },
   ])
@@ -846,8 +846,8 @@ test "engine: tick expires a call that runs out of time waiting, and stops the c
   engine.register_client_streaming("/slow.S/Collect", (_ctx, msgs) => {
     int_to_ascii_bytes(msgs.length())
   })
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/slow.S/Collect", extra=[
     { name: b"grpc-timeout", value: b"1S", },
   ])
@@ -901,8 +901,8 @@ test "engine: a call inside its deadline is served normally" {
   let now = Ref(0L)
   engine.set_clock(() => now.val)
   engine.register("/quick.S/Go", req => concat(b"ok:", req))
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/quick.S/Go", extra=[
     { name: b"grpc-timeout", value: b"2S", },
   ])
@@ -939,11 +939,11 @@ test "engine: a call inside its deadline is served normally" {
 ///|
 /// Feed `headers` to a fresh engine as one complete request and return the `:status` of
 /// the response, so a test can say which requests are gRPC calls and which are not.
-fn status_of(headers : Array[Header]) -> Bytes raise {
+fn status_of(headers : Array[@header.Header]) -> Bytes raise {
   let engine = H2Server::new()
   engine.register("/echo.Echo/Say", req => req)
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let out = engine.feed(
     Headers(
@@ -972,8 +972,8 @@ fn status_of(headers : Array[Header]) -> Bytes raise {
 test "engine: a request that is not a gRPC call is refused with 415, not served" {
   let engine = H2Server::new()
   engine.register("/echo.Echo/Say", req => req)
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   // A browser form post aimed at the gRPC path: right method, wrong media type.
   let block = enc.encode([
@@ -1057,7 +1057,11 @@ test "engine: PROTOCOL-HTTP2's request line is enforced, not assumed" {
 ///|
 /// Open a call on stream `id` and leave it running — HEADERS without END_STREAM, so the
 /// stream stays open and counts against the concurrency limit.
-fn open_stream(engine : H2Server, enc : HpackEncoder, id : Int) -> Array[Frame] {
+fn open_stream(
+  engine : H2Server,
+  enc : @hpack.Encoder,
+  id : Int,
+) -> Array[Frame] {
   engine.feed(
     Headers(
       stream_id=id,
@@ -1075,7 +1079,7 @@ test "engine: one stream over the advertised limit is refused, not served" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
   engine.set_max_streams(2)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   // The peer is told the limit before it can exceed it.
   let mut advertised = -1
   for f in engine.preface() {
@@ -1140,7 +1144,7 @@ fn partial_message(n : Int) -> Bytes {
 test "engine: DATA past the connection receive window is a FLOW_CONTROL_ERROR" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let _ = open_stream(engine, enc, 1)
   // One octet more than the 65535 we advertised: the peer is not doing flow control,
@@ -1165,7 +1169,7 @@ test "engine: DATA past the connection receive window is a FLOW_CONTROL_ERROR" {
 test "engine: DATA past one stream's window resets it and hands the connection its credit back" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let _ = open_stream(engine, enc, 1)
   let _ = open_stream(engine, enc, 3)
@@ -1225,7 +1229,7 @@ test "engine: DATA past one stream's window resets it and hands the connection i
 fn interleave(intruder : Frame) -> Array[Frame] {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let _ = engine.feed(
     Headers(
@@ -1267,8 +1271,8 @@ test "engine: any frame interleaved into an open field block ends the connection
 test "engine: a request header block split across HEADERS + CONTINUATION is served" {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => concat(b"re:", req))
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/e.E/M")
   let _ = engine.feed(Settings(params=[], ack=false))
   let half = block.length() / 2
@@ -1318,8 +1322,8 @@ test "engine: a call already out of time when the request lands never reaches th
     ran.val = true
     req
   })
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/slow.S/Wait", extra=[
     { name: b"grpc-timeout", value: b"2S", },
   ])
@@ -1364,8 +1368,8 @@ test "engine: a WINDOW_UPDATE cannot nudge a call along after its deadline" {
   engine.register_server_streaming("/big.S/Stream", (_ctx, _req) => {
     [b"0123456789ABCDEFGHIJ"]
   })
-  let enc = HpackEncoder::new()
-  let dec = HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/big.S/Stream", extra=[
     { name: b"grpc-timeout", value: b"2S", },
   ])

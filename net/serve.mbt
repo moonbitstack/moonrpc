@@ -315,7 +315,7 @@ async fn unary_call(
   conn.write(@moonrpc.connection_preface)
   conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
   // request HEADERS (HPACK-encoded pseudo-headers) then a single DATA message.
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -343,7 +343,7 @@ async fn unary_call(
     ).encode(),
   )
   // read frames until the END_STREAM trailer; collect status, grpc-status, body.
-  let dec = @moonrpc.HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut status = b""
   let mut grpc_status = b""
   let mut body = b""
@@ -449,7 +449,7 @@ async fn streaming_call(
   )
   conn.write(@moonrpc.connection_preface)
   conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -479,7 +479,7 @@ async fn streaming_call(
       ).encode(),
     )
   }
-  let dec = @moonrpc.HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let acc = @buffer.Buffer()
   let mut status = b""
   let mut grpc_status = b""
@@ -739,7 +739,7 @@ async test "graceful_stop lets a call that is already open finish" {
     let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18079"))
     conn.write(@moonrpc.connection_preface)
     conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
-    let enc = @moonrpc.HpackEncoder::new()
+    let enc = @hpack.Encoder::new()
     let block = enc.encode([
       { name: b":method", value: b"POST", },
       { name: b":scheme", value: b"http", },
@@ -771,7 +771,7 @@ async test "graceful_stop lets a call that is already open finish" {
         padding=0,
       ).encode(),
     )
-    let dec = @moonrpc.HpackDecoder::new()
+    let dec = @hpack.Decoder::new()
     let mut grpc_status = b""
     let mut body = b""
     let mut done = false
@@ -816,7 +816,7 @@ async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
   )
   conn.write(@moonrpc.connection_preface)
   conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -845,7 +845,7 @@ async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
       padding=0,
     ).encode(),
   )
-  let dec = @moonrpc.HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut grpc_status = b""
   let mut done = false
   while !done {
@@ -897,7 +897,7 @@ async test "a call left waiting past its deadline is cut off when the connection
     let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18080"))
     conn.write(@moonrpc.connection_preface)
     conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
-    let enc = @moonrpc.HpackEncoder::new()
+    let enc = @hpack.Encoder::new()
     let block = enc.encode([
       { name: b":method", value: b"POST", },
       { name: b":scheme", value: b"http", },
@@ -923,7 +923,7 @@ async test "a call left waiting past its deadline is cut off when the connection
     // look at the clock, so the expired call is cut off between the two answers.
     conn.write(@moonrpc.Frame::Ping(payload=b"heke1228", ack=false).encode())
     conn.write(@moonrpc.Frame::Ping(payload=b"lfanke00", ack=false).encode())
-    let dec = @moonrpc.HpackDecoder::new()
+    let dec = @hpack.Decoder::new()
     let mut grpc_status = b""
     let mut acks = 0
     while acks < 2 {

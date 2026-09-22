@@ -10,7 +10,7 @@ test "dns: encode a recursion-desired A query for example.com, byte for byte" {
 
 ///|
 test "dns: decode an A response whose answer name is a compression pointer" {
-  // Header (id 0x1234, QR|RD|RA, AN=1), the question, then an answer whose NAME is the
+  // @header.Header (id 0x1234, QR|RD|RA, AN=1), the question, then an answer whose NAME is the
   // pointer 0xC00C back to the question name, TYPE=A, TTL=300, RDATA=93.184.216.34.
   let msg = b"\x12\x34\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01\xc0\x0c\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x22"
   let resp = dns_decode_response(msg)

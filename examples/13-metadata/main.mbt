@@ -71,7 +71,7 @@ fn hex(bs : Bytes) -> String {
 }
 
 ///|
-fn header_value(hs : Array[@moonrpc.Header], name : Bytes) -> Bytes {
+fn header_value(hs : Array[@header.Header], name : Bytes) -> Bytes {
   for h in hs {
     if h.name == name {
       return h.value

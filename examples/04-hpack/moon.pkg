@@ -1,5 +1,7 @@
 import {
-  "moonbitstack/moonrpc",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/huffman",
 }
 
 pkgtype(kind: "executable")

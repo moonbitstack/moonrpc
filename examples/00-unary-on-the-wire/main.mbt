@@ -27,7 +27,7 @@ fn hello_request(name : String) -> Bytes {
 ///|
 /// The HEADERS a unary caller sends: the HTTP/2 pseudo-headers, the gRPC content
 /// type, and `te: trailers`.
-fn request_headers(rpc : @moonrpc.Method) -> Array[@moonrpc.Header] {
+fn request_headers(rpc : @moonrpc.Method) -> Array[@header.Header] {
   [
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -43,7 +43,7 @@ fn request_headers(rpc : @moonrpc.Method) -> Array[@moonrpc.Header] {
 fn main {
   let rpc = @moonrpc.Method::{ service: "greet.Greeter", name: "SayHello", }
   let headers = request_headers(rpc)
-  let block = @moonrpc.HpackEncoder::new().encode(headers)
+  let block = @hpack.Encoder::new().encode(headers)
   let msg = @moonrpc.encode_message(hello_request("heke1228"))
   let head = @moonrpc.Frame::Headers(
     stream_id=1,
@@ -69,7 +69,7 @@ fn main {
   println(
     "\{wire.length()} octets on the wire: HEADERS + DATA(END_STREAM) on stream 1",
   )
-  let dec = @moonrpc.HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let mut off = 0
   try {
     while off < wire.length() {

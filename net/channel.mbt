@@ -95,7 +95,7 @@ async fn Channel::unary_once(
   self : Channel,
   path : String,
   request : Bytes,
-  metadata : Array[@moonrpc.Header],
+  metadata : Array[@header.Header],
   timeout_millis : Int?,
 ) -> @moonrpc.CallReply {
   let (id, frames) = self.engine.unary(
@@ -121,7 +121,7 @@ pub async fn Channel::unary(
   self : Channel,
   path : String,
   request : Bytes,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
   retry? : @moonrpc.RetryPolicy,
 ) -> @moonrpc.CallReply {
@@ -169,7 +169,7 @@ pub async fn Channel::server_streaming(
   self : Channel,
   path : String,
   request : Bytes,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   let id = self.engine.open(path, metadata~, timeout_millis?)
@@ -190,7 +190,7 @@ pub async fn Channel::stream_take(
   path : String,
   request : Bytes,
   count : Int,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
   half_close? : Bool = true,
 ) -> Array[Bytes] {
@@ -214,7 +214,7 @@ pub async fn Channel::client_streaming(
   self : Channel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   let id = self.engine.open(path, metadata~, timeout_millis?)
@@ -237,7 +237,7 @@ pub async fn Channel::bidi(
   self : Channel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   let id = self.engine.open(path, metadata~, timeout_millis?)

@@ -92,7 +92,7 @@ pub async fn MuxChannel::unary(
   self : MuxChannel,
   path : String,
   request : Bytes,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   let (id, frames) = self.engine.unary(
@@ -134,7 +134,7 @@ pub struct BidiStream {
 pub fn MuxChannel::open_bidi(
   self : MuxChannel,
   path : String,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
 ) -> BidiStream {
   let id = self.engine.open(path, metadata~)
   let inbox : @aqueue.Queue[Unit] = @aqueue.Queue::Queue(kind=Unbounded)

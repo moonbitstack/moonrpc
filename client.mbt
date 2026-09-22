@@ -16,7 +16,7 @@ pub(all) struct ClientCall {
   id : Int
   path : Bytes
   authority : Bytes
-  metadata : Array[Header]
+  metadata : Array[@header.Header]
   timeout : Bytes?
   mut out : Bytes
   mut out_off : Int
@@ -35,8 +35,8 @@ pub(all) struct ClientCall {
   // The response's `grpc-encoding` (empty = identity). A reply message with the
   // compression flag set under `gzip` is inflated before it reaches the caller.
   mut resp_encoding : Bytes
-  resp_headers : Array[Header]
-  resp_trailers : Array[Header]
+  resp_headers : Array[@header.Header]
+  resp_trailers : Array[@header.Header]
   mut headers_seen : Bool
   // A response header block (initial metadata or trailers) split across HEADERS +
   // CONTINUATION is accumulated here and decoded only once END_HEADERS arrives, since
@@ -60,7 +60,7 @@ fn ClientCall::new(
   id : Int,
   path : Bytes,
   authority : Bytes,
-  metadata : Array[Header],
+  metadata : Array[@header.Header],
   timeout : Bytes?,
   send_window : Int,
 ) -> ClientCall {
@@ -104,9 +104,9 @@ pub(all) struct CallReply {
   status : Bytes
   grpc_status : Int
   grpc_message : String
-  headers : Array[Header]
+  headers : Array[@header.Header]
   messages : Array[Bytes]
-  trailers : Array[Header]
+  trailers : Array[@header.Header]
 }
 
 ///|
@@ -115,8 +115,8 @@ pub(all) struct CallReply {
 /// odd stream id to allocate (§5.1.1), and the connection-level flow-control state
 /// bounded by the peer's SETTINGS.
 pub struct H2Client {
-  encoder : HpackEncoder
-  decoder : HpackDecoder
+  encoder : @hpack.Encoder
+  decoder : @hpack.Decoder
   calls : Map[Int, ClientCall]
   mut next_id : Int
   mut conn_send_window : Int
@@ -128,7 +128,7 @@ pub struct H2Client {
   // it were never seen by the server, so they are safe to re-issue on a fresh
   // connection. Mirrors `H2Server::last_client_stream`.
   mut goaway_last_stream_id : Int
-  // Header blocks arriving for streams this client no longer tracks. They still
+  // @header.Header blocks arriving for streams this client no longer tracks. They still
   // have to reach the decoder — HPACK's table is per-connection — so they are
   // accumulated here and dropped once complete.
   orphan_blocks : Map[Int, @buffer.Buffer]
@@ -197,8 +197,8 @@ fn emit_request_header_frames(
 /// A fresh client engine with no live calls. The first call takes stream id 1.
 pub fn H2Client::new() -> H2Client {
   {
-    encoder: HpackEncoder::new(),
-    decoder: HpackDecoder::new(),
+    encoder: @hpack.Encoder::new(),
+    decoder: @hpack.Decoder::new(),
     calls: Map([]),
     next_id: 1,
     conn_send_window: default_window_size,
@@ -228,7 +228,7 @@ pub fn H2Client::preface(self : H2Client) -> Array[Frame] {
 pub fn H2Client::open(
   self : H2Client,
   path : String,
-  metadata? : Array[Header] = [],
+  metadata? : Array[@header.Header] = [],
   authority? : String = "127.0.0.1",
   timeout_millis? : Int,
 ) -> Int {
@@ -247,8 +247,8 @@ pub fn H2Client::open(
   }
   let call = ClientCall::new(
     id,
-    ascii_to_bytes(path),
-    ascii_to_bytes(authority),
+    octets(path),
+    octets(authority),
     metadata,
     timeout,
     self.remote_initial_window,
@@ -299,7 +299,7 @@ pub fn H2Client::unary(
   self : H2Client,
   path : String,
   request : Bytes,
-  metadata? : Array[Header] = [],
+  metadata? : Array[@header.Header] = [],
   authority? : String = "127.0.0.1",
   timeout_millis? : Int,
 ) -> (Int, Array[Frame]) {
@@ -316,7 +316,7 @@ pub fn H2Client::unary(
 fn H2Client::produce_request(self : H2Client, c : ClientCall) -> Array[Frame] {
   let frames : Array[Frame] = []
   if !c.req_headers_sent {
-    let headers : Array[Header] = [
+    let headers : Array[@header.Header] = [
       { name: b":method", value: b"POST", },
       { name: b":scheme", value: b"http", },
       { name: b":path", value: c.path, },
@@ -582,7 +582,7 @@ fn H2Client::apply_setting(self : H2Client, id : Int, value : Int) -> Unit {
     }
   } else if id == settings_header_table_size {
     if value >= 0 {
-      self.encoder.table.set_max_size(value)
+      self.encoder.table.resize(value)
     }
   }
 }

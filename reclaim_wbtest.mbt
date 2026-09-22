@@ -20,7 +20,7 @@ test "client engine releases a finished call" {
 test "server engine drops a finished stream's buffers but keeps its state" {
   let e = H2Server::new()
   e.register("/echo.E/Say", req => req)
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },

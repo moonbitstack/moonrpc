@@ -59,7 +59,7 @@ fn run() -> Unit raise {
   let client = @moonrpc.H2Client::new()
   let (id, _req) = client.unary("/echo.Echo/Say", b"x")
   let _ = client.feed(Settings(params=[], ack=false))
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let hblock = enc.encode([
     { name: b":status", value: b"200", },
     { name: b"content-type", value: b"application/grpc", },

@@ -114,7 +114,7 @@ pub async fn ManagedChannel::unary(
   self : ManagedChannel,
   path : String,
   request : Bytes,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
   retry? : @moonrpc.RetryPolicy,
 ) -> @moonrpc.CallReply {
@@ -132,7 +132,7 @@ pub async fn ManagedChannel::unary_hedged(
   path : String,
   request : Bytes,
   hedging : @moonrpc.HedgingPolicy,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   @async.with_task_group(g => {
@@ -172,7 +172,7 @@ pub async fn ManagedChannel::server_streaming(
   self : ManagedChannel,
   path : String,
   request : Bytes,
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
@@ -185,7 +185,7 @@ pub async fn ManagedChannel::client_streaming(
   self : ManagedChannel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
@@ -198,7 +198,7 @@ pub async fn ManagedChannel::bidi(
   self : ManagedChannel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@moonrpc.Header] = [],
+  metadata? : Array[@header.Header] = [],
   timeout_millis? : Int,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }

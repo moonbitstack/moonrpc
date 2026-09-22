@@ -32,23 +32,23 @@ fn main {
 fn run() -> Unit raise {
   // The static table indexes the header fields every request repeats. Index 2 is the
   // `:method GET` entry; index 8 is `:status 200`.
-  let table = @moonrpc.hpack_static_table()
+  let table = @hpack.static_table
   println("static table: \{table.length()} entries")
-  match @moonrpc.hpack_static_entry(2) {
-    Some((n, v)) => println("  [2] = \{n}: \{v}")
+  match @hpack.entry(2) {
+    Some(h) => println("  [2] = \{h.ascii().0}: \{h.ascii().1}")
     None => ()
   }
-  match @moonrpc.hpack_static_entry(8) {
-    Some((n, v)) => println("  [8] = \{n}: \{v}")
+  match @hpack.entry(8) {
+    Some(h) => println("  [8] = \{h.ascii().0}: \{h.ascii().1}")
     None => ()
   }
 
   // Prefix integers (§5.1): a value below the prefix max fits one octet; 1337 with a
   // 5-bit prefix spills into continuation octets. Encode then decode straight back.
   for value in [10, 31, 1337, 66666] {
-    let enc = @moonrpc.hpack_encode_int(value, 5)
+    let enc = @hpack.integer(value, 5)
     let status = try {
-      let (back, consumed) = @moonrpc.hpack_decode_int(enc, 0, 5)
+      let (back, consumed) = @hpack.read_integer(enc, 0, 5)
       if back == value && consumed == enc.length() {
         "ok"
       } else {
@@ -63,50 +63,46 @@ fn run() -> Unit raise {
   // String literals (§5.2): the raw form and the Huffman form of the same octets. The
   // `auto` encoder keeps whichever is shorter, setting the `H` bit when it Huffman-codes.
   let host = b"www.example.com"
-  let raw = @moonrpc.hpack_encode_string(host)
-  let huff = @moonrpc.hpack_encode_string_huffman(host)
-  let auto = @moonrpc.hpack_encode_string_auto(host)
+  let raw = @hpack.string(host[:], huffman=false)
+  let huff = @hpack.string(host[:])
+  let auto = @hpack.string(host[:])
   println("string \"www.example.com\":")
+  println("  raw     \{raw.length()} octets, H=\{@hpack.is_huffman(raw, 0)}")
   println(
-    "  raw     \{raw.length()} octets, H=\{@moonrpc.hpack_string_is_huffman(raw, 0)}",
-  )
-  println(
-    "  huffman \{huff.length()} octets, H=\{@moonrpc.hpack_string_is_huffman(huff, 0)}  (§C.4.1: \{hex(@moonrpc.huffman_encode(host))})",
+    "  huffman \{huff.length()} octets, H=\{@hpack.is_huffman(huff, 0)}  (§C.4.1: \{hex(@huffman.encode(host))})",
   )
   println("  auto picks the huffman form: \{auto == huff}")
-  let (read_back, _) = @moonrpc.hpack_read_string(auto, 0)
+  let (read_back, _) = @hpack.read_string(auto, 0)
   println("  decoded back: \{read_back == host}")
 
   // The dynamic table (§4): a FIFO of recently seen fields, each costing
   // `name + value + 32` octets, bounded by its max size. Filling past the bound evicts
   // the oldest entry; shrinking the bound evicts to fit.
-  let tbl = @moonrpc.DynamicTable::new(max_size=100)
+  let tbl = @hpack.Table::new(limit=100)
   tbl.add(b"custom-key", b"heke1228")
   tbl.add(b"x-trace-id", b"23333")
-  println(
-    "dynamic table: \{tbl.count()} entries, \{tbl.current_size()}/100 octets",
-  )
+  println("dynamic table: \{tbl.count()} entries, \{tbl.size()}/100 octets")
   tbl.add(b"another-header", b"a fairly long value that forces eviction")
   println(
-    "  after a large insert: \{tbl.count()} entries, \{tbl.current_size()}/100 octets",
+    "  after a large insert: \{tbl.count()} entries, \{tbl.size()}/100 octets",
   )
-  tbl.set_max_size(40)
+  tbl.resize(40)
   println(
-    "  after shrinking to 40: \{tbl.count()} entries, \{tbl.current_size()}/40 octets",
+    "  after shrinking to 40: \{tbl.count()} entries, \{tbl.size()}/40 octets",
   )
-  println("  size-update opcode: \{hex(@moonrpc.hpack_encode_size_update(40))}")
+  println("  size-update opcode: \{hex(@hpack.size_update(40))}")
 
   // The stateful encoder/decoder pair over a real header list — the block a client puts
   // in a HEADERS frame, decoded back to the same fields.
-  let enc = @moonrpc.HpackEncoder::new(huffman=true)
-  let headers : Array[@moonrpc.Header] = [
+  let enc = @hpack.Encoder::new(huffman=true)
+  let headers : Array[@header.Header] = [
     { name: b":method", value: b"POST", },
     { name: b":path", value: b"/greet.Greeter/SayHello", },
     { name: b":authority", value: b"www.example.com", },
     { name: b"content-type", value: b"application/grpc+proto", },
   ]
   let block = enc.encode(headers)
-  let dec = @moonrpc.HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let decoded = dec.decode(block)
   println(
     "header block: \{headers.length()} fields -> \{block.length()} octets -> \{decoded.length()} fields, round-trip \{decoded == headers}",

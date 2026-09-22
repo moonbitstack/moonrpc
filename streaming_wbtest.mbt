@@ -31,12 +31,12 @@ struct Collected {
   messages : Array[Bytes]
   mut grpc_status : Bytes
   mut trailer_seen : Bool
-  mut header_meta : Array[Header]
-  mut trailer_meta : Array[Header]
+  mut header_meta : Array[@header.Header]
+  mut trailer_meta : Array[@header.Header]
 }
 
 ///|
-fn collect(frames : Array[Frame], dec : HpackDecoder) -> Collected raise {
+fn collect(frames : Array[Frame], dec : @hpack.Decoder) -> Collected raise {
   let acc = Buffer()
   let c : Collected = {
     messages: [],
@@ -77,8 +77,8 @@ fn collect(frames : Array[Frame], dec : HpackDecoder) -> Collected raise {
 fn drive_request(
   engine : H2Server,
   request_frames : Array[Frame],
-) -> (Collected, HpackDecoder) raise {
-  let dec = HpackDecoder::new()
+) -> (Collected, @hpack.Decoder) raise {
+  let dec = @hpack.Decoder::new()
   let all : Array[Frame] = []
   for f in request_frames {
     for out in engine.feed(f) {
@@ -89,7 +89,7 @@ fn drive_request(
 }
 
 ///|
-fn req_headers(enc : HpackEncoder, path : Bytes, end_stream~ : Bool) -> Frame {
+fn req_headers(enc : @hpack.Encoder, path : Bytes, end_stream~ : Bool) -> Frame {
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -120,7 +120,7 @@ test "server-streaming: one request fans out to many ordered reply messages" {
     let base = req
     [cat(base, b"-1"), cat(base, b"-2"), cat(base, b"-3")]
   })
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let (c, _) = drive_request(engine, [
     req_headers(enc, b"/count.C/Up", end_stream=false),
@@ -148,7 +148,7 @@ test "client-streaming: many request messages aggregate into one reply" {
     }
     buf.to_bytes()
   })
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   let (c, _) = drive_request(engine, [
     req_headers(enc, b"/sum.S/Add", end_stream=false),
@@ -177,11 +177,11 @@ test "bidi-streaming: replies interleave with requests, each message echoed as i
       on_end: () => [b"bye"],
     }
   })
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
   // feed one message at a time and watch a reply come back before the next arrives.
   let _ = engine.feed(req_headers(enc, b"/chat.C/Echo", end_stream=false))
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let after_first = collect(
     engine.feed(data_msg(b"one", end_stream=false)),
     dec,
@@ -215,7 +215,7 @@ test "server-streaming honours flow control across the multi-message exchange" {
   engine.register_server_streaming("/big.B/Stream", (_ctx, _req) => {
     [b"AAAAAAAAAA", b"BBBBBBBBBB", b"CCCCCCCCCC"]
   })
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   // advertise a tiny 8-octet initial window before the stream opens.
   let _ = engine.feed(
     Settings(params=[(settings_initial_window_size, 8)], ack=false),
@@ -265,7 +265,7 @@ test "metadata and grpc-timeout deadline are surfaced to the handler" {
     buf.write_bytes(deadline)
     buf.to_bytes()
   })
-  let enc = HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":path", value: b"/meta.M/Echo", },
@@ -275,7 +275,7 @@ test "metadata and grpc-timeout deadline are surfaced to the handler" {
     { name: b"x-token", value: b"secret", },
   ])
   let _ = engine.feed(Settings(params=[], ack=false))
-  let dec = HpackDecoder::new()
+  let dec = @hpack.Decoder::new()
   let out = engine.feed(
     Headers(
       stream_id=1,

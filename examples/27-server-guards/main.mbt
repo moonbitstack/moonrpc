@@ -18,11 +18,11 @@ fn ascii(bs : Bytes) -> String {
 ///|
 /// A well-formed gRPC request block plus whatever `extra` the demonstration needs.
 fn request(
-  enc : @moonrpc.HpackEncoder,
+  enc : @hpack.Encoder,
   path : Bytes,
-  extra? : Array[@moonrpc.Header] = [],
+  extra? : Array[@header.Header] = [],
 ) -> Bytes {
-  let headers : Array[@moonrpc.Header] = [
+  let headers : Array[@header.Header] = [
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
     { name: b":path", value: path, },
@@ -71,10 +71,7 @@ fn describe(f : @moonrpc.Frame) -> String {
 
 ///|
 /// The `:status` and `grpc-status` of a response, for the answers that are one HEADERS.
-fn answer(
-  frames : Array[@moonrpc.Frame],
-  dec : @moonrpc.HpackDecoder,
-) -> String raise {
+fn answer(frames : Array[@moonrpc.Frame], dec : @hpack.Decoder) -> String raise {
   let mut http = b"-"
   let mut grpc = b"-"
   for f in frames {
@@ -97,7 +94,7 @@ fn answer(
 /// `application/grpc`, and `te` carries `trailers`. Anything else gets an HTTP status,
 /// because a 200 is what a plain HTTP client reads as success.
 fn request_line() -> Unit raise {
-  let cases : Array[(String, Array[@moonrpc.Header])] = [
+  let cases : Array[(String, Array[@header.Header])] = [
     (
       "a browser form post",
       [
@@ -138,8 +135,8 @@ fn request_line() -> Unit raise {
     let (what, headers) = c
     let server = @moonrpc.H2Server::new()
     server.register("/echo.Echo/Say", req => req)
-    let enc = @moonrpc.HpackEncoder::new()
-    let dec = @moonrpc.HpackDecoder::new()
+    let enc = @hpack.Encoder::new()
+    let dec = @hpack.Decoder::new()
     let _ = server.feed(Settings(params=[], ack=false))
     let out = open_call(server, enc.encode(headers), 1, true)
     println("\{what} -> \{answer(out, dec)}")
@@ -153,7 +150,7 @@ fn stream_limit() -> Unit {
   let server = @moonrpc.H2Server::new()
   server.register("/echo.Echo/Say", req => req)
   server.set_max_streams(2)
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   for f in server.preface() {
     if f is Settings(params~, ..) {
       for p in params {
@@ -177,7 +174,7 @@ fn stream_limit() -> Unit {
 fn receive_window() -> Unit {
   let server = @moonrpc.H2Server::new()
   server.register("/echo.Echo/Say", req => req)
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = server.feed(Settings(params=[], ack=false))
   let _ = open_call(server, request(enc, b"/echo.Echo/Say"), 1, false)
   let buf = Buffer()
@@ -199,7 +196,7 @@ fn receive_window() -> Unit {
 fn field_block() -> Unit {
   let server = @moonrpc.H2Server::new()
   server.register("/echo.Echo/Say", req => req)
-  let enc = @moonrpc.HpackEncoder::new()
+  let enc = @hpack.Encoder::new()
   let _ = server.feed(Settings(params=[], ack=false))
   let _ = server.feed(
     Headers(
@@ -230,8 +227,8 @@ fn deadline() -> Unit raise {
     now.val = now.val + 5000L
     req
   })
-  let enc = @moonrpc.HpackEncoder::new()
-  let dec = @moonrpc.HpackDecoder::new()
+  let enc = @hpack.Encoder::new()
+  let dec = @hpack.Decoder::new()
   let _ = server.feed(Settings(params=[], ack=false))
   let block = request(enc, b"/slow.S/Wait", extra=[
     { name: b"grpc-timeout", value: b"2S", },

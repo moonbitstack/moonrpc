@@ -21,13 +21,7 @@ fn fault_frames(fault : H2Fault, last_stream : Int) -> Array[Frame] {
   match fault {
     StreamFault(id~, code~, ..) => [RstStream(stream_id=id, error_code=code)]
     ConnFault(code~, why~) =>
-      [
-        GoAway(
-          last_stream_id=last_stream,
-          error_code=code,
-          debug=ascii_to_bytes(why),
-        ),
-      ]
+      [GoAway(last_stream_id=last_stream, error_code=code, debug=octets(why))]
   }
 }
 
