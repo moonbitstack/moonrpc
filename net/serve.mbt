@@ -413,25 +413,6 @@ async test "an unregistered method is served UNIMPLEMENTED over h2c" {
 }
 
 ///|
-/// Split a run of concatenated length-prefixed gRPC messages into their payloads.
-fn split_messages(data : Bytes) -> Array[Bytes] {
-  let out : Array[Bytes] = []
-  let mut off = 0
-  while data.length() - off >= 5 {
-    let len = (data[off + 1].to_int() << 24) |
-      (data[off + 2].to_int() << 16) |
-      (data[off + 3].to_int() << 8) |
-      data[off + 4].to_int()
-    if data.length() - off < 5 + len {
-      break
-    }
-    out.push(data[off + 5:off + 5 + len].to_owned())
-    off = off + 5 + len
-  }
-  out
-}
-
-///|
 /// A streaming in-process h2c gRPC client: it opens one stream, sends every
 /// message in `requests` as its own length-prefixed DATA (the last carrying
 /// END_STREAM, or END_STREAM on the HEADERS when there are none), then reads the
@@ -509,7 +490,7 @@ async fn streaming_call(
     }
   }
   conn.close()
-  (status, grpc_status, split_messages(acc.to_bytes()))
+  (status, grpc_status, @moonrpc.split_messages(acc.to_bytes()))
 }
 
 ///|

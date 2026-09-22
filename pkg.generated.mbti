@@ -123,6 +123,8 @@ pub let max_header_list_size : Int
 
 pub let max_message_size : Int
 
+pub fn message_len(BytesView, at? : Int) -> Int?
+
 pub fn metadata_value_from_wire(Bytes, Bytes) -> Bytes
 
 pub fn metadata_value_to_wire(Bytes, Bytes) -> Bytes
@@ -146,6 +148,8 @@ pub let settings_max_concurrent_streams : Int
 pub let settings_max_frame_size : Int
 
 pub let settings_max_header_list_size : Int
+
+pub fn split_messages(Bytes) -> Array[Bytes]
 
 pub fn stream_id_valid_for_initiator(Int, by_client~ : Bool) -> Bool
 

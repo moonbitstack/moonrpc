@@ -4,25 +4,6 @@
 // stream terminator or the per-message framing and these go red.
 
 ///|
-/// Split a run of concatenated length-prefixed gRPC messages into their payloads.
-fn split_messages(data : Bytes) -> Array[Bytes] {
-  let out : Array[Bytes] = []
-  let mut off = 0
-  while data.length() - off >= 5 {
-    let len = (data[off + 1].to_int() << 24) |
-      (data[off + 2].to_int() << 16) |
-      (data[off + 3].to_int() << 8) |
-      data[off + 4].to_int()
-    if data.length() - off < 5 + len {
-      break
-    }
-    out.push(data[off + 5:off + 5 + len].to_owned())
-    off = off + 5 + len
-  }
-  out
-}
-
-///|
 /// Collect a response: the reassembled reply messages (in order), the `grpc-status`
 /// value, whether a trailer (END_STREAM HEADERS) was seen, and the response initial
 /// and trailing metadata. A single decoder threads through every HEADERS block in

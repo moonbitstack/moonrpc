@@ -599,10 +599,7 @@ fn drain_messages(s : SrvStream) -> Unit {
   let mut off = s.req_off
   while n - off >= 5 {
     let compressed = all[off].to_int() != 0
-    let len = (all[off + 1].to_int() << 24) |
-      (all[off + 2].to_int() << 16) |
-      (all[off + 3].to_int() << 8) |
-      all[off + 4].to_int()
+    let len = message_len(all[:], at=off).unwrap()
     // A high-bit-set prefix decodes negative; either that or a length past the cap is
     // rejected before it can drive an out-of-bounds slice or pin unbounded buffer.
     if len < 0 || len > max_message_size {

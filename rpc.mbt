@@ -20,10 +20,7 @@ pub fn encode_message(payload : Bytes, compressed? : Bool = false) -> Bytes {
   let n = payload.length()
   let buf = Buffer()
   buf.write_byte((if compressed { 1 } else { 0 }).to_byte())
-  buf.write_byte((n >> 24).to_byte())
-  buf.write_byte((n >> 16).to_byte())
-  buf.write_byte((n >> 8).to_byte())
-  buf.write_byte(n.to_byte())
+  @fixed.write_u32(buf, n.reinterpret_as_uint())
   buf.write_bytes(payload)
   buf.to_bytes()
 }
@@ -32,20 +29,41 @@ pub fn encode_message(payload : Bytes, compressed? : Bool = false) -> Bytes {
 /// Decode one gRPC length-prefixed message from the front of `data`, returning
 /// `(compressed, payload)`, or `None` if fewer than a full frame is present.
 pub fn decode_message(data : Bytes) -> (Bool, Bytes)? {
-  if data.length() < 5 {
-    return None
-  }
-  let flag = data[0].to_int()
-  let len = (data[1].to_int() << 24) |
-    (data[2].to_int() << 16) |
-    (data[3].to_int() << 8) |
-    data[4].to_int()
+  guard message_len(data[:]) is Some(len) else { return None }
   // A high-bit-set prefix decodes to a negative `Int`; compare without recomputing
   // `5 + len` (which would wrap) so a hostile length can't slice past the buffer.
   if len < 0 || len > data.length() - 5 {
     return None
   }
-  Some((flag != 0, data[5:5 + len].to_owned()))
+  Some((data[0].to_int() != 0, data[5:5 + len].to_owned()))
+}
+
+///|
+/// The payload length of the length-prefixed message at `at`, or `None` when fewer
+/// than the five octets of a prefix are there.
+///
+/// A prefix with its high bit set reads back negative, which is how a hostile length
+/// is told from a real one before anything is sliced on it. Every reader of this
+/// framing goes through here — there are five of them across the client, the server
+/// and the socket transport, and they have to agree.
+pub fn message_len(data : BytesView, at? : Int = 0) -> Int? {
+  @fixed.read_u32(data, at=at + 1).map(v => v.reinterpret_as_int())
+}
+
+///|
+/// Split a run of concatenated length-prefixed messages into their payloads, stopping
+/// at the first one that has not fully arrived.
+pub fn split_messages(data : Bytes) -> Array[Bytes] {
+  let out : Array[Bytes] = []
+  let mut off = 0
+  while message_len(data[:], at=off) is Some(len) {
+    if len < 0 || data.length() - off < 5 + len {
+      break
+    }
+    out.push(data[off + 5:off + 5 + len].to_owned())
+    off = off + 5 + len
+  }
+  out
 }
 
 ///|

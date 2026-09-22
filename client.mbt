@@ -744,10 +744,7 @@ fn drain_call_messages(c : ClientCall) -> Unit {
   let mut off = c.data_off
   while n - off >= 5 {
     let compressed = all[off].to_int() != 0
-    let len = (all[off + 1].to_int() << 24) |
-      (all[off + 2].to_int() << 16) |
-      (all[off + 3].to_int() << 8) |
-      all[off + 4].to_int()
+    let len = message_len(all[:], at=off).unwrap()
     // A high-bit-set prefix decodes negative; reject that or a length past the cap
     // (surfacing RESOURCE_EXHAUSTED) instead of slicing the buffer out of bounds.
     if len < 0 || len > max_message_size {

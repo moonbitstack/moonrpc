@@ -214,39 +214,33 @@ fn be_write_u16(buf : Buffer, n : Int) -> Unit {
   buf.write_byte(n.to_byte())
 }
 
+// The frame header's widths are `moonvar`'s arithmetic. These wrappers stay because a
+// frame field is read at an offset the length check has already cleared, so they answer
+// a value rather than an `Option` the caller would have to unwrap at eighty sites.
+
 ///|
 fn be_write_u24(buf : Buffer, n : Int) -> Unit {
-  buf.write_byte((n >> 16).to_byte())
-  buf.write_byte((n >> 8).to_byte())
-  buf.write_byte(n.to_byte())
+  @fixed.write_u24(buf, n)
 }
 
 ///|
 fn be_write_u32(buf : Buffer, n : Int) -> Unit {
-  buf.write_byte((n >> 24).to_byte())
-  buf.write_byte((n >> 16).to_byte())
-  buf.write_byte((n >> 8).to_byte())
-  buf.write_byte(n.to_byte())
+  @fixed.write_u32(buf, n.reinterpret_as_uint())
 }
 
 ///|
 fn be_read_u16(data : Bytes, off : Int) -> Int {
-  (data[off].to_int() << 8) | data[off + 1].to_int()
+  @fixed.read_u16(data[:], at=off).unwrap()
 }
 
 ///|
 fn be_read_u24(data : Bytes, off : Int) -> Int {
-  (data[off].to_int() << 16) |
-  (data[off + 1].to_int() << 8) |
-  data[off + 2].to_int()
+  @fixed.read_u24(data[:], at=off).unwrap()
 }
 
 ///|
 fn be_read_u32(data : Bytes, off : Int) -> Int {
-  (data[off].to_int() << 24) |
-  (data[off + 1].to_int() << 16) |
-  (data[off + 2].to_int() << 8) |
-  data[off + 3].to_int()
+  @fixed.read_u32(data[:], at=off).unwrap().reinterpret_as_int()
 }
 
 ///|
