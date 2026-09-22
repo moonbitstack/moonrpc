@@ -62,23 +62,21 @@ pub fn RetryPolicy::backoff_millis(
   self : RetryPolicy,
   retry_index : Int,
 ) -> Int {
-  let mut backoff = self.initial_backoff_millis.to_double()
-  for _i = 1; _i < retry_index; _i = _i + 1 {
-    backoff = backoff * self.backoff_multiplier
-    if backoff >= self.max_backoff_millis.to_double() {
-      return self.max_backoff_millis
-    }
-  }
-  let capped = if backoff >= self.max_backoff_millis.to_double() {
-    self.max_backoff_millis
-  } else {
-    backoff.to_int()
-  }
+  // Before the first retry there is nothing to back off from, and the policy's own
+  // starting value is the answer; the arithmetic after it is moonpool's.
+  let index = if retry_index < 1 { 1 } else { retry_index }
+  let schedule = @moonpool.Backoff::new(
+    base=@moondate.Span::new(millis=self.initial_backoff_millis.to_int64()),
+    factor=self.backoff_multiplier,
+    cap=@moondate.Span::new(millis=self.max_backoff_millis.to_int64()),
+    jitter=Rigid,
+  )
+  let ms = (schedule.ceiling(index).nanos / 1_000_000L).to_int()
   // Never sleep a negative duration, even if a policy is misconfigured with a negative
   // backoff.
-  if capped < 0 {
+  if ms < 0 {
     0
   } else {
-    capped
+    ms
   }
 }

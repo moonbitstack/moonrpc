@@ -467,21 +467,15 @@ fn encode_status_details(
 /// `%XX` with uppercase hex. Lets a status message carry spaces, punctuation, and
 /// non-ASCII text on the header line safely.
 fn percent_encode(msg : String) -> Bytes {
-  let src = @utf8.encode(msg)
-  let buf = Buffer()
-  for i = 0; i < src.length(); i = i + 1 {
-    let c = src[i].to_int()
-    if c >= 0x20 && c <= 0x7E && c != 0x25 {
-      buf.write_byte(src[i])
-    } else {
-      let hex = "0123456789ABCDEF"
-      buf.write_byte(b'%')
-      buf.write_byte(hex[(c >> 4) & 0xf].to_int().to_byte())
-      buf.write_byte(hex[c & 0xf].to_int().to_byte())
-    }
-  }
-  buf.to_bytes()
+  // moonhttp keeps the RFC 3986 unreserved set; gRPC keeps all of printable ASCII
+  // but `%`, so the rest of that range is named here as what to leave alone.
+  @utf8.encode(@mime.percent_encode(msg, safe=grpc_safe))
 }
+
+///|
+/// The printable ASCII a `grpc-message` leaves as it is beyond RFC 3986's unreserved
+/// characters: everything from space to `~` except `%`, which introduces an escape.
+let grpc_safe : String = " !\"#$&'()*+,/:;<=>?@[\\]^`{|}"
 
 ///|
 /// A small non-negative integer as its ASCII decimal `Bytes` (for `grpc-status`).

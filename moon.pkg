@@ -5,6 +5,9 @@
 // async TLS layer exposes no ALPN) is sequenced after.
 import {
   "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moondate",
+  "moonbitstack/moonpool",
+  "moonbitstack/moonhttp/mime",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
