@@ -19,15 +19,6 @@ SECTIONS = [
      "FileDescriptorProto / FileDescriptorSet wire bytes of descriptor.proto — the unit "
      "Server Reflection returns, encoding from a programmatic model and decoding a "
      "protoc-produced FileDescriptorSet through the same types."),
-    ("hpack", "hpack.mbt", "HPACK primitives",
-     "The RFC 7541 header-compression primitives: the 61-entry static table, the "
-     "prefix-integer representation (§5.1), and non-Huffman string literals (§5.2)."),
-    ("huffman", "huffman.mbt", "HPACK Huffman coding",
-     "The RFC 7541 Appendix B canonical Huffman code table with a prefix-trie "
-     "decoder and an EOS-padding encoder (§5.2)."),
-    ("hpack_dynamic", "hpack_dynamic.mbt", "HPACK dynamic table & codec",
-     "The size-bounded dynamic table with eviction (§4), the six header-field "
-     "representations (§6), and a stateful HpackEncoder / HpackDecoder pair."),
     ("frame", "frame.mbt", "HTTP/2 frame layer",
      "The RFC 7540 frame codec: the 9-octet header and all ten frame types "
      "(DATA / HEADERS / PRIORITY / RST_STREAM / SETTINGS / PUSH_PROMISE / PING / "
@@ -85,9 +76,10 @@ SECTIONS = [
      "The native client transports: a multiplexing channel that demultiplexes "
      "concurrent calls on one connection, a managed channel that dials several "
      "backends and routes around the dead ones, and the resolver behind it."),
-    ("codecs", ("gzip.mbt", "metadata.mbt"), "Codecs",
-     "The gzip message compression gRPC negotiates, and the metadata rules that "
-     "decide which keys travel base64 encoded."),
+    ("codecs", "metadata.mbt", "Metadata",
+     "The metadata rules that decide which keys travel base64 encoded. The gzip "
+     "compression gRPC negotiates is moonzip's, and the header compression is "
+     "moonhttp's."),
 ]
 KIND = {"struct": "struct", "enum": "enum", "fn": "fn", "type": "type", "let": "let"}
 
