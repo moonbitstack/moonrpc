@@ -812,43 +812,9 @@ pub fn encode_grpc_timeout(millis : Int) -> Bytes {
 }
 
 ///|
-/// The hex-digit value of an ASCII byte (`0-9`, `A-F`, `a-f`), or `None`.
-fn hex_val(b : Byte) -> Int? {
-  let c = b.to_int()
-  if c >= 0x30 && c <= 0x39 {
-    Some(c - 0x30)
-  } else if c >= 0x41 && c <= 0x46 {
-    Some(c - 0x41 + 10)
-  } else if c >= 0x61 && c <= 0x66 {
-    Some(c - 0x61 + 10)
-  } else {
-    None
-  }
-}
-
-///|
 /// Percent-decode a received `grpc-message` value — the inverse of the server's `percent_encode`
 /// (gRPC spec §"Responses"): each `%XX` escape becomes the byte its two hex digits name, every other
 /// byte passes through, and a malformed escape is left literal; the result is read as UTF-8.
 pub fn percent_decode(v : Bytes) -> String {
-  let out = Buffer()
-  let mut i = 0
-  while i < v.length() {
-    if v[i] == b'%' && i + 2 < v.length() {
-      match (hex_val(v[i + 1]), hex_val(v[i + 2])) {
-        (Some(hi), Some(lo)) => {
-          out.write_byte((hi * 16 + lo).to_byte())
-          i = i + 3
-        }
-        _ => {
-          out.write_byte(v[i])
-          i = i + 1
-        }
-      }
-    } else {
-      out.write_byte(v[i])
-      i = i + 1
-    }
-  }
-  @utf8.decode_lossy(out.to_bytes()[:])
+  @utf8.decode_lossy(@mime.percent_decode(v[:])[:])
 }

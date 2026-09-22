@@ -2,6 +2,7 @@ import {
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonzip/gzip",
   "moonbitstack/moonrpc",
+  "moonbitstack/moonbase/base16",
 }
 
 pkgtype(kind: "executable")

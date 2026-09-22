@@ -1,5 +1,6 @@
 import {
   "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonbase/base16",
 }
 
 pkgtype(kind: "executable")

@@ -77,7 +77,7 @@ fn dns_read_name(msg : Bytes, start : Int) -> (String, Int) {
       break
     }
     if (len & 0xC0) == 0xC0 {
-      let ptr = ((len & 0x3F) << 8) | msg[off + 1].to_int()
+      let ptr = be_read_u16(msg, off) & 0x3FFF
       if next < 0 {
         next = off + 2
       }
@@ -110,44 +110,18 @@ fn dns_format_a(msg : Bytes, off : Int) -> String {
 }
 
 ///|
-let dns_hex_digits : Bytes = b"0123456789abcdef"
-
-///|
-/// A 16-bit group as lowercase hex with no leading zeros (but at least one digit).
-fn dns_hex_group(n : Int) -> String {
-  if n == 0 {
-    return "0"
-  }
-  let buf = Buffer()
-  let mut started = false
-  for shift = 12; shift >= 0; shift = shift - 4 {
-    let d = (n >> shift) & 0xF
-    if d != 0 || started {
-      started = true
-      buf.write_byte(dns_hex_digits[d])
-    }
-  }
-  @utf8.decode(buf.to_bytes()) catch {
-    _ => "0"
-  }
-}
-
-///|
 /// Format a 16-octet AAAA record as eight colon-separated hextets (RFC 4291 §2.2 form
 /// 1 — the full, uncompressed representation, which is unambiguous and connectable).
 fn dns_format_aaaa(msg : Bytes, off : Int) -> String {
-  let out = Buffer()
+  let out = StringBuilder()
   for g = 0; g < 8; g = g + 1 {
     if g > 0 {
-      out.write_byte(b':')
+      out.write_char(':')
     }
-    let group = (msg[off + g * 2].to_int() << 8) | msg[off + g * 2 + 1].to_int()
-    let hex = @utf8.encode(dns_hex_group(group))
-    out.write_bytes(hex)
+    // Lowercase with no leading zeros, which is RFC 5952's hextet.
+    out.write_string(be_read_u16(msg, off + g * 2).to_string(radix=16))
   }
-  @utf8.decode(out.to_bytes()) catch {
-    _ => ""
-  }
+  out.to_string()
 }
 
 ///|

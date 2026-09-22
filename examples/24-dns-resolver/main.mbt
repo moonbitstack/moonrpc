@@ -20,20 +20,6 @@ fn push_all(buf : Buffer, xs : Array[Int]) -> Unit {
 }
 
 ///|
-fn hex(bs : Bytes) -> String {
-  let digits = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
-  let buf = StringBuilder()
-  for b in bs {
-    let v = b.to_int() & 0xFF
-    buf.write_char(digits[v >> 4])
-    buf.write_char(digits[v & 0xF])
-  }
-  buf.to_string()
-}
-
-///|
 /// Build the wire response `8.8.8.8` would return for `grpc.example.com`: a header, the
 /// echoed question, and three answers. Answer names use the §4.1.4 compression pointer
 /// (`0xC00C`) back to the question name at offset 12.
@@ -92,7 +78,7 @@ fn run() -> Unit {
   let query = @moonrpc.dns_encode_query(
     0x1234, "grpc.example.com", @moonrpc.dns_type_a,
   )
-  println("A query (\{query.length()} octets): \{hex(query)}")
+  println("A query (\{query.length()} octets): \{@base16.encode(query)}")
 
   // Decode the response and read the addresses out.
   let response = @moonrpc.dns_decode_response(build_response())

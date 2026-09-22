@@ -411,8 +411,8 @@ test "engine: a gzip-compressed request is inflated and reaches the handler" {
   )
   // A real gzip member of "hello, gzip world" (CPython gzip.compress), framed as one
   // gRPC message with the compression flag set.
-  let plaintext = unhex("68656c6c6f2c20677a697020776f726c64")
-  let gz = unhex(
+  let plaintext = @base16.decode_lossy("68656c6c6f2c20677a697020776f726c64")
+  let gz = @base16.decode_lossy(
     "1f8b0800cb9b6a6a02ffcb48cdc9c9d75148afca2c5028cf2fca490100eb83468211000000",
   )
   let out = engine.feed(

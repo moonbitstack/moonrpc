@@ -57,20 +57,6 @@ fn ascii(bs : Bytes) -> String {
 }
 
 ///|
-fn hex(bs : Bytes) -> String {
-  let digits = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
-  let buf = StringBuilder()
-  for b in bs {
-    let v = b.to_int() & 0xFF
-    buf.write_char(digits[v >> 4])
-    buf.write_char(digits[v & 0xF])
-  }
-  buf.to_string()
-}
-
-///|
 fn header_value(hs : Array[@header.Header], name : Bytes) -> Bytes {
   for h in hs {
     if h.name == name {
@@ -89,7 +75,9 @@ fn run() -> Unit raise {
   println("is_binary_metadata(trace-bin): \{is_bin}")
   println("is_binary_metadata(x-user):    \{is_txt}")
   let wire = @moonrpc.metadata_value_to_wire(b"trace-bin", trace)
-  println("  trace bytes \{hex(trace)} -> on the wire \{ascii(wire)}")
+  println(
+    "  trace bytes \{@base16.encode(trace)} -> on the wire \{ascii(wire)}",
+  )
   let back = @moonrpc.metadata_value_from_wire(b"trace-bin", wire)
   println("  base64 round-trip: \{back == trace}")
 
@@ -121,7 +109,7 @@ fn run() -> Unit raise {
   println("call status: \{reply.grpc_status}")
   println("response header x-echo-user: \{echoed_user}")
   println(
-    "response trailer trace-bin: \{hex(echoed_trace)}, matches sent: \{echoed_trace == trace}",
+    "response trailer trace-bin: \{@base16.encode(echoed_trace)}, matches sent: \{echoed_trace == trace}",
   )
 }
 

@@ -8,27 +8,13 @@
 //     moon run examples/01-message-framing
 
 ///|
-fn hex(bs : Bytes) -> String {
-  let digits = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
-  let buf = StringBuilder()
-  for b in bs {
-    let v = b.to_int() & 0xFF
-    buf.write_char(digits[v >> 4])
-    buf.write_char(digits[v & 0xF])
-  }
-  buf.to_string()
-}
-
-///|
 fn show(label : String, frame : Bytes) -> Unit {
   match @moonrpc.decode_message(frame) {
     Some((compressed, payload)) =>
       println(
-        "\{label}: \{hex(frame)}  ->  compressed=\{compressed}, \{payload.length()} body octets",
+        "\{label}: \{@base16.encode(frame)}  ->  compressed=\{compressed}, \{payload.length()} body octets",
       )
-    None => println("\{label}: \{hex(frame)}  ->  incomplete")
+    None => println("\{label}: \{@base16.encode(frame)}  ->  incomplete")
   }
 }
 

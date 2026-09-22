@@ -7,20 +7,6 @@
 //     moon run examples/04-hpack
 
 ///|
-fn hex(bs : Bytes) -> String {
-  let digits = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
-  let buf = StringBuilder()
-  for b in bs {
-    let v = b.to_int() & 0xFF
-    buf.write_char(digits[v >> 4])
-    buf.write_char(digits[v & 0xF])
-  }
-  buf.to_string()
-}
-
-///|
 #coverage.skip
 fn main {
   run() catch {
@@ -58,7 +44,9 @@ fn run() -> Unit raise {
     } catch {
       e => "raised \{e}"
     }
-    println("  int \{value} (5-bit prefix) = \{hex(enc)} (\{status})")
+    println(
+      "  int \{value} (5-bit prefix) = \{@base16.encode(enc)} (\{status})",
+    )
   }
 
   // String literals (§5.2): the raw form and the Huffman form of the same octets. The
@@ -70,7 +58,7 @@ fn run() -> Unit raise {
   println("string \"www.example.com\":")
   println("  raw     \{raw.length()} octets, H=\{@prefix.flagged(raw[:])}")
   println(
-    "  huffman \{huff.length()} octets, H=\{@prefix.flagged(huff[:])}  (§C.4.1: \{hex(@huffman.encode(host))})",
+    "  huffman \{huff.length()} octets, H=\{@prefix.flagged(huff[:])}  (§C.4.1: \{@base16.encode(@huffman.encode(host))})",
   )
   println("  auto picks the huffman form: \{auto == huff}")
   let (read_back, _) = @hpack.read_string(auto, 0)
@@ -91,7 +79,7 @@ fn run() -> Unit raise {
   println(
     "  after shrinking to 40: \{tbl.count()} entries, \{tbl.size()}/40 octets",
   )
-  println("  size-update opcode: \{hex(@hpack.size_update(40))}")
+  println("  size-update opcode: \{@base16.encode(@hpack.size_update(40))}")
 
   // The stateful encoder/decoder pair over a real header list — the block a client puts
   // in a HEADERS frame, decoded back to the same fields.

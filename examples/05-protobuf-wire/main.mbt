@@ -7,20 +7,6 @@
 //     moon run examples/05-protobuf-wire
 
 ///|
-fn hex(bs : Bytes) -> String {
-  let digits = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
-  let buf = StringBuilder()
-  for b in bs {
-    let v = b.to_int() & 0xFF
-    buf.write_char(digits[v >> 4])
-    buf.write_char(digits[v & 0xF])
-  }
-  buf.to_string()
-}
-
-///|
 fn join_ints(xs : Array[Int]) -> String {
   let buf = StringBuilder()
   for i, x in xs {
@@ -47,7 +33,7 @@ fn run() -> Unit raise {
   w.packed_int32(10, [23, 42, 233]) // one length-delimited run of varints
   w.map_string_string(11, "emm", "hhh") // a map<string,string> entry
   let body = w.to_bytes()
-  println("\{body.length()} octets: \{hex(body)}")
+  println("\{body.length()} octets: \{@base16.encode(body)}")
 
   // Read the fields back in order, dispatching on the field number and wire type the
   // tag carries. `WireType` is the low three bits of each tag.

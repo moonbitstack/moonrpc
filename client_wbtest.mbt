@@ -5,29 +5,6 @@
 // reassembly, or client flow control and these go red.
 
 ///|
-/// Bytes from their hexadecimal, for the fixtures below.
-fn unhex(h : String) -> Bytes {
-  let out : Array[Byte] = []
-  for i = 0; i + 1 < h.length(); i = i + 2 {
-    let hi = nibble(h[i].to_int())
-    let lo = nibble(h[i + 1].to_int())
-    out.push(((hi << 4) | lo).to_byte())
-  }
-  Bytes::from_array(out)
-}
-
-///|
-fn nibble(c : Int) -> Int {
-  if c >= '0'.to_int() && c <= '9'.to_int() {
-    c - '0'.to_int()
-  } else if c >= 'a'.to_int() && c <= 'f'.to_int() {
-    c - 'a'.to_int() + 10
-  } else {
-    c - 'A'.to_int() + 10
-  }
-}
-
-///|
 /// Shuttle frames between a client and server engine until the call `id` completes:
 /// deliver the client's queued frames to the server, its replies back to the
 /// client, and repeat. The @http2.preface handshake is seeded first.
@@ -95,7 +72,7 @@ test "client: a gzip-encoded response message is inflated for the caller" {
       padding=0,
     ),
   )
-  let gz = unhex(
+  let gz = @base16.decode_lossy(
     "1f8b0800cb9b6a6a02ffcb48cdc9c9d75148afca2c5028cf2fca490100eb83468211000000",
   )
   let _ = client.feed(
@@ -122,7 +99,8 @@ test "client: a gzip-encoded response message is inflated for the caller" {
   assert_eq(reply.messages.length(), 1)
   // The caller sees the plaintext, not the gzip bytes.
   assert_eq(
-    reply.messages[0] == unhex("68656c6c6f2c20677a697020776f726c64"),
+    reply.messages[0] ==
+    @base16.decode_lossy("68656c6c6f2c20677a697020776f726c64"),
     true,
   )
 }

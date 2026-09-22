@@ -7,29 +7,6 @@
 //     moon run examples/16-gzip
 
 ///|
-fn unhex(s : String) -> Bytes {
-  fn nib(c : Char) -> Int {
-    let v = c.to_int()
-    if v >= 0x30 && v <= 0x39 {
-      v - 0x30
-    } else if v >= 0x61 && v <= 0x66 {
-      v - 0x61 + 10
-    } else {
-      v - 0x41 + 10
-    }
-  }
-
-  let chars = s.to_array()
-  let buf = Buffer()
-  let mut i = 0
-  while i + 1 < chars.length() {
-    buf.write_byte(((nib(chars[i]) << 4) | nib(chars[i + 1])).to_byte())
-    i = i + 2
-  }
-  buf.to_bytes()
-}
-
-///|
 fn ascii(bs : Bytes) -> String {
   let buf = StringBuilder()
   for b in bs {
@@ -41,13 +18,13 @@ fn ascii(bs : Bytes) -> String {
 ///|
 fn run() -> Unit raise {
   // Three real gzip members, one per DEFLATE block type / optional field.
-  let fixed = unhex(
+  let fixed = @base16.decode_lossy(
     "1f8b0800cb9b6a6a02ffcb48cdc9c9d75148afca2c5028cf2fca490100eb83468211000000",
   )
-  let stored = unhex(
+  let stored = @base16.decode_lossy(
     "1f8b0800fe9d6a6a04ff011d00e2ff73746f72656420626c6f636b2c206e6f20687566666d616e20686572652b46bf561d000000",
   )
-  let named = unhex(
+  let named = @base16.decode_lossy(
     "1f8b08080000000002ff68692e74787400cb4bcc4d4d51c84dcd4d4a2d522848acccc94f4c01004e5eca2a14000000",
   )
   println("gunzip fixed-Huffman: \{ascii(@gzip.gunzip(fixed[:]))}")

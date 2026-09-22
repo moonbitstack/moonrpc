@@ -3,6 +3,7 @@ import {
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonhttp/huffman",
   "moonbitstack/moonvar/prefix",
+  "moonbitstack/moonbase/base16",
 }
 
 pkgtype(kind: "executable")

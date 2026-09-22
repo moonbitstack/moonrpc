@@ -8,20 +8,6 @@
 //     moon run examples/02-http2-frames
 
 ///|
-fn hex(bs : Bytes) -> String {
-  let digits = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-  ]
-  let buf = StringBuilder()
-  for b in bs {
-    let v = b.to_int() & 0xFF
-    buf.write_char(digits[v >> 4])
-    buf.write_char(digits[v & 0xF])
-  }
-  buf.to_string()
-}
-
-///|
 fn type_name(t : Int) -> String {
   if t == @http2.frame_data {
     "DATA"
@@ -62,7 +48,7 @@ fn roundtrip(frame : @http2.Frame) -> Unit {
   } catch {
     e => "decode raised \{e}"
   }
-  println("\{name}: \{hex(wire)}  (\{status})")
+  println("\{name}: \{@base16.encode(wire)}  (\{status})")
 }
 
 ///|
@@ -123,10 +109,12 @@ fn main {
   }
   let hbytes = hdr.encode()
   let back = @http2.FrameHeader::decode(hbytes) catch { _ => hdr }
-  println("@http2.FrameHeader: \{hex(hbytes)}  (round-trip \{back == hdr})")
+  println(
+    "@http2.FrameHeader: \{@base16.encode(hbytes)}  (round-trip \{back == hdr})",
+  )
 
   // A server reads the client connection @http2.preface before any frame (§3.5).
-  println("preface: \{hex(@http2.preface)}")
+  println("preface: \{@base16.encode(@http2.preface)}")
   println("  present in a client stream: \{@http2.has_preface(@http2.preface)}")
   println(
     "  present in junk: \{@http2.has_preface(b"not a @http2.preface at all")}",

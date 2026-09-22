@@ -18,3 +18,7 @@ import {
   "moonbitstack/moonbase/base64",
   "moonbitlang/core/encoding/utf8",
 }
+
+import {
+  "moonbitstack/moonbase/base16",
+} for "wbtest"

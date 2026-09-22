@@ -1,5 +1,6 @@
 import {
   "moonbitstack/moonrpc",
+  "moonbitstack/moonbase/base16",
 }
 
 pkgtype(kind: "executable")
