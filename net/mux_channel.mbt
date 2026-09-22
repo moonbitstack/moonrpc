@@ -19,14 +19,14 @@ pub struct MuxChannel {
 }
 
 ///|
-/// Open a multiplexed channel to `host:port`: connect and send the preface and client
+/// Open a multiplexed channel to `host:port`: connect and send the @http2.preface and client
 /// SETTINGS. Spawn `read_pump` into a task group to drive it before making calls.
 pub async fn MuxChannel::connect(host : String, port : Int) -> MuxChannel {
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
   let engine = @moonrpc.H2Client::new()
-  conn.write(@moonrpc.connection_preface)
+  conn.write(@http2.preface)
   let ch = {
     conn,
     engine,
@@ -43,7 +43,7 @@ pub async fn MuxChannel::connect(host : String, port : Int) -> MuxChannel {
 /// their bytes.
 async fn MuxChannel::write_locked(
   self : MuxChannel,
-  frames : Array[@moonrpc.Frame],
+  frames : Array[@http2.Frame],
 ) -> Unit {
   self.write_lock.acquire()
   defer self.write_lock.release()
@@ -60,7 +60,7 @@ pub async fn MuxChannel::read_pump(self : MuxChannel) -> Unit {
     if self.keepalive is Some(ka) {
       let now = @async.now()
       ka.on_activity(now)
-      if frame is @moonrpc.Frame::Ping(ack=true, ..) {
+      if frame is @http2.Frame::Ping(ack=true, ..) {
         ka.on_ping_ack(now)
       }
     }
@@ -211,7 +211,7 @@ pub async fn MuxChannel::run_keepalive(
     if ka.should_ping(now) {
       ka.on_ping_sent(now)
       self.write_locked([
-        @moonrpc.Frame::Ping(
+        @http2.Frame::Ping(
           payload=b"\x00\x00\x00\x00\x00\x00\x00\x01",
           ack=false,
         ),

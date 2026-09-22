@@ -46,7 +46,7 @@ test "engine: a unary request dispatches and is framed as HEADERS + DATA + trail
     { name: b"content-type", value: b"application/grpc", },
     { name: b"te", value: b"trailers", },
   ])
-  // client preface (SETTINGS) then the request stream.
+  // client @http2.preface (SETTINGS) then the request stream.
   let _ = engine.feed(Settings(params=[], ack=false))
   let _ = engine.feed(
     Headers(
@@ -106,7 +106,7 @@ test "engine: a unary request dispatches and is framed as HEADERS + DATA + trail
 test "engine: SETTINGS is acknowledged; PING is answered" {
   let engine = H2Server::new()
   let acks = engine.feed(
-    Settings(params=[(settings_max_frame_size, 32768)], ack=false),
+    Settings(params=[(@http2.settings_max_frame_size, 32768)], ack=false),
   )
   assert_eq(acks.length(), 1)
   match acks[0] {
@@ -163,7 +163,11 @@ test "engine: an unknown method gets a trailers-only UNIMPLEMENTED response" {
 
 ///|
 /// Count DATA octets and whether an END_STREAM (trailer) HEADERS appears.
-fn tally(frames : Array[Frame], acc : Ref[Int], trailer : Ref[Bool]) -> Unit {
+fn tally(
+  frames : Array[@http2.Frame],
+  acc : Ref[Int],
+  trailer : Ref[Bool],
+) -> Unit {
   for f in frames {
     match f {
       Data(data~, ..) => acc.val = acc.val + data.length()
@@ -182,7 +186,7 @@ test "engine: a small send window splits the reply and a WINDOW_UPDATE releases 
   let block = req_block(enc, b"/big.Svc/M")
   // peer advertises a tiny 5-octet initial window before opening the stream.
   let _ = engine.feed(
-    Settings(params=[(settings_initial_window_size, 5)], ack=false),
+    Settings(params=[(@http2.settings_initial_window_size, 5)], ack=false),
   )
   let data_sent = Ref(0)
   let trailer_seen = Ref(false)
@@ -310,7 +314,8 @@ test "engine: a CONTINUATION past the header-size cap is rejected, not buffered 
   )
   assert_eq(out.length(), 1)
   match out[0] {
-    GoAway(error_code~, ..) => assert_eq(error_code, error_frame_size_error)
+    GoAway(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_frame_size_error)
     _ => abort("expected GOAWAY")
   }
   assert_eq(engine.closing(), true)
@@ -336,7 +341,8 @@ test "engine: a HEADERS on an even (server-initiated) stream id is a protocol er
   )
   assert_eq(out.length(), 1)
   match out[0] {
-    GoAway(error_code~, ..) => assert_eq(error_code, error_protocol_error)
+    GoAway(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_protocol_error)
     _ => abort("expected GOAWAY")
   }
   assert_eq(engine.closing(), true)
@@ -493,7 +499,7 @@ test "goaway emits a NO_ERROR GOAWAY carrying the last processed stream id" {
   match out[0] {
     GoAway(last_stream_id~, error_code~, ..) => {
       assert_eq(last_stream_id, 7)
-      assert_eq(error_code, error_no_error)
+      assert_eq(error_code, @http2.error_no_error)
     }
     _ => abort("expected GOAWAY")
   }
@@ -555,7 +561,7 @@ test "engine: a zero-increment WINDOW_UPDATE resets that stream and spares the c
   match out[0] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_protocol_error)
+      assert_eq(error_code, @http2.error_protocol_error)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -580,7 +586,7 @@ test "engine: a frame on a finished stream is a stream error, not a connection o
   match out[0] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_stream_closed)
+      assert_eq(error_code, @http2.error_stream_closed)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -600,7 +606,7 @@ test "engine: DATA on stream 0 ends the connection with a PROTOCOL_ERROR GOAWAY"
   match out[0] {
     GoAway(last_stream_id~, error_code~, debug~) => {
       assert_eq(last_stream_id, 0)
-      assert_eq(error_code, error_protocol_error)
+      assert_eq(error_code, @http2.error_protocol_error)
       assert_eq(debug == b"DATA on stream 0", true)
     }
     _ => abort("expected GOAWAY")
@@ -620,7 +626,8 @@ test "engine: a CONTINUATION with no field block open is a connection error" {
   )
   assert_eq(out.length(), 1)
   match out[0] {
-    GoAway(error_code~, ..) => assert_eq(error_code, error_protocol_error)
+    GoAway(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_protocol_error)
     _ => abort("expected GOAWAY")
   }
   assert_eq(engine.closing(), true)
@@ -638,14 +645,15 @@ test "engine: a WINDOW_UPDATE past the 2^31-1 window ceiling is a FLOW_CONTROL_E
   match stream_out[0] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_flow_control_error)
+      assert_eq(error_code, @http2.error_flow_control_error)
     }
     _ => abort("expected RST_STREAM")
   }
   let conn_out = engine.feed(WindowUpdate(stream_id=0, increment=0x7FFFFFFF))
   assert_eq(conn_out.length(), 1)
   match conn_out[0] {
-    GoAway(error_code~, ..) => assert_eq(error_code, error_flow_control_error)
+    GoAway(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_flow_control_error)
     _ => abort("expected GOAWAY")
   }
 }
@@ -668,7 +676,8 @@ test "engine: a field block that will not decode is a COMPRESSION_ERROR" {
   )
   assert_eq(out.length(), 1)
   match out[0] {
-    GoAway(error_code~, ..) => assert_eq(error_code, error_compression_error)
+    GoAway(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_compression_error)
     _ => abort("expected GOAWAY")
   }
   assert_eq(engine.closing(), true)
@@ -700,7 +709,7 @@ test "engine: a stream opened after our own GOAWAY is refused, not served" {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 3)
       // §6.8: it was never processed, so the client is free to re-issue it elsewhere.
-      assert_eq(error_code, error_refused_stream)
+      assert_eq(error_code, @http2.error_refused_stream)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -731,7 +740,7 @@ test "engine: a reset stream stops mid-call and sends nothing more" {
   match out[0] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_flow_control_error)
+      assert_eq(error_code, @http2.error_flow_control_error)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -745,7 +754,7 @@ test "engine: a reset stream stops mid-call and sends nothing more" {
   match late[0] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_stream_closed)
+      assert_eq(error_code, @http2.error_stream_closed)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -775,14 +784,14 @@ test "a peer's RST_STREAM inside an open field block ends the connection" {
       padding=0,
     ),
   )
-  let out = e.feed(RstStream(stream_id=1, error_code=error_cancel))
+  let out = e.feed(RstStream(stream_id=1, error_code=@http2.error_cancel))
   let mut code = -1
   for f in out {
     if f is GoAway(error_code~, ..) {
       code = error_code
     }
   }
-  assert_eq(code, error_protocol_error)
+  assert_eq(code, @http2.error_protocol_error)
   assert_eq(e.closing(), true)
 }
 
@@ -885,7 +894,7 @@ test "engine: tick expires a call that runs out of time waiting, and stops the c
   match out[1] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_no_error)
+      assert_eq(error_code, @http2.error_no_error)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -1061,7 +1070,7 @@ fn open_stream(
   engine : H2Server,
   enc : @hpack.Encoder,
   id : Int,
-) -> Array[Frame] {
+) -> Array[@http2.Frame] {
   engine.feed(
     Headers(
       stream_id=id,
@@ -1085,7 +1094,7 @@ test "engine: one stream over the advertised limit is refused, not served" {
   for f in engine.preface() {
     if f is Settings(params~, ..) {
       for p in params {
-        if p.0 == settings_max_concurrent_streams {
+        if p.0 == @http2.settings_max_concurrent_streams {
           advertised = p.1
         }
       }
@@ -1106,7 +1115,7 @@ test "engine: one stream over the advertised limit is refused, not served" {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 5)
       // §5.1.2: refused, which tells the client it was never processed.
-      assert_eq(error_code, error_refused_stream)
+      assert_eq(error_code, @http2.error_refused_stream)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -1159,7 +1168,8 @@ test "engine: DATA past the connection receive window is a FLOW_CONTROL_ERROR" {
   )
   assert_eq(out.length(), 1)
   match out[0] {
-    GoAway(error_code~, ..) => assert_eq(error_code, error_flow_control_error)
+    GoAway(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_flow_control_error)
     _ => abort("expected GOAWAY")
   }
   assert_eq(engine.closing(), true)
@@ -1196,7 +1206,7 @@ test "engine: DATA past one stream's window resets it and hands the connection i
   match out[1] {
     RstStream(stream_id~, error_code~) => {
       assert_eq(stream_id, 1)
-      assert_eq(error_code, error_flow_control_error)
+      assert_eq(error_code, @http2.error_flow_control_error)
     }
     _ => abort("expected RST_STREAM")
   }
@@ -1216,7 +1226,8 @@ test "engine: DATA past one stream's window resets it and hands the connection i
     _ => abort("expected a connection WINDOW_UPDATE")
   }
   match late[1] {
-    RstStream(error_code~, ..) => assert_eq(error_code, error_stream_closed)
+    RstStream(error_code~, ..) =>
+      assert_eq(error_code, @http2.error_stream_closed)
     _ => abort("expected RST_STREAM")
   }
   // Stream 3 never noticed any of it.
@@ -1226,7 +1237,7 @@ test "engine: DATA past one stream's window resets it and hands the connection i
 ///|
 /// Open a field block on stream 1 and leave it open, then feed `intruder` into the
 /// middle of it and return what comes back.
-fn interleave(intruder : Frame) -> Array[Frame] {
+fn interleave(intruder : @http2.Frame) -> Array[@http2.Frame] {
   let engine = H2Server::new()
   engine.register("/e.E/M", req => req)
   let enc = @hpack.Encoder::new()
@@ -1248,7 +1259,7 @@ fn interleave(intruder : Frame) -> Array[Frame] {
 test "engine: any frame interleaved into an open field block ends the connection" {
   // §6.10: a field block is a contiguous run of frames. Nothing may come between a
   // HEADERS and its CONTINUATION — not on this stream, not on another one.
-  let intruders : Array[Frame] = [
+  let intruders : Array[@http2.Frame] = [
     Data(stream_id=1, data=b"qwq", end_stream=false, padding=0),
     WindowUpdate(stream_id=1, increment=100),
     Ping(payload=b"heke1228", ack=false),
@@ -1259,7 +1270,7 @@ test "engine: any frame interleaved into an open field block ends the connection
     assert_eq(out.length(), 1)
     match out[0] {
       GoAway(error_code~, debug~, ..) => {
-        assert_eq(error_code, error_protocol_error)
+        assert_eq(error_code, @http2.error_protocol_error)
         assert_eq(debug == b"frame interleaved into an open field block", true)
       }
       _ => abort("expected GOAWAY")
@@ -1376,7 +1387,7 @@ test "engine: a WINDOW_UPDATE cannot nudge a call along after its deadline" {
   // A 5-octet send window: the response HEADERS and five octets of body get out and the
   // rest waits on a WINDOW_UPDATE.
   let _ = engine.feed(
-    Settings(params=[(settings_initial_window_size, 5)], ack=false),
+    Settings(params=[(@http2.settings_initial_window_size, 5)], ack=false),
   )
   let first = engine.feed(
     Headers(

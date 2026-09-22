@@ -10,10 +10,10 @@ fn drive(
   server : @moonrpc.H2Server,
   client : @moonrpc.H2Client,
   ids : Array[Int],
-  initial : Array[@moonrpc.Frame],
+  initial : Array[@http2.Frame],
 ) -> Unit raise {
-  let to_server : Array[@moonrpc.Frame] = []
-  let to_client : Array[@moonrpc.Frame] = []
+  let to_server : Array[@http2.Frame] = []
+  let to_client : Array[@http2.Frame] = []
   for f in client.preface() {
     to_server.push(f)
   }
@@ -88,7 +88,7 @@ fn run() -> Unit raise {
   let id = client.open("/sum.Sum/Add")
   let addends = [23, 42, 66, 102]
   // Every `send` returns the frames to write now; collect them, then half-close.
-  let initial : Array[@moonrpc.Frame] = []
+  let initial : Array[@http2.Frame] = []
   for x in addends {
     for f in client.send(id, int_msg(x)) {
       initial.push(f)

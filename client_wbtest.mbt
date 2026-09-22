@@ -30,15 +30,15 @@ fn nibble(c : Int) -> Int {
 ///|
 /// Shuttle frames between a client and server engine until the call `id` completes:
 /// deliver the client's queued frames to the server, its replies back to the
-/// client, and repeat. The preface handshake is seeded first.
+/// client, and repeat. The @http2.preface handshake is seeded first.
 fn drive_pair(
   server : H2Server,
   client : H2Client,
   id : Int,
-  initial : Array[Frame],
+  initial : Array[@http2.Frame],
 ) -> Unit raise {
-  let to_server : Array[Frame] = []
-  let to_client : Array[Frame] = []
+  let to_server : Array[@http2.Frame] = []
+  let to_client : Array[@http2.Frame] = []
   for f in client.preface() {
     to_server.push(f)
   }
@@ -271,7 +271,7 @@ test "client+server: a client-streaming call sends many messages for one reply" 
   })
   let client = H2Client::new()
   let id = client.open("/sum.S/Add")
-  let all : Array[Frame] = []
+  let all : Array[@http2.Frame] = []
   for f in client.send(id, b"a") {
     all.push(f)
   }
@@ -333,7 +333,7 @@ fn header_present(
 ///|
 /// Count DATA octets in a batch and note whether an END_STREAM DATA frame appears.
 fn tally_data(
-  frames : Array[Frame],
+  frames : Array[@http2.Frame],
   octets : Ref[Int],
   fin : Ref[Bool],
 ) -> Unit {
@@ -355,7 +355,7 @@ test "client: a small send window splits the request and a WINDOW_UPDATE release
   let client = H2Client::new()
   // peer advertises a tiny 5-octet initial window before the call opens.
   let _ = client.feed(
-    Settings(params=[(settings_initial_window_size, 5)], ack=false),
+    Settings(params=[(@http2.settings_initial_window_size, 5)], ack=false),
   )
   let id = client.open("/big.Svc/M")
   let octets = Ref(0)
@@ -448,7 +448,7 @@ test "client: a GOAWAY drains the connection — refuses new streams, marks unpr
 
   // The peer starts draining at stream 233.
   let out = client.feed(
-    GoAway(last_stream_id=233, error_code=error_no_error, debug=b""),
+    GoAway(last_stream_id=233, error_code=@http2.error_no_error, debug=b""),
   )
   // A GOAWAY is answered with no frames.
   assert_eq(out.length(), 0)
@@ -529,12 +529,12 @@ test "client: a RST_STREAM ends the call with the status its code maps to" {
   // the mapping every reset reads as `-1` and a caller cannot tell a stream the server
   // refused (retry elsewhere) from one it dropped mid-flight.
   let cases = [
-    (error_refused_stream, Unavailable),
-    (error_enhance_your_calm, ResourceExhausted),
-    (error_inadequate_security, PermissionDenied),
-    (error_cancel, Cancelled),
-    (error_protocol_error, Internal),
-    (error_stream_closed, Internal),
+    (@http2.error_refused_stream, Unavailable),
+    (@http2.error_enhance_your_calm, ResourceExhausted),
+    (@http2.error_inadequate_security, PermissionDenied),
+    (@http2.error_cancel, Cancelled),
+    (@http2.error_protocol_error, Internal),
+    (@http2.error_stream_closed, Internal),
   ]
   for pair in cases {
     let (code, want) = pair
@@ -556,7 +556,7 @@ test "client: a grpc-status already received outranks a later RST_STREAM code" {
   ])
   // The server named NOT_FOUND itself; a reset code is a transport-level guess and
   // must not overwrite it.
-  let _ = client.feed(RstStream(stream_id=id, error_code=error_cancel))
+  let _ = client.feed(RstStream(stream_id=id, error_code=@http2.error_cancel))
   assert_eq(client.reply(id).grpc_status, Status::code(NotFound))
 }
 

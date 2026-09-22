@@ -1,14 +1,14 @@
 ///|
-test "connection preface is the exact 24-octet magic (RFC 7540 §3.5)" {
-  assert_eq(connection_preface.length(), 24)
-  assert_eq(connection_preface, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-  assert_eq(has_connection_preface(connection_preface), true)
+test "connection @http2.preface is the exact 24-octet magic (RFC 7540 §3.5)" {
+  assert_eq(@http2.preface.length(), 24)
+  assert_eq(@http2.preface, b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+  assert_eq(@http2.has_preface(@http2.preface), true)
   let buf = Buffer()
-  buf.write_bytes(connection_preface)
+  buf.write_bytes(@http2.preface)
   buf.write_bytes(b"\x00\x00\x00\x04\x00\x00\x00\x00\x00") // a SETTINGS frame after
-  assert_eq(has_connection_preface(buf.to_bytes()), true)
-  assert_eq(has_connection_preface(b"PRI * HTTP/1.1\r\n\r\n"), false)
-  assert_eq(has_connection_preface(b"PRI"), false)
+  assert_eq(@http2.has_preface(buf.to_bytes()), true)
+  assert_eq(@http2.has_preface(b"PRI * HTTP/1.1\r\n\r\n"), false)
+  assert_eq(@http2.has_preface(b"PRI"), false)
 }
 
 ///|

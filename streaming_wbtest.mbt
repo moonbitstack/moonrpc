@@ -17,7 +17,10 @@ struct Collected {
 }
 
 ///|
-fn collect(frames : Array[Frame], dec : @hpack.Decoder) -> Collected raise {
+fn collect(
+  frames : Array[@http2.Frame],
+  dec : @hpack.Decoder,
+) -> Collected raise {
   let acc = Buffer()
   let c : Collected = {
     messages: [],
@@ -57,10 +60,10 @@ fn collect(frames : Array[Frame], dec : @hpack.Decoder) -> Collected raise {
 /// response frame the engine emits across all the fed frames.
 fn drive_request(
   engine : H2Server,
-  request_frames : Array[Frame],
+  request_frames : Array[@http2.Frame],
 ) -> (Collected, @hpack.Decoder) raise {
   let dec = @hpack.Decoder::new()
-  let all : Array[Frame] = []
+  let all : Array[@http2.Frame] = []
   for f in request_frames {
     for out in engine.feed(f) {
       all.push(out)
@@ -70,7 +73,11 @@ fn drive_request(
 }
 
 ///|
-fn req_headers(enc : @hpack.Encoder, path : Bytes, end_stream~ : Bool) -> Frame {
+fn req_headers(
+  enc : @hpack.Encoder,
+  path : Bytes,
+  end_stream~ : Bool,
+) -> @http2.Frame {
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -90,7 +97,7 @@ fn req_headers(enc : @hpack.Encoder, path : Bytes, end_stream~ : Bool) -> Frame 
 }
 
 ///|
-fn data_msg(payload : Bytes, end_stream~ : Bool) -> Frame {
+fn data_msg(payload : Bytes, end_stream~ : Bool) -> @http2.Frame {
   Data(stream_id=1, data=encode_message(payload), end_stream~, padding=0)
 }
 
@@ -199,7 +206,7 @@ test "server-streaming honours flow control across the multi-message exchange" {
   let enc = @hpack.Encoder::new()
   // advertise a tiny 8-octet initial window before the stream opens.
   let _ = engine.feed(
-    Settings(params=[(settings_initial_window_size, 8)], ack=false),
+    Settings(params=[(@http2.settings_initial_window_size, 8)], ack=false),
   )
   let _ = engine.feed(req_headers(enc, b"/big.B/Stream", end_stream=false))
   let data_sent = Ref(0)

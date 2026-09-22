@@ -9,15 +9,15 @@
 ///|
 /// Shuttle frames between the two engines until every call in `ids` is done: deliver
 /// the client's queued frames to the server, its replies back to the client, repeat.
-/// The preface handshake (each side's opening SETTINGS) is seeded first.
+/// The @http2.preface handshake (each side's opening SETTINGS) is seeded first.
 fn drive(
   server : @moonrpc.H2Server,
   client : @moonrpc.H2Client,
   ids : Array[Int],
-  initial : Array[@moonrpc.Frame],
+  initial : Array[@http2.Frame],
 ) -> Unit raise {
-  let to_server : Array[@moonrpc.Frame] = []
-  let to_client : Array[@moonrpc.Frame] = []
+  let to_server : Array[@http2.Frame] = []
+  let to_client : Array[@http2.Frame] = []
   for f in client.preface() {
     to_server.push(f)
   }

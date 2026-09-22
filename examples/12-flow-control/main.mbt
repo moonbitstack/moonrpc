@@ -32,8 +32,8 @@ fn run() -> Unit raise {
   let (id, initial) = client.unary("/blob.Blob/Get", b"give me the blob")
 
   // Drive the two engines by hand so each frame can be classified as it crosses.
-  let to_server : Array[@moonrpc.Frame] = []
-  let to_client : Array[@moonrpc.Frame] = []
+  let to_server : Array[@http2.Frame] = []
+  let to_client : Array[@http2.Frame] = []
   for f in client.preface() {
     to_server.push(f)
   }

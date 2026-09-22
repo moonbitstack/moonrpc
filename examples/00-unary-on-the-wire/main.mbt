@@ -45,7 +45,7 @@ fn main {
   let headers = request_headers(rpc)
   let block = @hpack.Encoder::new().encode(headers)
   let msg = @moonrpc.encode_message(hello_request("heke1228"))
-  let head = @moonrpc.Frame::Headers(
+  let head = @http2.Frame::Headers(
     stream_id=1,
     fragment=block,
     end_stream=false,
@@ -53,7 +53,7 @@ fn main {
     priority=None,
     padding=0,
   )
-  let data = @moonrpc.Frame::Data(
+  let data = @http2.Frame::Data(
     stream_id=1,
     data=msg,
     end_stream=true,
@@ -73,7 +73,7 @@ fn main {
   let mut off = 0
   try {
     while off < wire.length() {
-      let (frame, consumed) = @moonrpc.decode_frame(wire, offset=off)
+      let (frame, consumed) = @http2.decode(wire, offset=off)
       off += consumed
       match frame {
         Headers(fragment~, ..) => {

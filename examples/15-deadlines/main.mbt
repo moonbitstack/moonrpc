@@ -10,10 +10,10 @@ fn drive(
   server : @moonrpc.H2Server,
   client : @moonrpc.H2Client,
   id : Int,
-  initial : Array[@moonrpc.Frame],
+  initial : Array[@http2.Frame],
 ) -> Unit raise {
-  let to_server : Array[@moonrpc.Frame] = []
-  let to_client : Array[@moonrpc.Frame] = []
+  let to_server : Array[@http2.Frame] = []
+  let to_client : Array[@http2.Frame] = []
   for f in client.preface() {
     to_server.push(f)
   }

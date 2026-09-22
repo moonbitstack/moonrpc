@@ -143,13 +143,13 @@ pub fn Status::name(self : Status) -> String {
 /// retry; anything the table does not name is INTERNAL, since the peer broke the
 /// transport rather than the call.
 pub fn Status::from_h2_error(code : Int) -> Status {
-  if code == error_refused_stream {
+  if code == @http2.error_refused_stream {
     Unavailable
-  } else if code == error_enhance_your_calm {
+  } else if code == @http2.error_enhance_your_calm {
     ResourceExhausted
-  } else if code == error_inadequate_security {
+  } else if code == @http2.error_inadequate_security {
     PermissionDenied
-  } else if code == error_cancel {
+  } else if code == @http2.error_cancel {
     Cancelled
   } else {
     Internal

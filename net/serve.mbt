@@ -8,23 +8,20 @@
 /// Read exactly one HTTP/2 frame off a byte reader — the 9-octet header, then its
 /// declared payload — and decode it with the pure frame codec. Raises when the
 /// peer closes mid-frame (a short read) or the bytes are malformed.
-async fn read_frame(conn : &@io.Reader) -> @moonrpc.Frame {
+async fn read_frame(conn : &@io.Reader) -> @http2.Frame {
   let head = conn.read_exactly(9)
-  let hdr = @moonrpc.decode_frame_header(head)
+  let hdr = @http2.FrameHeader::decode(head)
   let payload = if hdr.length > 0 { conn.read_exactly(hdr.length) } else { b"" }
   let buf = @buffer.Buffer()
   buf.write_bytes(head)
   buf.write_bytes(payload)
-  let (frame, _) = @moonrpc.decode_frame(buf.to_bytes())
+  let (frame, _) = @http2.decode(buf.to_bytes())
   frame
 }
 
 ///|
 /// Write each frame's exact wire bytes to the socket.
-async fn write_frames(
-  conn : &@io.Writer,
-  frames : Array[@moonrpc.Frame],
-) -> Unit {
+async fn write_frames(conn : &@io.Writer, frames : Array[@http2.Frame]) -> Unit {
   for f in frames {
     conn.write(f.encode())
   }
@@ -32,7 +29,7 @@ async fn write_frames(
 
 ///|
 /// Drive one accepted h2c connection to completion: validate the client
-/// connection preface, send the server SETTINGS, then loop — read a frame, feed it
+/// connection @http2.preface, send the server SETTINGS, then loop — read a frame, feed it
 /// to the engine, write back whatever the engine produces — until the peer closes
 /// the connection, a GOAWAY is seen, the engine reports a connection error, or the
 /// server is shutting down and this connection has finished its last call.
@@ -41,8 +38,8 @@ async fn drive(
   engine : @moonrpc.H2Server,
   draining : () -> Bool,
 ) -> Unit {
-  let preface = conn.read_exactly(@moonrpc.connection_preface.length())
-  if !@moonrpc.has_connection_preface(preface) {
+  let got = conn.read_exactly(@http2.preface.length())
+  if !@http2.has_preface(got) {
     return
   }
   write_frames(conn, engine.preface())
@@ -311,9 +308,9 @@ async fn unary_call(
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
-  // client preface + our SETTINGS.
-  conn.write(@moonrpc.connection_preface)
-  conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
+  // client @http2.preface + our SETTINGS.
+  conn.write(@http2.preface)
+  conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
   // request HEADERS (HPACK-encoded pseudo-headers) then a single DATA message.
   let enc = @hpack.Encoder::new()
   let block = enc.encode([
@@ -325,7 +322,7 @@ async fn unary_call(
     { name: b"te", value: b"trailers", },
   ])
   conn.write(
-    @moonrpc.Frame::Headers(
+    @http2.Frame::Headers(
       stream_id=1,
       fragment=block,
       end_stream=false,
@@ -335,7 +332,7 @@ async fn unary_call(
     ).encode(),
   )
   conn.write(
-    @moonrpc.Frame::Data(
+    @http2.Frame::Data(
       stream_id=1,
       data=@moonrpc.encode_message(request),
       end_stream=true,
@@ -353,7 +350,7 @@ async fn unary_call(
     match frame {
       Settings(ack~, ..) =>
         if !ack {
-          conn.write(@moonrpc.Frame::Settings(params=[], ack=true).encode())
+          conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
         }
       Headers(fragment~, end_stream~, ..) => {
         for h in dec.decode(fragment) {
@@ -428,8 +425,8 @@ async fn streaming_call(
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
-  conn.write(@moonrpc.connection_preface)
-  conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
+  conn.write(@http2.preface)
+  conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
   let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
@@ -441,7 +438,7 @@ async fn streaming_call(
   ])
   let n = requests.length()
   conn.write(
-    @moonrpc.Frame::Headers(
+    @http2.Frame::Headers(
       stream_id=1,
       fragment=block,
       end_stream=n == 0,
@@ -452,7 +449,7 @@ async fn streaming_call(
   )
   for i = 0; i < n; i = i + 1 {
     conn.write(
-      @moonrpc.Frame::Data(
+      @http2.Frame::Data(
         stream_id=1,
         data=@moonrpc.encode_message(requests[i]),
         end_stream=i == n - 1,
@@ -470,7 +467,7 @@ async fn streaming_call(
     match frame {
       Settings(ack~, ..) =>
         if !ack {
-          conn.write(@moonrpc.Frame::Settings(params=[], ack=true).encode())
+          conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
         }
       Headers(fragment~, end_stream~, ..) => {
         for h in dec.decode(fragment) {
@@ -718,8 +715,8 @@ async test "graceful_stop lets a call that is already open finish" {
     let task = g.spawn(() => server.serve(port=18079))
     @async.sleep(300)
     let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18079"))
-    conn.write(@moonrpc.connection_preface)
-    conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
+    conn.write(@http2.preface)
+    conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
     let enc = @hpack.Encoder::new()
     let block = enc.encode([
       { name: b":method", value: b"POST", },
@@ -730,7 +727,7 @@ async test "graceful_stop lets a call that is already open finish" {
     ])
     // HEADERS without END_STREAM: the stream is open and the server is waiting on us.
     conn.write(
-      @moonrpc.Frame::Headers(
+      @http2.Frame::Headers(
         stream_id=1,
         fragment=block,
         end_stream=false,
@@ -745,7 +742,7 @@ async test "graceful_stop lets a call that is already open finish" {
     // Now finish the request. A server that cut the call off at the drain would have
     // closed this socket already.
     conn.write(
-      @moonrpc.Frame::Data(
+      @http2.Frame::Data(
         stream_id=1,
         data=@moonrpc.encode_message(b"hhh"),
         end_stream=true,
@@ -795,8 +792,8 @@ async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse("127.0.0.1:" + port.to_string()),
   )
-  conn.write(@moonrpc.connection_preface)
-  conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
+  conn.write(@http2.preface)
+  conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
   let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
@@ -808,7 +805,7 @@ async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
     { name: b"grpc-timeout", value: timeout, },
   ])
   conn.write(
-    @moonrpc.Frame::Headers(
+    @http2.Frame::Headers(
       stream_id=1,
       fragment=block,
       end_stream=false,
@@ -819,7 +816,7 @@ async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
   )
   @async.sleep(delay)
   conn.write(
-    @moonrpc.Frame::Data(
+    @http2.Frame::Data(
       stream_id=1,
       data=@moonrpc.encode_message(b"qwq"),
       end_stream=true,
@@ -833,7 +830,7 @@ async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
     match read_frame(conn) {
       Settings(ack~, ..) =>
         if !ack {
-          conn.write(@moonrpc.Frame::Settings(params=[], ack=true).encode())
+          conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
         }
       Headers(fragment~, end_stream~, ..) => {
         for h in dec.decode(fragment) {
@@ -876,8 +873,8 @@ async test "a call left waiting past its deadline is cut off when the connection
     let task = g.spawn(() => server.serve(port=18080))
     @async.sleep(300)
     let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18080"))
-    conn.write(@moonrpc.connection_preface)
-    conn.write(@moonrpc.Frame::Settings(params=[], ack=false).encode())
+    conn.write(@http2.preface)
+    conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
     let enc = @hpack.Encoder::new()
     let block = enc.encode([
       { name: b":method", value: b"POST", },
@@ -890,7 +887,7 @@ async test "a call left waiting past its deadline is cut off when the connection
     ])
     // Open the call and then go quiet: nothing else will ever arrive for this stream.
     conn.write(
-      @moonrpc.Frame::Headers(
+      @http2.Frame::Headers(
         stream_id=1,
         fragment=block,
         end_stream=false,
@@ -902,8 +899,8 @@ async test "a call left waiting past its deadline is cut off when the connection
     @async.sleep(250)
     // Two PINGs the call has nothing to do with. The driver takes each one as its cue to
     // look at the clock, so the expired call is cut off between the two answers.
-    conn.write(@moonrpc.Frame::Ping(payload=b"heke1228", ack=false).encode())
-    conn.write(@moonrpc.Frame::Ping(payload=b"lfanke00", ack=false).encode())
+    conn.write(@http2.Frame::Ping(payload=b"heke1228", ack=false).encode())
+    conn.write(@http2.Frame::Ping(payload=b"lfanke00", ack=false).encode())
     let dec = @hpack.Decoder::new()
     let mut grpc_status = b""
     let mut acks = 0
@@ -912,7 +909,7 @@ async test "a call left waiting past its deadline is cut off when the connection
         Ping(ack~, ..) => if ack { acks = acks + 1 }
         Settings(ack~, ..) =>
           if !ack {
-            conn.write(@moonrpc.Frame::Settings(params=[], ack=true).encode())
+            conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
           }
         Headers(fragment~, ..) =>
           for h in dec.decode(fragment) {

@@ -225,3 +225,22 @@ pub extend DnsResponse with Debug::{to_repr}
 
 ///|
 pub extend DnsResponse with Eq::{not_equal, equal}
+
+// The three big-endian widths a DNS message is counted in (RFC 1035 §4). They used
+// to come from the HTTP/2 frame layer, which had them for its own header; now that
+// that layer is moonhttp's, they are here, where the only other caller is.
+
+///|
+fn be_write_u16(buf : Buffer, n : Int) -> Unit {
+  @fixed.write_u16(buf, n)
+}
+
+///|
+fn be_read_u16(data : Bytes, off : Int) -> Int {
+  @fixed.read_u16(data[:], at=off).unwrap()
+}
+
+///|
+fn be_read_u32(data : Bytes, off : Int) -> Int {
+  @fixed.read_u32(data[:], at=off).unwrap().reinterpret_as_int()
+}

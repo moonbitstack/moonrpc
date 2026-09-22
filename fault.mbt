@@ -17,7 +17,7 @@ priv suberror H2Fault {
 /// The frames that report a fault to the peer: RST_STREAM on the offending stream, or
 /// a GOAWAY naming `last_stream` — the highest stream the sender actually processed —
 /// with the reason as debug data.
-fn fault_frames(fault : H2Fault, last_stream : Int) -> Array[Frame] {
+fn fault_frames(fault : H2Fault, last_stream : Int) -> Array[@http2.Frame] {
   match fault {
     StreamFault(id~, code~, ..) => [RstStream(stream_id=id, error_code=code)]
     ConnFault(code~, why~) =>
@@ -32,8 +32,8 @@ fn fault_frames(fault : H2Fault, last_stream : Int) -> Array[Frame] {
 /// STREAM_CLOSED and the rest of the connection is unaffected.
 fn transition_fault(id : Int, state : StreamState, why : String) -> H2Fault {
   match state {
-    Idle => ConnFault(code=error_protocol_error, why~)
-    _ => StreamFault(id~, code=error_stream_closed, why~)
+    Idle => ConnFault(code=@http2.error_protocol_error, why~)
+    _ => StreamFault(id~, code=@http2.error_stream_closed, why~)
   }
 }
 

@@ -6,16 +6,11 @@ import {
   "moonbitlang/core/debug",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/http2",
 }
 
 // Values
-pub let connection_preface : Bytes
-
 pub fn decode_file_descriptor_set(Bytes) -> Array[FileDescriptor] raise PbError
-
-pub fn decode_frame(Bytes, offset? : Int) -> (Frame, Int) raise FrameError
-
-pub fn decode_frame_header(Bytes, offset? : Int) -> FrameHeader raise FrameError
 
 pub fn decode_health_request(Bytes) -> Bytes
 
@@ -53,66 +48,6 @@ pub fn encode_message(Bytes, compressed? : Bool) -> Bytes
 
 pub fn encode_reflection_request(ReflectionRequest) -> Bytes
 
-pub let error_cancel : Int
-
-pub let error_compression_error : Int
-
-pub let error_connect_error : Int
-
-pub let error_enhance_your_calm : Int
-
-pub let error_flow_control_error : Int
-
-pub let error_frame_size_error : Int
-
-pub let error_http_1_1_required : Int
-
-pub let error_inadequate_security : Int
-
-pub let error_internal_error : Int
-
-pub let error_no_error : Int
-
-pub let error_protocol_error : Int
-
-pub let error_refused_stream : Int
-
-pub let error_settings_timeout : Int
-
-pub let error_stream_closed : Int
-
-pub let flag_ack : Int
-
-pub let flag_end_headers : Int
-
-pub let flag_end_stream : Int
-
-pub let flag_padded : Int
-
-pub let flag_priority : Int
-
-pub let frame_continuation : Int
-
-pub let frame_data : Int
-
-pub let frame_goaway : Int
-
-pub let frame_headers : Int
-
-pub let frame_ping : Int
-
-pub let frame_priority : Int
-
-pub let frame_push_promise : Int
-
-pub let frame_rst_stream : Int
-
-pub let frame_settings : Int
-
-pub let frame_window_update : Int
-
-pub fn has_connection_preface(Bytes) -> Bool
-
 pub let health_check_path : String
 
 pub let health_watch_path : String
@@ -137,18 +72,6 @@ pub let reflection_v1_path : String
 
 pub let reflection_v1alpha_path : String
 
-pub let settings_enable_push : Int
-
-pub let settings_header_table_size : Int
-
-pub let settings_initial_window_size : Int
-
-pub let settings_max_concurrent_streams : Int
-
-pub let settings_max_frame_size : Int
-
-pub let settings_max_header_list_size : Int
-
 pub fn split_messages(Bytes) -> Array[Bytes]
 
 pub fn stream_id_valid_for_initiator(Int, by_client~ : Bool) -> Bool
@@ -158,17 +81,6 @@ pub fn stream_is_client_initiated(Int) -> Bool
 pub fn stream_is_server_initiated(Int) -> Bool
 
 // Errors
-pub suberror FrameError {
-  Incomplete
-  FrameSizeError(String)
-  ProtocolError(String)
-} derive(Eq)
-pub fn FrameError::equal(Self, Self) -> Bool
-pub fn FrameError::not_equal(Self, Self) -> Bool
-pub fn FrameError::output(Self, &Logger) -> Unit
-pub fn FrameError::to_string(Self) -> String
-pub impl Show for FrameError
-
 pub suberror PbError {
   Truncated
   BadWireType(Int)
@@ -340,34 +252,6 @@ pub fn FileDescriptor::not_equal(Self, Self) -> Bool
 pub fn FileDescriptor::service_names(Self) -> Array[String]
 pub fn FileDescriptor::symbols(Self) -> Array[String]
 
-pub(all) enum Frame {
-  Data(stream_id~ : Int, data~ : Bytes, end_stream~ : Bool, padding~ : Int)
-  Headers(stream_id~ : Int, fragment~ : Bytes, end_stream~ : Bool, end_headers~ : Bool, priority~ : Priority?, padding~ : Int)
-  Priority(stream_id~ : Int, priority~ : Priority)
-  RstStream(stream_id~ : Int, error_code~ : Int)
-  Settings(params~ : Array[(Int, Int)], ack~ : Bool)
-  PushPromise(stream_id~ : Int, promised_id~ : Int, fragment~ : Bytes, end_headers~ : Bool, padding~ : Int)
-  Ping(payload~ : Bytes, ack~ : Bool)
-  GoAway(last_stream_id~ : Int, error_code~ : Int, debug~ : Bytes)
-  WindowUpdate(stream_id~ : Int, increment~ : Int)
-  Continuation(stream_id~ : Int, fragment~ : Bytes, end_headers~ : Bool)
-  Unknown(ftype~ : Int, flags~ : Int, stream_id~ : Int, payload~ : Bytes)
-} derive(Eq)
-pub fn Frame::encode(Self) -> Bytes
-pub fn Frame::equal(Self, Self) -> Bool
-pub fn Frame::frame_type(Self) -> Int
-pub fn Frame::not_equal(Self, Self) -> Bool
-
-pub(all) struct FrameHeader {
-  length : Int
-  ftype : Int
-  flags : Int
-  stream_id : Int
-} derive(Eq)
-pub fn FrameHeader::encode(Self) -> Bytes
-pub fn FrameHeader::equal(Self, Self) -> Bool
-pub fn FrameHeader::not_equal(Self, Self) -> Bool
-
 pub struct H2Client {
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
@@ -381,8 +265,8 @@ pub struct H2Client {
   mut goaway_last_stream_id : Int
   orphan_blocks : Map[Int, @buffer.Buffer]
 }
-pub fn H2Client::close_send(Self, Int) -> Array[Frame]
-pub fn H2Client::feed(Self, Frame) -> Array[Frame] raise
+pub fn H2Client::close_send(Self, Int) -> Array[@http2.Frame]
+pub fn H2Client::feed(Self, @http2.Frame) -> Array[@http2.Frame] raise
 pub fn H2Client::goaway_last_stream_id(Self) -> Int
 pub fn H2Client::goaway_received(Self) -> Bool
 pub fn H2Client::has_messages(Self, Int) -> Bool
@@ -390,12 +274,12 @@ pub fn H2Client::is_done(Self, Int) -> Bool
 pub fn H2Client::is_retryable(Self, Int) -> Bool
 pub fn H2Client::new() -> Self
 pub fn H2Client::open(Self, String, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> Int
-pub fn H2Client::preface(Self) -> Array[Frame]
+pub fn H2Client::preface(Self) -> Array[@http2.Frame]
 pub fn H2Client::release(Self, Int) -> Unit
 pub fn H2Client::reply(Self, Int) -> CallReply
-pub fn H2Client::send(Self, Int, Bytes, end? : Bool) -> Array[Frame]
+pub fn H2Client::send(Self, Int, Bytes, end? : Bool) -> Array[@http2.Frame]
 pub fn H2Client::take_messages(Self, Int) -> Array[Bytes]
-pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> (Int, Array[Frame])
+pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> (Int, Array[@http2.Frame])
 
 pub struct H2Server {
   handlers : Map[String, Handler]
@@ -420,12 +304,12 @@ pub fn H2Server::active_streams(Self) -> Int
 pub fn H2Server::add_stream_interceptor(Self, (RpcContext, Bytes, (RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]) -> Unit
 pub fn H2Server::add_unary_interceptor(Self, (RpcContext, Bytes, (RpcContext, Bytes) -> Bytes) -> Bytes) -> Unit
 pub fn H2Server::closing(Self) -> Bool
-pub fn H2Server::feed(Self, Frame) -> Array[Frame]
-pub fn H2Server::goaway(Self, Int) -> Array[Frame]
+pub fn H2Server::feed(Self, @http2.Frame) -> Array[@http2.Frame]
+pub fn H2Server::goaway(Self, Int) -> Array[@http2.Frame]
 pub fn H2Server::goaway_received(Self) -> Bool
 pub fn H2Server::highest_stream(Self) -> Int
 pub fn H2Server::new() -> Self
-pub fn H2Server::preface(Self) -> Array[Frame]
+pub fn H2Server::preface(Self) -> Array[@http2.Frame]
 pub fn H2Server::register(Self, String, (Bytes) -> Bytes) -> Unit
 pub fn H2Server::register_bidi(Self, String, (RpcContext) -> BidiHandler) -> Unit
 pub fn H2Server::register_client_streaming(Self, String, (RpcContext, Array[Bytes]) -> Bytes) -> Unit
@@ -436,7 +320,7 @@ pub fn H2Server::release(Self, Int) -> Unit
 pub fn H2Server::set_clock(Self, () -> Int64) -> Unit
 pub fn H2Server::set_max_streams(Self, Int) -> Unit
 pub fn H2Server::stream_state(Self, Int) -> StreamState
-pub fn H2Server::tick(Self) -> Array[Frame]
+pub fn H2Server::tick(Self) -> Array[@http2.Frame]
 
 pub(all) enum Handler {
   Unary((RpcContext, Bytes) -> Bytes)
@@ -572,14 +456,6 @@ pub fn PbWriter::write_fixed64(Self, UInt64) -> Unit
 pub fn PbWriter::write_len_delim(Self, Bytes) -> Unit
 pub fn PbWriter::write_tag(Self, Int, WireType) -> Unit
 pub fn PbWriter::write_varint(Self, UInt64) -> Unit
-
-pub(all) struct Priority {
-  exclusive : Bool
-  stream_dependency : Int
-  weight : Int
-} derive(Eq)
-pub fn Priority::equal(Self, Self) -> Bool
-pub fn Priority::not_equal(Self, Self) -> Bool
 
 pub(all) enum ReflectionRequest {
   ListServices(String)

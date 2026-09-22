@@ -41,7 +41,7 @@ fn open_call(
   block : Bytes,
   id : Int,
   end_stream : Bool,
-) -> Array[@moonrpc.Frame] {
+) -> Array[@http2.Frame] {
   server.feed(
     Headers(
       stream_id=id,
@@ -55,7 +55,7 @@ fn open_call(
 }
 
 ///|
-fn describe(f : @moonrpc.Frame) -> String {
+fn describe(f : @http2.Frame) -> String {
   match f {
     RstStream(stream_id~, error_code~) =>
       "RST_STREAM(stream \{stream_id}, code \{error_code})"
@@ -71,7 +71,7 @@ fn describe(f : @moonrpc.Frame) -> String {
 
 ///|
 /// The `:status` and `grpc-status` of a response, for the answers that are one HEADERS.
-fn answer(frames : Array[@moonrpc.Frame], dec : @hpack.Decoder) -> String raise {
+fn answer(frames : Array[@http2.Frame], dec : @hpack.Decoder) -> String raise {
   let mut http = b"-"
   let mut grpc = b"-"
   for f in frames {
@@ -154,7 +154,7 @@ fn stream_limit() -> Unit {
   for f in server.preface() {
     if f is Settings(params~, ..) {
       for p in params {
-        if p.0 == @moonrpc.settings_max_concurrent_streams {
+        if p.0 == @http2.settings_max_concurrent_streams {
           println("advertised SETTINGS_MAX_CONCURRENT_STREAMS = \{p.1}")
         }
       }

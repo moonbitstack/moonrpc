@@ -15,7 +15,7 @@ pub struct Channel {
 }
 
 ///|
-/// Open a channel to `host:port`: connect, send the 24-octet connection preface and
+/// Open a channel to `host:port`: connect, send the 24-octet connection @http2.preface and
 /// the client SETTINGS. The server's SETTINGS are read and acknowledged lazily on
 /// the first call.
 pub async fn Channel::connect(host : String, port : Int) -> Channel {
@@ -23,7 +23,7 @@ pub async fn Channel::connect(host : String, port : Int) -> Channel {
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
   let engine = @moonrpc.H2Client::new()
-  conn.write(@moonrpc.connection_preface)
+  conn.write(@http2.preface)
   write_frames(conn, engine.preface())
   { conn, engine, }
 }
@@ -69,9 +69,9 @@ async fn Channel::drive(
         Some(_) => self.engine.reply(id)
         None => {
           write_frames(self.conn, [
-            @moonrpc.Frame::RstStream(
+            @http2.Frame::RstStream(
               stream_id=id,
-              error_code=@moonrpc.error_cancel,
+              error_code=@http2.error_cancel,
             ),
           ]) catch {
             _ => ()

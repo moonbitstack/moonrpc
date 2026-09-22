@@ -115,8 +115,8 @@ async fn drive_slow(
   engine : @moonrpc.H2Server,
   delay : Int,
 ) -> Unit {
-  let preface = conn.read_exactly(@moonrpc.connection_preface.length())
-  if !@moonrpc.has_connection_preface(preface) {
+  let got = conn.read_exactly(@http2.preface.length())
+  if !@http2.has_preface(got) {
     return
   }
   write_frames(conn, engine.preface())

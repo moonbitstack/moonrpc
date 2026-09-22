@@ -1,4 +1,5 @@
 import {
+  "moonbitstack/moonhttp/http2",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonrpc",

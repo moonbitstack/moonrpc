@@ -22,7 +22,7 @@ fn open_call(
   enc : @hpack.Encoder,
   id : Int,
   end_stream : Bool,
-) -> Array[@moonrpc.Frame] {
+) -> Array[@http2.Frame] {
   let block = enc.encode([
     { name: b":method", value: b"POST", },
     { name: b":scheme", value: b"http", },
@@ -43,7 +43,7 @@ fn open_call(
 }
 
 ///|
-fn describe(f : @moonrpc.Frame) -> String {
+fn describe(f : @http2.Frame) -> String {
   match f {
     RstStream(stream_id~, error_code~) =>
       "RST_STREAM(stream \{stream_id}, code \{error_code})"
@@ -123,11 +123,11 @@ fn client_status() -> Unit raise {
   // A reset carries no trailers, so the HTTP/2 error code is the only thing left to
   // build a status from. REFUSED_STREAM means the server never processed the call.
   let codes = [
-    (@moonrpc.error_refused_stream, "REFUSED_STREAM"),
-    (@moonrpc.error_enhance_your_calm, "ENHANCE_YOUR_CALM"),
-    (@moonrpc.error_inadequate_security, "INADEQUATE_SECURITY"),
-    (@moonrpc.error_cancel, "CANCEL"),
-    (@moonrpc.error_protocol_error, "PROTOCOL_ERROR"),
+    (@http2.error_refused_stream, "REFUSED_STREAM"),
+    (@http2.error_enhance_your_calm, "ENHANCE_YOUR_CALM"),
+    (@http2.error_inadequate_security, "INADEQUATE_SECURITY"),
+    (@http2.error_cancel, "CANCEL"),
+    (@http2.error_protocol_error, "PROTOCOL_ERROR"),
   ]
   for pair in codes {
     let (code, name) = pair

@@ -50,7 +50,7 @@ fn add_window(cur : Int, inc : Int) -> Int {
 fn guard_header_size(buf : Buffer) -> Unit raise H2Fault {
   if buf.length() > max_header_list_size {
     raise ConnFault(
-      code=error_frame_size_error,
+      code=@http2.error_frame_size_error,
       why="field block over " + max_header_list_size.to_string() + " octets",
     )
   }
@@ -182,7 +182,7 @@ pub struct H2Server {
   mut conn_send_window : Int
   mut remote_initial_window : Int
   mut remote_max_frame : Int
-  // How many streams this connection runs at once: what `preface` advertises as
+  // How many streams this connection runs at once: what `@http2.preface` advertises as
   // SETTINGS_MAX_CONCURRENT_STREAMS and what a new HEADERS is measured against.
   mut max_streams : Int
   // What the engine reads to tell whether a deadline has passed. Pure by default —
@@ -315,13 +315,13 @@ pub fn H2Server::goaway_received(self : H2Server) -> Bool {
 ///|
 /// The server's opening frames (RFC 7540 §3.5): a SETTINGS frame disabling server push
 /// and naming how many streams this connection will run at once. Sent immediately after
-/// the client connection preface is validated, before any request frame is read.
-pub fn H2Server::preface(self : H2Server) -> Array[Frame] {
+/// the client connection @http2.preface is validated, before any request frame is read.
+pub fn H2Server::preface(self : H2Server) -> Array[@http2.Frame] {
   [
     Settings(
       params=[
-        (settings_enable_push, 0),
-        (settings_max_concurrent_streams, self.max_streams),
+        (@http2.settings_enable_push, 0),
+        (@http2.settings_max_concurrent_streams, self.max_streams),
       ],
       ack=false,
     ),
@@ -331,7 +331,7 @@ pub fn H2Server::preface(self : H2Server) -> Array[Frame] {
 ///|
 /// Set how many streams this connection may run at once. The value is both advertised
 /// as `SETTINGS_MAX_CONCURRENT_STREAMS` and enforced on arrival, so set it before
-/// `preface` and the peer is told exactly what it will be held to.
+/// `@http2.preface` and the peer is told exactly what it will be held to.
 pub fn H2Server::set_max_streams(self : H2Server, n : Int) -> Unit {
   self.max_streams = n
 }
@@ -352,9 +352,12 @@ pub fn H2Server::set_clock(self : H2Server, clock : () -> Int64) -> Unit {
 /// before closing the connection. A stream opened above `last_stream_id` afterwards is
 /// declined with RST_STREAM(REFUSED_STREAM), which tells the client it was never
 /// processed and can be re-issued elsewhere.
-pub fn H2Server::goaway(self : H2Server, last_stream_id : Int) -> Array[Frame] {
+pub fn H2Server::goaway(
+  self : H2Server,
+  last_stream_id : Int,
+) -> Array[@http2.Frame] {
   self.drained = Some(last_stream_id)
-  [GoAway(last_stream_id~, error_code=error_no_error, debug=b"")]
+  [GoAway(last_stream_id~, error_code=@http2.error_no_error, debug=b"")]
 }
 
 ///|
@@ -379,7 +382,7 @@ fn bytes_to_ascii(b : Bytes) -> String {
 }
 
 ///|
-/// Frame an HPACK header block as HEADERS plus, when it exceeds the peer's
+/// @http2.Frame an HPACK header block as HEADERS plus, when it exceeds the peer's
 /// `SETTINGS_MAX_FRAME_SIZE`, one or more CONTINUATION frames (RFC 7540 §4.3 / §6.10):
 /// the block is split into `max_frame`-sized fragments, the first a HEADERS with
 /// `end_headers=false`, the rest CONTINUATION, the last carrying `end_headers=true`.
@@ -388,7 +391,7 @@ fn emit_header_frames(
   block : Bytes,
   end_stream : Bool,
   max_frame_in : Int,
-) -> Array[Frame] {
+) -> Array[@http2.Frame] {
   // Never fragment at zero: a bad peer MAX_FRAME_SIZE is clamped on apply, but floor
   // here too so the split loop always advances rather than looping on empty chunks.
   let max_frame = if max_frame_in < 1 {
@@ -396,7 +399,7 @@ fn emit_header_frames(
   } else {
     max_frame_in
   }
-  let frames : Array[Frame] = []
+  let frames : Array[@http2.Frame] = []
   if block.length() <= max_frame {
     frames.push(
       Headers(
@@ -650,7 +653,7 @@ fn H2Server::stream(self : H2Server, id : Int) -> SrvStream {
 /// Apply a peer SETTINGS parameter. A change to `INITIAL_WINDOW_SIZE` retroactively
 /// shifts every open stream's send window by the delta (RFC 7540 §6.9.2).
 fn H2Server::apply_setting(self : H2Server, id : Int, value : Int) -> Unit {
-  if id == settings_initial_window_size {
+  if id == @http2.settings_initial_window_size {
     // Ignore an out-of-range window (RFC 7540 §6.5.2 caps it at 2^31-1; a value with
     // the high bit set decodes negative here) rather than corrupting send-window math.
     if value < 0 {
@@ -661,7 +664,7 @@ fn H2Server::apply_setting(self : H2Server, id : Int, value : Int) -> Unit {
     for _, s in self.streams {
       s.send_window = add_window(s.send_window, delta)
     }
-  } else if id == settings_max_frame_size {
+  } else if id == @http2.settings_max_frame_size {
     // Clamp to the RFC 7540 §6.5.2 range [2^14, 2^24-1]; a smaller value (e.g. 0)
     // would stall header emission in an endless empty-CONTINUATION loop.
     self.remote_max_frame = if value < default_max_frame_size {
@@ -671,7 +674,7 @@ fn H2Server::apply_setting(self : H2Server, id : Int, value : Int) -> Unit {
     } else {
       value
     }
-  } else if id == settings_header_table_size {
+  } else if id == @http2.settings_header_table_size {
     if value >= 0 {
       self.encoder.table.resize(value)
     }
@@ -682,7 +685,7 @@ fn H2Server::apply_setting(self : H2Server, id : Int, value : Int) -> Unit {
 /// Emit a connection-level WINDOW_UPDATE when the connection receive window has fallen
 /// below half the default, replenishing it to the default (a simple, correct
 /// auto-tuning policy; RFC 7540 §6.9).
-fn H2Server::credit_conn(self : H2Server) -> Array[Frame] {
+fn H2Server::credit_conn(self : H2Server) -> Array[@http2.Frame] {
   if self.conn_recv_window < default_window_size / 2 {
     let inc = default_window_size - self.conn_recv_window
     self.conn_recv_window = self.conn_recv_window + inc
@@ -694,7 +697,7 @@ fn H2Server::credit_conn(self : H2Server) -> Array[Frame] {
 ///|
 /// Emit connection- and stream-level WINDOW_UPDATE frames when a receive window
 /// has fallen below half the default, replenishing it to the default.
-fn H2Server::replenish(self : H2Server, s : SrvStream) -> Array[Frame] {
+fn H2Server::replenish(self : H2Server, s : SrvStream) -> Array[@http2.Frame] {
   let frames = self.credit_conn()
   let threshold = default_window_size / 2
   if s.recv_window < threshold {
@@ -713,7 +716,10 @@ fn H2Server::replenish(self : H2Server, s : SrvStream) -> Array[Frame] {
 /// as a raise the driver can only discard: RST_STREAM for a stream error, and for a
 /// connection error a GOAWAY, after which `closing` is set and every later frame is
 /// ignored (RFC 9113 §5.4).
-pub fn H2Server::feed(self : H2Server, frame : Frame) -> Array[Frame] {
+pub fn H2Server::feed(
+  self : H2Server,
+  frame : @http2.Frame,
+) -> Array[@http2.Frame] {
   if self.closing {
     return []
   }
@@ -728,8 +734,8 @@ pub fn H2Server::feed(self : H2Server, frame : Frame) -> Array[Frame] {
 /// stream's octets were counted against: the peer spent them on a window it shares with
 /// every other stream, and a connection that never returns them stalls a window's worth
 /// at a time.
-fn H2Server::report(self : H2Server, f : H2Fault) -> Array[Frame] {
-  let frames : Array[Frame] = []
+fn H2Server::report(self : H2Server, f : H2Fault) -> Array[@http2.Frame] {
+  let frames : Array[@http2.Frame] = []
   match f {
     ConnFault(..) => self.closing = true
     // The RST_STREAM about to go out closes the stream, so the response the handler
@@ -754,7 +760,7 @@ fn H2Server::report(self : H2Server, f : H2Fault) -> Array[Frame] {
 /// The driver calls this on whatever schedule it keeps time on; the engine also checks
 /// the deadline whenever a stream advances, so a call that is making progress never
 /// needs a tick to be cut off.
-pub fn H2Server::tick(self : H2Server) -> Array[Frame] {
+pub fn H2Server::tick(self : H2Server) -> Array[@http2.Frame] {
   if self.closing {
     return []
   }
@@ -781,7 +787,7 @@ fn H2Server::past_deadline(self : H2Server, s : SrvStream) -> Bool {
 fn H2Server::expire(
   self : H2Server,
   s : SrvStream,
-) -> Array[Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise H2Fault {
   s.out = b""
   s.out_off = 0
   s.status_code = Status::code(DeadlineExceeded)
@@ -794,7 +800,7 @@ fn H2Server::expire(
   s.response_ended = true
   let frames = self.produce(s)
   if !s.end_stream_recv {
-    frames.push(RstStream(stream_id=s.id, error_code=error_no_error))
+    frames.push(RstStream(stream_id=s.id, error_code=@http2.error_no_error))
     s.retire()
   }
   frames
@@ -803,8 +809,8 @@ fn H2Server::expire(
 ///|
 /// Close out every stream whose deadline has passed. A stream that has already sent its
 /// status is finished and out of the deadline's reach, whatever its state says.
-fn H2Server::sweep(self : H2Server) -> Array[Frame] raise H2Fault {
-  let frames : Array[Frame] = []
+fn H2Server::sweep(self : H2Server) -> Array[@http2.Frame] raise H2Fault {
+  let frames : Array[@http2.Frame] = []
   for _, s in self.streams {
     if !(s.state is Closed) && !s.trailers_sent && self.past_deadline(s) {
       for f in self.expire(s) {
@@ -822,7 +828,7 @@ fn H2Server::sweep(self : H2Server) -> Array[Frame] raise H2Fault {
 fn H2Server::flush(
   self : H2Server,
   s : SrvStream,
-) -> Array[Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise H2Fault {
   if !s.trailers_sent && self.past_deadline(s) {
     return self.expire(s)
   }
@@ -842,14 +848,18 @@ fn recv_event(s : SrvStream, ev : StreamEvent) -> StreamState raise H2Fault {
 /// peer's, so it ends the connection with INTERNAL_ERROR rather than blaming a stream.
 fn send_event(s : SrvStream, ev : StreamEvent) -> StreamState raise H2Fault {
   s.state.on_send(ev) catch {
-    InvalidTransition(m) => raise ConnFault(code=error_internal_error, why=m)
+    InvalidTransition(m) =>
+      raise ConnFault(code=@http2.error_internal_error, why=m)
   }
 }
 
 ///|
 /// The frame-processing core. Everything that can go wrong is classified into an
 /// `H2Fault`, which `feed` turns into the frames that report it.
-fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault {
+fn H2Server::step(
+  self : H2Server,
+  frame : @http2.Frame,
+) -> Array[@http2.Frame] raise H2Fault {
   // §6.10: a field block is a contiguous run of HEADERS then CONTINUATION. Nothing may
   // be interleaved into it — not a frame on another stream, not one on this one — so
   // while a block is open the only frame that can be processed is its continuation.
@@ -860,7 +870,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
     }
     if !continues {
       raise ConnFault(
-        code=error_protocol_error,
+        code=@http2.error_protocol_error,
         why="frame interleaved into an open field block",
       )
     }
@@ -882,16 +892,16 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
       if increment == 0 {
         let why = "WINDOW_UPDATE with a zero increment"
         if stream_id == 0 {
-          raise ConnFault(code=error_protocol_error, why~)
+          raise ConnFault(code=@http2.error_protocol_error, why~)
         }
-        raise StreamFault(id=stream_id, code=error_protocol_error, why~)
+        raise StreamFault(id=stream_id, code=@http2.error_protocol_error, why~)
       }
       if stream_id == 0 {
         // §6.9.1: a window may not exceed 2^31-1, and the endpoint whose window would
         // overflow terminates rather than quietly clamping.
         if window_overflows(self.conn_send_window, increment) {
           raise ConnFault(
-            code=error_flow_control_error,
+            code=@http2.error_flow_control_error,
             why="connection window over 2^31-1",
           )
         }
@@ -901,7 +911,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
         if window_overflows(s.send_window, increment) {
           raise StreamFault(
             id=stream_id,
-            code=error_flow_control_error,
+            code=@http2.error_flow_control_error,
             why="stream window over 2^31-1",
           )
         }
@@ -912,7 +922,10 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
     Headers(stream_id~, fragment~, end_stream~, end_headers~, ..) => {
       // §5.1.1: stream 0 is the connection control stream and carries no request.
       if stream_id == 0 {
-        raise ConnFault(code=error_protocol_error, why="HEADERS on stream 0")
+        raise ConnFault(
+          code=@http2.error_protocol_error,
+          why="HEADERS on stream 0",
+        )
       }
       // A HEADERS opening a new stream must carry an odd id strictly greater than any
       // client stream seen (RFC 7540 §5.1.1); an even/zero/re-used id would otherwise
@@ -921,7 +934,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
         if !stream_is_client_initiated(stream_id) ||
           stream_id <= self.last_client_stream {
           raise ConnFault(
-            code=error_protocol_error,
+            code=@http2.error_protocol_error,
             why="invalid client stream id " + stream_id.to_string(),
           )
         }
@@ -931,7 +944,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
           Some(last) if stream_id > last =>
             raise StreamFault(
               id=stream_id,
-              code=error_refused_stream,
+              code=@http2.error_refused_stream,
               why="server is draining",
             )
           _ => ()
@@ -942,7 +955,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
         if self.active_streams() >= self.max_streams {
           raise StreamFault(
             id=stream_id,
-            code=error_refused_stream,
+            code=@http2.error_refused_stream,
             why="over SETTINGS_MAX_CONCURRENT_STREAMS",
           )
         }
@@ -966,7 +979,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
     Continuation(stream_id~, fragment~, end_headers~) => {
       if stream_id == 0 {
         raise ConnFault(
-          code=error_protocol_error,
+          code=@http2.error_protocol_error,
           why="CONTINUATION on stream 0",
         )
       }
@@ -977,7 +990,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
         Some(s) if s.in_headers => s
         _ =>
           raise ConnFault(
-            code=error_protocol_error,
+            code=@http2.error_protocol_error,
             why="CONTINUATION with no field block in progress",
           )
       }
@@ -992,7 +1005,10 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
     Data(stream_id~, data~, end_stream~, padding~) => {
       // §6.1: DATA belongs to a stream, never to the connection.
       if stream_id == 0 {
-        raise ConnFault(code=error_protocol_error, why="DATA on stream 0")
+        raise ConnFault(
+          code=@http2.error_protocol_error,
+          why="DATA on stream 0",
+        )
       }
       // §6.9.1: the octets count against the connection window whatever becomes of the
       // stream, so this is charged before anything can refuse the frame — the peer has
@@ -1003,7 +1019,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
       self.conn_recv_window = self.conn_recv_window - flow_len
       if self.conn_recv_window < 0 {
         raise ConnFault(
-          code=error_flow_control_error,
+          code=@http2.error_flow_control_error,
           why="DATA past the connection receive window",
         )
       }
@@ -1013,7 +1029,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
       if s.recv_window < 0 {
         raise StreamFault(
           id=stream_id,
-          code=error_flow_control_error,
+          code=@http2.error_flow_control_error,
           why="DATA past the stream receive window",
         )
       }
@@ -1030,7 +1046,10 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
     RstStream(stream_id~, ..) => {
       // §6.4: RST_STREAM names the stream it resets; stream 0 names none.
       if stream_id == 0 {
-        raise ConnFault(code=error_protocol_error, why="RST_STREAM on stream 0")
+        raise ConnFault(
+          code=@http2.error_protocol_error,
+          why="RST_STREAM on stream 0",
+        )
       }
       match self.streams.get(stream_id) {
         Some(s) => s.retire()
@@ -1042,7 +1061,7 @@ fn H2Server::step(self : H2Server, frame : Frame) -> Array[Frame] raise H2Fault 
       self.goaway_received = true
       []
     }
-    Priority(..) | PushPromise(..) | Unknown(..) => []
+    @http2.Priority(..) | PushPromise(..) | Unknown(..) => []
   }
 }
 
@@ -1057,7 +1076,11 @@ fn H2Server::complete_headers(
   // every later block on the connection, so it is fatal to the connection, not to
   // this stream.
   let headers = self.decoder.decode(s.header_block.to_bytes()) catch {
-    e => raise ConnFault(code=error_compression_error, why=Show::to_string(e))
+    e =>
+      raise ConnFault(
+        code=@http2.error_compression_error,
+        why=Show::to_string(e),
+      )
   }
   s.path = match header_value(headers, b":path") {
     Some(p) => bytes_to_ascii(p)
@@ -1117,7 +1140,7 @@ fn H2Server::complete_headers(
 fn H2Server::advance(
   self : H2Server,
   s : SrvStream,
-) -> Array[Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise H2Fault {
   if !s.headers_complete {
     return []
   }
@@ -1259,8 +1282,8 @@ fn H2Server::deliver(
 fn H2Server::produce(
   self : H2Server,
   s : SrvStream,
-) -> Array[Frame] raise H2Fault {
-  let frames : Array[Frame] = []
+) -> Array[@http2.Frame] raise H2Fault {
+  let frames : Array[@http2.Frame] = []
   if s.trailers_only {
     if !s.trailers_sent {
       let tr : Array[@header.Header] = [
@@ -1386,8 +1409,8 @@ fn H2Server::produce(
 ///|
 /// Pump every stream that has started but not finished sending (after a
 /// connection-level WINDOW_UPDATE lifts back-pressure on all of them at once).
-fn H2Server::pump_all(self : H2Server) -> Array[Frame] raise H2Fault {
-  let frames : Array[Frame] = []
+fn H2Server::pump_all(self : H2Server) -> Array[@http2.Frame] raise H2Fault {
+  let frames : Array[@http2.Frame] = []
   for _, s in self.streams {
     // A stream we reset, or the peer did, sends nothing more — asking it to would be
     // a send from `Closed`, i.e. our own state machine refusing us.

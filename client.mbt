@@ -144,13 +144,13 @@ fn emit_request_header_frames(
   block : Bytes,
   end_stream : Bool,
   max_frame_in : Int,
-) -> Array[Frame] {
+) -> Array[@http2.Frame] {
   let max_frame = if max_frame_in < 1 {
     default_max_frame_size
   } else {
     max_frame_in
   }
-  let frames : Array[Frame] = []
+  let frames : Array[@http2.Frame] = []
   if block.length() <= max_frame {
     frames.push(
       Headers(
@@ -213,11 +213,11 @@ pub fn H2Client::new() -> H2Client {
 
 ///|
 /// The client's opening frames (RFC 7540 §3.5): a SETTINGS frame disabling server
-/// push. Written right after the 24-octet connection preface bytes, before any
+/// push. Written right after the 24-octet connection @http2.preface bytes, before any
 /// request.
-pub fn H2Client::preface(self : H2Client) -> Array[Frame] {
+pub fn H2Client::preface(self : H2Client) -> Array[@http2.Frame] {
   ignore(self)
-  [Settings(params=[(settings_enable_push, 0)], ack=false)]
+  [Settings(params=[(@http2.settings_enable_push, 0)], ack=false)]
 }
 
 ///|
@@ -266,7 +266,7 @@ pub fn H2Client::send(
   id : Int,
   message : Bytes,
   end? : Bool = false,
-) -> Array[Frame] {
+) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
       c.out = cat(c.out, encode_message(message))
@@ -282,7 +282,7 @@ pub fn H2Client::send(
 ///|
 /// Half-close the request side of a call (no more request messages) and return any
 /// frames that completes — the trailing END_STREAM.
-pub fn H2Client::close_send(self : H2Client, id : Int) -> Array[Frame] {
+pub fn H2Client::close_send(self : H2Client, id : Int) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
       c.req_ended = true
@@ -302,7 +302,7 @@ pub fn H2Client::unary(
   metadata? : Array[@header.Header] = [],
   authority? : String = "127.0.0.1",
   timeout_millis? : Int,
-) -> (Int, Array[Frame]) {
+) -> (Int, Array[@http2.Frame]) {
   let id = self.open(path, metadata~, authority~, timeout_millis?)
   (id, self.send(id, request, end=true))
 }
@@ -313,8 +313,11 @@ pub fn H2Client::unary(
 /// max-frame size allow, the last frame carrying END_STREAM once the request is
 /// half-closed. A half-close with an already-drained body emits an empty
 /// END_STREAM DATA.
-fn H2Client::produce_request(self : H2Client, c : ClientCall) -> Array[Frame] {
-  let frames : Array[Frame] = []
+fn H2Client::produce_request(
+  self : H2Client,
+  c : ClientCall,
+) -> Array[@http2.Frame] {
+  let frames : Array[@http2.Frame] = []
   if !c.req_headers_sent {
     let headers : Array[@header.Header] = [
       { name: b":method", value: b"POST", },
@@ -381,7 +384,10 @@ fn H2Client::produce_request(self : H2Client, c : ClientCall) -> Array[Frame] {
 /// receive window, and — once a WINDOW_UPDATE lifts back-pressure — any remaining
 /// request DATA). Captures `:status`, `grpc-status`, response metadata, and the
 /// reassembled reply messages.
-pub fn H2Client::feed(self : H2Client, frame : Frame) -> Array[Frame] raise {
+pub fn H2Client::feed(
+  self : H2Client,
+  frame : @http2.Frame,
+) -> Array[@http2.Frame] raise {
   match frame {
     Settings(params~, ack~) =>
       if ack {
@@ -486,7 +492,7 @@ pub fn H2Client::feed(self : H2Client, frame : Frame) -> Array[Frame] raise {
       }
       []
     }
-    Priority(..) | PushPromise(..) | Unknown(..) => []
+    @http2.Priority(..) | PushPromise(..) | Unknown(..) => []
   }
 }
 
@@ -560,7 +566,7 @@ fn H2Client::deliver_headers(self : H2Client, c : ClientCall) -> Unit raise {
 /// Apply a peer SETTINGS parameter, mirroring the delta of a changed
 /// `INITIAL_WINDOW_SIZE` onto every open call's send window (RFC 7540 §6.9.2).
 fn H2Client::apply_setting(self : H2Client, id : Int, value : Int) -> Unit {
-  if id == settings_initial_window_size {
+  if id == @http2.settings_initial_window_size {
     // Ignore an out-of-range window (RFC 7540 §6.5.2 caps it at 2^31-1) rather than
     // letting a negative value corrupt every call's send-window math.
     if value < 0 {
@@ -571,7 +577,7 @@ fn H2Client::apply_setting(self : H2Client, id : Int, value : Int) -> Unit {
     for _, c in self.calls {
       c.send_window = add_window(c.send_window, delta)
     }
-  } else if id == settings_max_frame_size {
+  } else if id == @http2.settings_max_frame_size {
     // Clamp to the RFC 7540 §6.5.2 range [2^14, 2^24-1].
     self.remote_max_frame = if value < default_max_frame_size {
       default_max_frame_size
@@ -580,7 +586,7 @@ fn H2Client::apply_setting(self : H2Client, id : Int, value : Int) -> Unit {
     } else {
       value
     }
-  } else if id == settings_header_table_size {
+  } else if id == @http2.settings_header_table_size {
     if value >= 0 {
       self.encoder.table.resize(value)
     }
@@ -590,8 +596,8 @@ fn H2Client::apply_setting(self : H2Client, id : Int, value : Int) -> Unit {
 ///|
 /// Emit connection- and stream-level WINDOW_UPDATE frames when a receive window has
 /// fallen below half the default, replenishing it to the default (RFC 7540 §6.9).
-fn H2Client::replenish(self : H2Client, c : ClientCall) -> Array[Frame] {
-  let frames : Array[Frame] = []
+fn H2Client::replenish(self : H2Client, c : ClientCall) -> Array[@http2.Frame] {
+  let frames : Array[@http2.Frame] = []
   let threshold = default_window_size / 2
   if self.conn_recv_window < threshold {
     let inc = default_window_size - self.conn_recv_window
@@ -609,8 +615,8 @@ fn H2Client::replenish(self : H2Client, c : ClientCall) -> Array[Frame] {
 ///|
 /// Continue any call whose request body is not fully sent after a WINDOW_UPDATE
 /// lifted back-pressure.
-fn H2Client::pump_requests(self : H2Client) -> Array[Frame] {
-  let frames : Array[Frame] = []
+fn H2Client::pump_requests(self : H2Client) -> Array[@http2.Frame] {
+  let frames : Array[@http2.Frame] = []
   for _, c in self.calls {
     if c.req_headers_sent && !c.req_fin_sent {
       for f in self.produce_request(c) {
