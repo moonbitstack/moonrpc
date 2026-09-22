@@ -104,12 +104,7 @@ pub fn PbWriter::to_bytes(self : PbWriter) -> Bytes {
 /// Append a base-128 varint (protobuf "Base 128 Varints"): seven bits per octet,
 /// little-endian groups, the high bit marking continuation.
 pub fn PbWriter::write_varint(self : PbWriter, value : UInt64) -> Unit {
-  let mut v = value
-  while v >= 0x80 {
-    self.buf.write_byte(((v & 0x7F) | 0x80).to_byte())
-    v = v >> 7
-  }
-  self.buf.write_byte(v.to_byte())
+  @leb128.write(self.buf, value)
 }
 
 ///|
@@ -125,18 +120,13 @@ pub fn PbWriter::write_tag(
 ///|
 /// Append a little-endian 32-bit fixed value (wire type 5, no tag).
 pub fn PbWriter::write_fixed32(self : PbWriter, v : UInt) -> Unit {
-  self.buf.write_byte((v & 0xFF).to_byte())
-  self.buf.write_byte(((v >> 8) & 0xFF).to_byte())
-  self.buf.write_byte(((v >> 16) & 0xFF).to_byte())
-  self.buf.write_byte(((v >> 24) & 0xFF).to_byte())
+  @fixed.write_u32(self.buf, v, order=Little)
 }
 
 ///|
 /// Append a little-endian 64-bit fixed value (wire type 1, no tag).
 pub fn PbWriter::write_fixed64(self : PbWriter, v : UInt64) -> Unit {
-  for i = 0; i < 8; i = i + 1 {
-    self.buf.write_byte(((v >> (i * 8)) & 0xFF).to_byte())
-  }
+  @fixed.write_u64(self.buf, v, order=Little)
 }
 
 ///|
@@ -182,14 +172,14 @@ pub fn PbWriter::uint64(self : PbWriter, field : Int, v : UInt64) -> Unit {
 /// Write a `sint32` field (zigzag-encoded so small-magnitude negatives stay short).
 pub fn PbWriter::sint32(self : PbWriter, field : Int, v : Int) -> Unit {
   self.write_tag(field, Varint)
-  self.write_varint(((v << 1) ^ (v >> 31)).reinterpret_as_uint().to_uint64())
+  self.write_varint(@leb128.zigzag(v.to_int64()))
 }
 
 ///|
 /// Write a `sint64` field (zigzag-encoded).
 pub fn PbWriter::sint64(self : PbWriter, field : Int, v : Int64) -> Unit {
   self.write_tag(field, Varint)
-  self.write_varint(((v << 1) ^ (v >> 63)).reinterpret_as_uint64())
+  self.write_varint(@leb128.zigzag(v))
 }
 
 ///|
@@ -267,32 +257,14 @@ pub fn PbReader::eof(self : PbReader) -> Bool {
 }
 
 ///|
-fn PbReader::byte(self : PbReader) -> Int raise PbError {
-  if self.pos >= self.data.length() {
-    raise Truncated
-  }
-  let b = self.data[self.pos].to_int()
-  self.pos = self.pos + 1
-  b
-}
-
-///|
 /// Read a base-128 varint. Raises `Overflow` past ten octets and `Truncated` if the
 /// buffer ends mid-varint.
 pub fn PbReader::read_varint(self : PbReader) -> UInt64 raise PbError {
-  let mut value : UInt64 = 0
-  let mut shift = 0
-  while true {
-    if shift >= 64 {
-      raise Overflow
-    }
-    let octet = self.byte()
-    value = value | ((octet & 0x7F).to_uint64() << shift)
-    if (octet & 0x80) == 0 {
-      break
-    }
-    shift = shift + 7
+  let (value, used) = @leb128.decode(self.data[:], at=self.pos) catch {
+    @leb128.Exceeded(..) => raise Overflow
+    @leb128.Truncated(_) => raise Truncated
   }
+  self.pos = self.pos + used
   value
 }
 
@@ -311,20 +283,20 @@ pub fn PbReader::read_tag(self : PbReader) -> (Int, WireType) raise PbError {
 ///|
 /// Read a little-endian 32-bit fixed value.
 pub fn PbReader::read_fixed32(self : PbReader) -> UInt raise PbError {
-  let b0 = self.byte()
-  let b1 = self.byte()
-  let b2 = self.byte()
-  let b3 = self.byte()
-  (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)).reinterpret_as_uint()
+  guard @fixed.read_u32(self.data[:], at=self.pos, order=Little) is Some(v) else {
+    raise Truncated
+  }
+  self.pos = self.pos + 4
+  v
 }
 
 ///|
 /// Read a little-endian 64-bit fixed value.
 pub fn PbReader::read_fixed64(self : PbReader) -> UInt64 raise PbError {
-  let mut v : UInt64 = 0
-  for i = 0; i < 8; i = i + 1 {
-    v = v | (self.byte().to_uint64() << (i * 8))
+  guard @fixed.read_u64(self.data[:], at=self.pos, order=Little) is Some(v) else {
+    raise Truncated
   }
+  self.pos = self.pos + 8
   v
 }
 
@@ -370,14 +342,14 @@ pub fn PbReader::read_uint64(self : PbReader) -> UInt64 raise PbError {
 /// Read a `sint32` field body (zigzag-decoded).
 pub fn PbReader::read_sint32(self : PbReader) -> Int raise PbError {
   let u = self.read_varint()
-  ((u >> 1).reinterpret_as_int64() ^ -(u & 1).reinterpret_as_int64()).to_int()
+  @leb128.unzigzag(u).to_int()
 }
 
 ///|
 /// Read a `sint64` field body (zigzag-decoded).
 pub fn PbReader::read_sint64(self : PbReader) -> Int64 raise PbError {
   let u = self.read_varint()
-  (u >> 1).reinterpret_as_int64() ^ -(u & 1).reinterpret_as_int64()
+  @leb128.unzigzag(u)
 }
 
 ///|

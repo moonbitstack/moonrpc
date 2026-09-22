@@ -39,17 +39,6 @@ pub fn ServingStatus::from_code(n : Int) -> ServingStatus {
 // -- minimal protobuf wire helpers ------------------------------------------
 
 ///|
-/// Append a base-128 varint (protobuf §"Base 128 Varints") to `buf`.
-fn pb_write_varint(buf : Buffer, value : Int) -> Unit {
-  let mut v = value
-  while v >= 0x80 {
-    buf.write_byte(((v & 0x7F) | 0x80).to_byte())
-    v = v >> 7
-  }
-  buf.write_byte(v.to_byte())
-}
-
-///|
 /// Encode a `HealthCheckRequest`: field 1 (`service`, a length-delimited string).
 /// An empty service name encodes to the empty message, the wire form of the
 /// overall-server check.
@@ -57,7 +46,7 @@ pub fn encode_health_request(service : Bytes) -> Bytes {
   let buf = Buffer()
   if service.length() > 0 {
     buf.write_byte(b'\x0a') // field 1, wire type 2 (length-delimited)
-    pb_write_varint(buf, service.length())
+    @leb128.write(buf, service.length().to_uint64())
     buf.write_bytes(service)
   }
   buf.to_bytes()
@@ -93,7 +82,7 @@ pub fn encode_health_response(status : ServingStatus) -> Bytes {
   let buf = Buffer()
   if status.code() != 0 {
     buf.write_byte(b'\x08') // field 1, wire type 0 (varint)
-    pb_write_varint(buf, status.code())
+    @leb128.write(buf, status.code().to_uint64())
   }
   buf.to_bytes()
 }

@@ -8,6 +8,8 @@ import {
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
   "moonbitlang/core/buffer",
+  "moonbitstack/moonvar/leb128",
+  "moonbitstack/moonvar/fixed",
   "moonbitstack/moonbase",
   "moonbitstack/moonbase/base64",
   "moonbitlang/core/encoding/utf8",

@@ -44,11 +44,12 @@ fn run() -> Unit raise {
   }
 
   // Prefix integers (§5.1): a value below the prefix max fits one octet; 1337 with a
-  // 5-bit prefix spills into continuation octets. Encode then decode straight back.
+  // 5-bit prefix spills into continuation octets. The arithmetic is `moonvar`'s, since
+  // QPACK counts in the same integer and neither of them owns it.
   for value in [10, 31, 1337, 66666] {
-    let enc = @hpack.integer(value, 5)
+    let enc = @prefix.encode(value, prefix=5)
     let status = try {
-      let (back, consumed) = @hpack.read_integer(enc, 0, 5)
+      let (back, consumed) = @prefix.decode(enc[:], prefix=5)
       if back == value && consumed == enc.length() {
         "ok"
       } else {
@@ -67,9 +68,9 @@ fn run() -> Unit raise {
   let huff = @hpack.string(host[:])
   let auto = @hpack.string(host[:])
   println("string \"www.example.com\":")
-  println("  raw     \{raw.length()} octets, H=\{@hpack.is_huffman(raw, 0)}")
+  println("  raw     \{raw.length()} octets, H=\{@prefix.flagged(raw[:])}")
   println(
-    "  huffman \{huff.length()} octets, H=\{@hpack.is_huffman(huff, 0)}  (§C.4.1: \{hex(@huffman.encode(host))})",
+    "  huffman \{huff.length()} octets, H=\{@prefix.flagged(huff[:])}  (§C.4.1: \{hex(@huffman.encode(host))})",
   )
   println("  auto picks the huffman form: \{auto == huff}")
   let (read_back, _) = @hpack.read_string(auto, 0)

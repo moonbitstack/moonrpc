@@ -82,7 +82,7 @@ engine.add_unary_interceptor((ctx, req, next) => {
 
 ## Protobuf and Server Reflection
 
-A pure protobuf wire runtime carries the proto3 binary format — varint, zigzag, `fixed32`/`fixed64`, and length-delimited fields — as a `PbWriter`/`PbReader` pair that every message serialises through on every backend:
+A protobuf wire runtime carries the proto3 binary format — varint, zigzag, `fixed32`/`fixed64`, and length-delimited fields — as a `PbWriter`/`PbReader` pair that every message serialises through on every backend. The base-128 varint and the zigzag fold are `moonvar`'s: DWARF writes the same integer, so it is not protobuf's to own, and what is here is the field structure built over it:
 
 ```moonbit
 let w = @moonrpc.PbWriter::new()
