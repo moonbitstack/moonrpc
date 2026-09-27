@@ -816,5 +816,5 @@ pub fn encode_grpc_timeout(millis : Int) -> Bytes {
 /// (gRPC spec §"Responses"): each `%XX` escape becomes the byte its two hex digits name, every other
 /// byte passes through, and a malformed escape is left literal; the result is read as UTF-8.
 pub fn percent_decode(v : Bytes) -> String {
-  @utf8.decode_lossy(@mime.percent_decode(v[:])[:])
+  @utf8.decode_lossy(@url.unescape(v[:])[:])
 }

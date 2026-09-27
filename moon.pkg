@@ -7,7 +7,7 @@ import {
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moondate",
   "moonbitstack/moonpool",
-  "moonbitstack/moonhttp/mime",
+  "moonbitstack/moonhttp/url",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
