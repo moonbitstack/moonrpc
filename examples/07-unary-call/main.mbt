@@ -13,7 +13,7 @@
 fn drive(
   server : @moonrpc.H2Server,
   client : @moonrpc.H2Client,
-  ids : Array[Int],
+  ids : Array[Int32],
   initial : Array[@http2.Frame],
 ) -> Unit raise {
   let to_server : Array[@http2.Frame] = []
@@ -51,7 +51,7 @@ fn drive(
 }
 
 ///|
-fn all_done(client : @moonrpc.H2Client, ids : Array[Int]) -> Bool {
+fn all_done(client : @moonrpc.H2Client, ids : Array[Int32]) -> Bool {
   for id in ids {
     if !client.is_done(id) {
       return false

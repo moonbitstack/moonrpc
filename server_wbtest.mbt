@@ -17,7 +17,7 @@ fn concat(a : Bytes, b : Bytes) -> Bytes {
 fn req_block(
   enc : @hpack.Encoder,
   path : Bytes,
-  extra? : Array[@header.Header] = [],
+  extra~ : Array[@header.Header] = [],
 ) -> Bytes {
   let headers : Array[@header.Header] = [
     { name: b":method", value: b"POST", },
@@ -165,7 +165,7 @@ test "engine: an unknown method gets a trailers-only UNIMPLEMENTED response" {
 /// Count DATA octets and whether an END_STREAM (trailer) HEADERS appears.
 fn tally(
   frames : Array[@http2.Frame],
-  acc : Ref[Int],
+  acc : Ref[Int32],
   trailer : Ref[Bool],
 ) -> Unit {
   for f in frames {
@@ -514,7 +514,7 @@ fn call_once(
   engine : H2Server,
   enc : @hpack.Encoder,
   dec : @hpack.Decoder,
-  id : Int,
+  id : Int32,
   path : Bytes,
   body : Bytes,
 ) -> Bytes raise {
@@ -1069,7 +1069,7 @@ test "engine: PROTOCOL-HTTP2's request line is enforced, not assumed" {
 fn open_stream(
   engine : H2Server,
   enc : @hpack.Encoder,
-  id : Int,
+  id : Int32,
 ) -> Array[@http2.Frame] {
   engine.feed(
     Headers(
@@ -1136,7 +1136,7 @@ test "engine: one stream over the advertised limit is refused, not served" {
 /// A DATA payload of `n` octets that reads as the opening of one gRPC message far longer
 /// than that (4 000 000 octets, under the receive cap), so the engine buffers it instead
 /// of dispatching a call — the payload is the flow-control test's subject, not a request.
-fn partial_message(n : Int) -> Bytes {
+fn partial_message(n : Int32) -> Bytes {
   let buf = Buffer()
   buf.write_byte(0)
   buf.write_byte(0)

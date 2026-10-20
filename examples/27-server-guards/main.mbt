@@ -20,7 +20,7 @@ fn ascii(bs : Bytes) -> String {
 fn request(
   enc : @hpack.Encoder,
   path : Bytes,
-  extra? : Array[@header.Header] = [],
+  extra~ : Array[@header.Header] = [],
 ) -> Bytes {
   let headers : Array[@header.Header] = [
     { name: b":method", value: b"POST", },
@@ -39,7 +39,7 @@ fn request(
 fn open_call(
   server : @moonrpc.H2Server,
   block : Bytes,
-  id : Int,
+  id : Int32,
   end_stream : Bool,
 ) -> Array[@http2.Frame] {
   server.feed(

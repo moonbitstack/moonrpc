@@ -22,7 +22,7 @@ pub struct Keepalive {
 pub fn Keepalive::new(
   keepalive_time~ : Int64,
   keepalive_timeout~ : Int64,
-  now? : Int64 = 0L,
+  now~ : Int64 = 0L,
 ) -> Keepalive {
   {
     keepalive_time,

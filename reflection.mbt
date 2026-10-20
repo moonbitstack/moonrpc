@@ -66,7 +66,7 @@ pub fn encode_reflection_request(req : ReflectionRequest) -> Bytes {
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
-  ReflectionError(Int, String)
+  ReflectionError(Int32, String)
 } derive(Eq)
 
 // -- response builders ------------------------------------------------------
@@ -116,7 +116,7 @@ fn encode_file_descriptor_response(
 ///|
 /// A `ServerReflectionResponse` whose `message_response` is an `ErrorResponse`.
 fn encode_error_response(
-  code : Int,
+  code : Int32,
   message : String,
   original : Bytes,
 ) -> Bytes {
@@ -200,8 +200,8 @@ pub fn decode_reflection_response(
 /// `ListServices` enumerates every registered service.
 pub struct ReflectionService {
   files : Array[FileDescriptor]
-  by_symbol : Map[String, Int]
-  by_filename : Map[String, Int]
+  by_symbol : Map[String, Int32]
+  by_filename : Map[String, Int32]
   services : Array[String]
 }
 

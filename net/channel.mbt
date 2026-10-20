@@ -18,7 +18,7 @@ pub struct Channel {
 /// Open a channel to `host:port`: connect, send the 24-octet connection @http2.preface and
 /// the client SETTINGS. The server's SETTINGS are read and acknowledged lazily on
 /// the first call.
-pub async fn Channel::connect(host : String, port : Int) -> Channel {
+pub async fn Channel::connect(host : String, port : Int32) -> Channel {
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
@@ -38,7 +38,7 @@ pub fn Channel::close(self : Channel) -> Unit {
 /// Read response frames for call `id`, feeding each to the engine and writing back
 /// whatever it produces (SETTINGS ack, PING pong, WINDOW_UPDATE), until the engine
 /// marks the call complete.
-async fn Channel::pump(self : Channel, id : Int) -> Unit {
+async fn Channel::pump(self : Channel, id : Int32) -> Unit {
   while !self.engine.is_done(id) {
     let frame = read_frame(self.conn)
     write_frames(self.conn, self.engine.feed(frame))
@@ -51,8 +51,8 @@ async fn Channel::pump(self : Channel, id : Int) -> Unit {
 /// `DEADLINE_EXCEEDED` reply instead of the server's.
 async fn Channel::drive(
   self : Channel,
-  id : Int,
-  timeout_millis : Int?,
+  id : Int32,
+  timeout_millis : Int32?,
 ) -> @moonrpc.CallReply {
   // Every path out of here — reply, deadline, cancellation — is the end of this call,
   // and the engine keeps its buffers until told otherwise. A `Channel` is one
@@ -96,7 +96,7 @@ async fn Channel::unary_once(
   path : String,
   request : Bytes,
   metadata : Array[@header.Header],
-  timeout_millis : Int?,
+  timeout_millis : Int32?,
 ) -> @moonrpc.CallReply {
   let (id, frames) = self.engine.unary(
     path,
@@ -121,8 +121,8 @@ pub async fn Channel::unary(
   self : Channel,
   path : String,
   request : Bytes,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
   retry? : @moonrpc.RetryPolicy,
 ) -> @moonrpc.CallReply {
   match retry {
@@ -169,8 +169,8 @@ pub async fn Channel::server_streaming(
   self : Channel,
   path : String,
   request : Bytes,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   let id = self.engine.open(path, metadata~, timeout_millis?)
   write_frames(self.conn, self.engine.send(id, request, end=true))
@@ -189,10 +189,10 @@ pub async fn Channel::stream_take(
   self : Channel,
   path : String,
   request : Bytes,
-  count : Int,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
-  half_close? : Bool = true,
+  count : Int32,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
+  half_close~ : Bool = true,
 ) -> Array[Bytes] {
   let id = self.engine.open(path, metadata~, timeout_millis?)
   write_frames(self.conn, self.engine.send(id, request, end=half_close))
@@ -214,8 +214,8 @@ pub async fn Channel::client_streaming(
   self : Channel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   let id = self.engine.open(path, metadata~, timeout_millis?)
   for m in requests {
@@ -237,8 +237,8 @@ pub async fn Channel::bidi(
   self : Channel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   let id = self.engine.open(path, metadata~, timeout_millis?)
   for m in requests {

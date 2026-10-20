@@ -14,14 +14,14 @@ pub struct MuxChannel {
   conn : @socket.Tcp
   engine : @moonrpc.H2Client
   write_lock : @async.Mutex
-  inboxes : Map[Int, @aqueue.Queue[Unit]]
+  inboxes : Map[Int32, @aqueue.Queue[Unit]]
   mut keepalive : @moonrpc.Keepalive?
 }
 
 ///|
 /// Open a multiplexed channel to `host:port`: connect and send the @http2.preface and client
 /// SETTINGS. Spawn `read_pump` into a task group to drive it before making calls.
-pub async fn MuxChannel::connect(host : String, port : Int) -> MuxChannel {
+pub async fn MuxChannel::connect(host : String, port : Int32) -> MuxChannel {
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
@@ -70,7 +70,7 @@ pub async fn MuxChannel::read_pump(self : MuxChannel) -> Unit {
     }
     // Wake any call whose stream made progress: new reply messages arrived (for a streaming
     // reader) or the stream completed (for a unary waiter).
-    let ready : Array[Int] = []
+    let ready : Array[Int32] = []
     for sid, _ in self.inboxes {
       if self.engine.has_messages(sid) || self.engine.is_done(sid) {
         ready.push(sid)
@@ -92,8 +92,8 @@ pub async fn MuxChannel::unary(
   self : MuxChannel,
   path : String,
   request : Bytes,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   let (id, frames) = self.engine.unary(
     path,
@@ -122,10 +122,10 @@ pub async fn MuxChannel::unary(
 /// streaming (send while receiving), which the one-shot `Channel` can't do.
 pub struct BidiStream {
   ch : MuxChannel
-  id : Int
+  id : Int32
   inbox : @aqueue.Queue[Unit]
   mut pending : Array[Bytes]
-  mut offset : Int
+  mut offset : Int32
 }
 
 ///|
@@ -134,7 +134,7 @@ pub struct BidiStream {
 pub fn MuxChannel::open_bidi(
   self : MuxChannel,
   path : String,
-  metadata? : Array[@header.Header] = [],
+  metadata~ : Array[@header.Header] = [],
 ) -> BidiStream {
   let id = self.engine.open(path, metadata~)
   let inbox : @aqueue.Queue[Unit] = @aqueue.Queue::Queue(kind=Unbounded)

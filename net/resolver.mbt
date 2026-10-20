@@ -10,9 +10,9 @@
 /// answer with no A records). `id` is the query's transaction id, echoed in the reply.
 pub async fn resolve_a(
   server : String,
-  server_port : Int,
+  server_port : Int32,
   name : String,
-  id? : Int = 0x2a2a,
+  id~ : Int32 = 0x2a2a,
 ) -> Array[String] {
   let sock = @socket.UdpClient(
     @socket.Addr::parse(server + ":" + server_port.to_string()),

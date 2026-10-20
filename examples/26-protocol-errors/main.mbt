@@ -20,7 +20,7 @@ fn ascii(bs : Bytes) -> String {
 fn open_call(
   server : @moonrpc.H2Server,
   enc : @hpack.Encoder,
-  id : Int,
+  id : Int32,
   end_stream : Bool,
 ) -> Array[@http2.Frame] {
   let block = enc.encode([

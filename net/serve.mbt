@@ -77,10 +77,10 @@ pub(all) struct GrpcServer {
   // can reach them. A connection removes itself when its driver returns; the engine
   // comes along because a shutdown has to ask whether the connection is between calls
   // before it interrupts.
-  live : Map[Int, (@socket.Tcp, @moonrpc.H2Server)]
+  live : Map[Int32, (@socket.Tcp, @moonrpc.H2Server)]
   mut listener : @socket.TcpServer?
   mut draining : Bool
-  mut next_conn : Int
+  mut next_conn : Int32
 }
 
 ///|
@@ -180,7 +180,7 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
 /// gRPC runs on HTTP/2, which shares a TCP listener with HTTP/1.1 and
 /// WebSocket, so it takes the family's number rather than gRPC's conventional
 /// 50051: one port for every protocol a server speaks.
-pub let port : Int = 12000
+pub let port : Int32 = 12000
 
 ///|
 /// Serve gRPC over h2c on `host:port`, blocking in the accept loop until the running
@@ -188,8 +188,8 @@ pub let port : Int = 12000
 /// by `drive`; a failure on one connection is isolated and does not stop the server.
 pub async fn GrpcServer::serve(
   self : GrpcServer,
-  host? : String = "127.0.0.1",
-  port? : Int = port,
+  host~ : String = "127.0.0.1",
+  port~ : Int32 = port,
 ) -> Unit {
   let server = @socket.TcpServer::TcpServer(
     @socket.Addr::parse(host + ":" + port.to_string()),
@@ -243,7 +243,7 @@ fn GrpcServer::shut(self : GrpcServer, server : @socket.TcpServer) -> Unit {
 /// that task is what releases them.
 pub async fn GrpcServer::graceful_stop(
   self : GrpcServer,
-  grace? : Int = 10000,
+  grace~ : Int32 = 10000,
 ) -> Unit {
   self.draining = true
   // Knock on our own port. The accept loop is parked and only looks at `draining`
@@ -301,7 +301,7 @@ fn cat(a : Bytes, b : Bytes) -> Bytes {
 /// `(:status, grpc-status, reply message)`. Proves the server end-to-end.
 async fn unary_call(
   host : String,
-  port : Int,
+  port : Int32,
   path : Bytes,
   request : Bytes,
 ) -> (Bytes, Bytes, Bytes) {
@@ -418,7 +418,7 @@ async test "an unregistered method is served UNIMPLEMENTED over h2c" {
 /// client-streaming (and the bidi collect-all case).
 async fn streaming_call(
   host : String,
-  port : Int,
+  port : Int32,
   path : Bytes,
   requests : Array[Bytes],
 ) -> (Bytes, Bytes, Array[Bytes]) {
@@ -788,7 +788,7 @@ async test "graceful_stop lets a call that is already open finish" {
 /// answered with. The time is spent by the client, not by a handler: handlers are
 /// synchronous, so the only way to spend real time inside a call is to be slow sending
 /// it — which is also the shape of the deadline a real client hits.
-async fn timed_call(port : Int, timeout : Bytes, delay : Int) -> Bytes {
+async fn timed_call(port : Int32, timeout : Bytes, delay : Int32) -> Bytes {
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse("127.0.0.1:" + port.to_string()),
   )

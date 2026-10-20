@@ -7,7 +7,7 @@
 //     moon run examples/05-protobuf-wire
 
 ///|
-fn join_ints(xs : Array[Int]) -> String {
+fn join_ints(xs : Array[Int32]) -> String {
   let buf = StringBuilder()
   for i, x in xs {
     if i > 0 {

@@ -16,14 +16,14 @@ pub(all) enum LbPolicy {
 pub struct LoadBalancer {
   addresses : Array[String]
   policy : LbPolicy
-  mut cursor : Int
+  mut cursor : Int32
 }
 
 ///|
 /// A balancer over `addresses` (each a `host:port`) using `policy` (default `PickFirst`).
 pub fn LoadBalancer::new(
   addresses : Array[String],
-  policy? : LbPolicy = PickFirst,
+  policy~ : LbPolicy = PickFirst,
 ) -> LoadBalancer {
   { addresses, policy, cursor: 0, }
 }
@@ -46,7 +46,7 @@ pub fn LoadBalancer::pick(self : LoadBalancer) -> String? {
 
 ///|
 /// The number of addresses the balancer is choosing among.
-pub fn LoadBalancer::size(self : LoadBalancer) -> Int {
+pub fn LoadBalancer::size(self : LoadBalancer) -> Int32 {
   self.addresses.length()
 }
 

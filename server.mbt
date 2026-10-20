@@ -11,11 +11,11 @@
 ///|
 /// The HTTP/2 default flow-control window and initial `SETTINGS_INITIAL_WINDOW_SIZE`
 /// (RFC 7540 §6.9.2): 65 535 octets.
-pub let default_window_size : Int = 65535
+pub let default_window_size : Int32 = 65535
 
 ///|
 /// The HTTP/2 default (and minimum) `SETTINGS_MAX_FRAME_SIZE` (RFC 7540 §6.5.2).
-pub let default_max_frame_size : Int = 16384
+pub let default_max_frame_size : Int32 = 16384
 
 ///|
 /// The `SETTINGS_MAX_CONCURRENT_STREAMS` the server advertises and enforces unless a
@@ -23,14 +23,14 @@ pub let default_max_frame_size : Int = 16384
 /// §5.1.2 leaves the setting unset by default, which means unbounded — and every live
 /// stream holds a request buffer, so a peer that opens streams and never finishes them
 /// pins memory for as long as the connection lasts.
-pub let default_max_streams : Int = 100
+pub let default_max_streams : Int32 = 100
 
 ///|
 /// Add a flow-control increment to a window, saturating at the ±2^31-1 range RFC 7540
 /// §6.9.1 allows instead of wrapping. A wrap to a large negative window would stall
 /// every send on that stream/connection (a WINDOW_UPDATE-driven deadlock), and a wrap
 /// to a bogus positive one would over-send; the sum is taken in 64 bits and clamped.
-fn add_window(cur : Int, inc : Int) -> Int {
+fn add_window(cur : Int32, inc : Int32) -> Int32 {
   let sum = cur.to_int64() + inc.to_int64()
   if sum > 0x7FFFFFFFL {
     0x7FFFFFFF
@@ -63,13 +63,13 @@ fn guard_header_size(buf : Buffer) -> Unit raise H2Fault {
 /// bytes still to send, whether the initial HEADERS and the trailers have gone
 /// out, and any live bidi call state.
 pub(all) struct SrvStream {
-  id : Int
+  id : Int32
   mut state : StreamState
   header_block : Buffer
   data : Buffer
-  mut req_off : Int
+  mut req_off : Int32
   req_msgs : Array[Bytes]
-  mut bidi_processed : Int
+  mut bidi_processed : Int32
   mut headers_complete : Bool
   // A field block is open: the last HEADERS/CONTINUATION left END_HEADERS clear, so a
   // CONTINUATION is expected next and any other frame — or a CONTINUATION without this
@@ -81,10 +81,10 @@ pub(all) struct SrvStream {
   // When the call's `grpc-timeout` runs out, on the clock the driver installed. `None`
   // when the request carried no timeout.
   mut deadline_at : Int64?
-  mut recv_window : Int
-  mut send_window : Int
+  mut recv_window : Int32
+  mut send_window : Int32
   mut out : Bytes
-  mut out_off : Int
+  mut out_off : Int32
   mut started : Bool
   mut started_response : Bool
   mut response_ended : Bool
@@ -93,8 +93,8 @@ pub(all) struct SrvStream {
   // The `:status` of the response. A gRPC call is always 200 and carries its outcome in
   // `grpc-status`; a request that is not a gRPC call at all is answered with a real HTTP
   // status instead, so a plain HTTP client cannot read the refusal as a success.
-  mut http_status : Int
-  mut status_code : Int
+  mut http_status : Int32
+  mut status_code : Int32
   mut status_message : String
   // The call's `grpc-encoding` (empty when absent, i.e. identity). A compressed
   // message under `gzip` is inflated in-place; under any other encoding the call is
@@ -114,7 +114,7 @@ pub(all) struct SrvStream {
 }
 
 ///|
-fn SrvStream::new(id : Int, send_window : Int) -> SrvStream {
+fn SrvStream::new(id : Int32, send_window : Int32) -> SrvStream {
   {
     id,
     state: Idle,
@@ -175,34 +175,34 @@ pub struct H2Server {
   handlers : Map[String, Handler]
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
-  streams : Map[Int, SrvStream]
+  streams : Map[Int32, SrvStream]
   unary_interceptors : Array[UnaryInterceptor]
   stream_interceptors : Array[StreamInterceptor]
-  mut conn_recv_window : Int
-  mut conn_send_window : Int
-  mut remote_initial_window : Int
-  mut remote_max_frame : Int
+  mut conn_recv_window : Int32
+  mut conn_send_window : Int32
+  mut remote_initial_window : Int32
+  mut remote_max_frame : Int32
   // How many streams this connection runs at once: what `@http2.preface` advertises as
   // SETTINGS_MAX_CONCURRENT_STREAMS and what a new HEADERS is measured against.
-  mut max_streams : Int
+  mut max_streams : Int32
   // What the engine reads to tell whether a deadline has passed. Pure by default —
   // there is no clock a wasm build can read — so a driver installs a real one.
   mut clock : () -> Int64
   // The stream whose field block is still open, i.e. the one a CONTINUATION must
   // continue. §6.10 makes a field block a contiguous run of frames, so while this is
   // set nothing else may arrive on any stream.
-  mut continuing : Int?
+  mut continuing : Int32?
   mut goaway_received : Bool
   // The highest client stream id opened so far. A new HEADERS must use an odd id
   // strictly greater than this (RFC 7540 §5.1.1); anything else is a PROTOCOL_ERROR.
-  mut last_client_stream : Int
+  mut last_client_stream : Int32
   // A connection error has been reported. The GOAWAY that says so was returned by the
   // `feed` that found it; nothing after it is processed (RFC 9113 §5.4.1).
   mut closing : Bool
   // The last stream id our own GOAWAY announced, once one has gone out. A HEADERS
   // opening a stream above it is declined with REFUSED_STREAM rather than served,
   // because we already told the peer we would not get to it (RFC 9113 §6.8).
-  mut drained : Int?
+  mut drained : Int32?
 }
 
 ///|
@@ -246,7 +246,7 @@ pub fn H2Server::register(
 /// Drop everything the engine still holds for a finished stream. The map is only ever
 /// inserted into otherwise, so a long-lived connection would keep one full request and
 /// response per RPC it has ever served. An unknown id is a no-op.
-pub fn H2Server::release(self : H2Server, id : Int) -> Unit {
+pub fn H2Server::release(self : H2Server, id : Int32) -> Unit {
   self.streams.remove(id)
 }
 
@@ -332,7 +332,7 @@ pub fn H2Server::preface(self : H2Server) -> Array[@http2.Frame] {
 /// Set how many streams this connection may run at once. The value is both advertised
 /// as `SETTINGS_MAX_CONCURRENT_STREAMS` and enforced on arrival, so set it before
 /// `@http2.preface` and the peer is told exactly what it will be held to.
-pub fn H2Server::set_max_streams(self : H2Server, n : Int) -> Unit {
+pub fn H2Server::set_max_streams(self : H2Server, n : Int32) -> Unit {
   self.max_streams = n
 }
 
@@ -354,7 +354,7 @@ pub fn H2Server::set_clock(self : H2Server, clock : () -> Int64) -> Unit {
 /// processed and can be re-issued elsewhere.
 pub fn H2Server::goaway(
   self : H2Server,
-  last_stream_id : Int,
+  last_stream_id : Int32,
 ) -> Array[@http2.Frame] {
   self.drained = Some(last_stream_id)
   [GoAway(last_stream_id~, error_code=@http2.error_no_error, debug=b"")]
@@ -387,10 +387,10 @@ fn bytes_to_ascii(b : Bytes) -> String {
 /// the block is split into `max_frame`-sized fragments, the first a HEADERS with
 /// `end_headers=false`, the rest CONTINUATION, the last carrying `end_headers=true`.
 fn emit_header_frames(
-  stream_id : Int,
+  stream_id : Int32,
   block : Bytes,
   end_stream : Bool,
-  max_frame_in : Int,
+  max_frame_in : Int32,
 ) -> Array[@http2.Frame] {
   // Never fragment at zero: a bad peer MAX_FRAME_SIZE is clamped on apply, but floor
   // here too so the split loop always advances rather than looping on empty chunks.
@@ -448,7 +448,7 @@ fn emit_header_frames(
 /// 3, each an already-serialized `google.protobuf.Any`) to its protobuf wire bytes —
 /// the payload of the `grpc-status-details-bin` trailer that carries rich errors.
 fn encode_status_details(
-  code : Int,
+  code : Int32,
   message : String,
   details : Array[Bytes],
 ) -> Bytes {
@@ -479,12 +479,12 @@ let grpc_safe : String = " !\"#$&'()*+,/:;<=>?@[\\]^`{|}"
 
 ///|
 /// A small non-negative integer as its ASCII decimal `Bytes` (for `grpc-status`).
-fn int_to_ascii_bytes(n : Int) -> Bytes {
+fn int_to_ascii_bytes(n : Int32) -> Bytes {
   let buf = Buffer()
   if n == 0 {
     buf.write_byte(b'0')
   } else {
-    let digits : Array[Int] = []
+    let digits : Array[Int32] = []
     let mut v = n
     while v > 0 {
       digits.push(v % 10)
@@ -539,7 +539,7 @@ fn starts_with(b : Bytes, prefix : Bytes) -> Bool {
 /// spec gives a status of its own (415), and it is the load-bearing one: without it a
 /// browser form post or a health-checking GET is dispatched as a call and answered
 /// 200 + `grpc-status`, which every non-gRPC client reads as success.
-fn request_reject(headers : Array[@header.Header]) -> (Int, Int, String)? {
+fn request_reject(headers : Array[@header.Header]) -> (Int32, Int32, String)? {
   match header_value(headers, b"content-type") {
     Some(ct) if starts_with(ct, b"application/grpc") => ()
     _ =>
@@ -577,7 +577,7 @@ fn is_reserved_header(name : Bytes) -> Bool {
 }
 
 ///|
-fn min3(a : Int, b : Int, c : Int) -> Int {
+fn min3(a : Int32, b : Int32, c : Int32) -> Int32 {
   let m = if a < b { a } else { b }
   if m < c {
     m
@@ -632,7 +632,7 @@ fn drain_messages(s : SrvStream) -> Unit {
 // -- the frame-processing core ----------------------------------------------
 
 ///|
-fn H2Server::stream(self : H2Server, id : Int) -> SrvStream {
+fn H2Server::stream(self : H2Server, id : Int32) -> SrvStream {
   match self.streams.get(id) {
     Some(s) => s
     None => {
@@ -646,7 +646,7 @@ fn H2Server::stream(self : H2Server, id : Int) -> SrvStream {
 ///|
 /// Apply a peer SETTINGS parameter. A change to `INITIAL_WINDOW_SIZE` retroactively
 /// shifts every open stream's send window by the delta (RFC 7540 §6.9.2).
-fn H2Server::apply_setting(self : H2Server, id : Int, value : Int) -> Unit {
+fn H2Server::apply_setting(self : H2Server, id : Int32, value : Int32) -> Unit {
   if id == @http2.settings_initial_window_size {
     // Ignore an out-of-range window (RFC 7540 §6.5.2 caps it at 2^31-1; a value with
     // the high bit set decodes negative here) rather than corrupting send-window math.
@@ -1420,7 +1420,7 @@ fn H2Server::pump_all(self : H2Server) -> Array[@http2.Frame] raise H2Fault {
 ///|
 /// The highest client stream id this connection has opened, which is what a GOAWAY
 /// has to name so the peer knows which of its streams were accepted.
-pub fn H2Server::highest_stream(self : H2Server) -> Int {
+pub fn H2Server::highest_stream(self : H2Server) -> Int32 {
   self.last_client_stream
 }
 
@@ -1431,7 +1431,7 @@ pub fn H2Server::highest_stream(self : H2Server) -> Int {
 /// Finished streams stay in the map with their state but are not counted, and neither
 /// is one the engine only knows of because a WINDOW_UPDATE named it — that stream was
 /// never opened, so it holds nothing and occupies no slot.
-pub fn H2Server::active_streams(self : H2Server) -> Int {
+pub fn H2Server::active_streams(self : H2Server) -> Int32 {
   let mut n = 0
   for _id, s in self.streams {
     match s.state {
@@ -1444,7 +1444,7 @@ pub fn H2Server::active_streams(self : H2Server) -> Int {
 
 ///|
 /// The lifecycle state of stream `id`, or `Idle` if the engine has never seen it.
-pub fn H2Server::stream_state(self : H2Server, id : Int) -> StreamState {
+pub fn H2Server::stream_state(self : H2Server, id : Int32) -> StreamState {
   match self.streams.get(id) {
     Some(s) => s.state
     None => Idle

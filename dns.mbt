@@ -7,19 +7,19 @@
 
 ///|
 /// The DNS record type for an IPv4 address.
-pub let dns_type_a : Int = 1
+pub let dns_type_a : Int32 = 1
 
 ///|
 /// The DNS record type for an IPv6 address.
-pub let dns_type_aaaa : Int = 28
+pub let dns_type_aaaa : Int32 = 28
 
 ///|
 /// One answer resource record, carrying the textual address for A/AAAA records (empty
 /// for other types).
 pub(all) struct DnsRecord {
   name : String
-  rtype : Int
-  ttl : Int
+  rtype : Int32
+  ttl : Int32
   address : String
 } derive(Eq, Debug)
 
@@ -27,8 +27,8 @@ pub(all) struct DnsRecord {
 /// A decoded DNS response: the transaction id echoed back, the response code (0 =
 /// NOERROR), and the answer records.
 pub(all) struct DnsResponse {
-  id : Int
-  rcode : Int
+  id : Int32
+  rcode : Int32
   answers : Array[DnsRecord]
 } derive(Eq, Debug)
 
@@ -59,7 +59,7 @@ fn dns_encode_name(buf : Buffer, name : String) -> Unit {
 /// Read a domain name starting at `start`, following any §4.1.4 compression pointer,
 /// and return the dotted name plus the offset of the byte just past the name *in the
 /// original stream* (a pointer terminates the name at the two-octet pointer itself).
-fn dns_read_name(msg : Bytes, start : Int) -> (String, Int) {
+fn dns_read_name(msg : Bytes, start : Int32) -> (String, Int32) {
   let out = Buffer()
   let mut off = start
   let mut next = -1
@@ -99,7 +99,7 @@ fn dns_read_name(msg : Bytes, start : Int) -> (String, Int) {
 
 ///|
 /// Format a 4-octet A record as dotted-decimal.
-fn dns_format_a(msg : Bytes, off : Int) -> String {
+fn dns_format_a(msg : Bytes, off : Int32) -> String {
   msg[off].to_int().to_string() +
   "." +
   msg[off + 1].to_int().to_string() +
@@ -112,7 +112,7 @@ fn dns_format_a(msg : Bytes, off : Int) -> String {
 ///|
 /// Format a 16-octet AAAA record as eight colon-separated hextets (RFC 4291 §2.2 form
 /// 1 — the full, uncompressed representation, which is unambiguous and connectable).
-fn dns_format_aaaa(msg : Bytes, off : Int) -> String {
+fn dns_format_aaaa(msg : Bytes, off : Int32) -> String {
   let out = StringBuilder()
   for g = 0; g < 8; g = g + 1 {
     if g > 0 {
@@ -127,7 +127,7 @@ fn dns_format_aaaa(msg : Bytes, off : Int) -> String {
 ///|
 /// Encode a standard recursion-desired query for `name` of type `qtype` (`dns_type_a`
 /// or `dns_type_aaaa`) in class IN, with transaction id `id`.
-pub fn dns_encode_query(id : Int, name : String, qtype : Int) -> Bytes {
+pub fn dns_encode_query(id : Int32, name : String, qtype : Int32) -> Bytes {
   let buf = Buffer()
   be_write_u16(buf, id)
   be_write_u16(buf, 0x0100) // QR=0, opcode QUERY, RD=1 (recursion desired)
@@ -205,16 +205,16 @@ pub extend DnsResponse with Eq::{not_equal, equal}
 // that layer is moonhttp's, they are here, where the only other caller is.
 
 ///|
-fn be_write_u16(buf : Buffer, n : Int) -> Unit {
+fn be_write_u16(buf : Buffer, n : Int32) -> Unit {
   @fixed.write_u16(buf, n)
 }
 
 ///|
-fn be_read_u16(data : Bytes, off : Int) -> Int {
+fn be_read_u16(data : Bytes, off : Int32) -> Int32 {
   @fixed.read_u16(data[:], at=off).unwrap()
 }
 
 ///|
-fn be_read_u32(data : Bytes, off : Int) -> Int {
+fn be_read_u32(data : Bytes, off : Int32) -> Int32 {
   @fixed.read_u32(data[:], at=off).unwrap().reinterpret_as_int()
 }

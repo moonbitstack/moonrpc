@@ -3,20 +3,20 @@
 /// `MaxRecvMsgSize`). A length prefix above this — including one whose 4 bytes decode
 /// to a negative `Int` because the high bit is set — is rejected rather than trusted,
 /// so a hostile prefix can neither slice out of bounds nor pin unbounded buffer.
-pub let max_message_size : Int = 4 * 1024 * 1024
+pub let max_message_size : Int32 = 4 * 1024 * 1024
 
 ///|
 /// The cap on one accumulated header block (HEADERS plus its CONTINUATION frames).
 /// Without it a peer could stream endless non-final CONTINUATION frames and grow the
 /// buffer without bound (a CONTINUATION flood); 128 KiB is far above any real gRPC
 /// request's headers.
-pub let max_header_list_size : Int = 128 * 1024
+pub let max_header_list_size : Int32 = 128 * 1024
 
 ///|
 /// Encode a payload as a gRPC *Length-Prefixed-Message*: a 1-byte compression
 /// flag, a 4-byte big-endian length, then the payload. This is the framing every
 /// gRPC transport shares (gRPC-Web over HTTP/1.1 and real gRPC over HTTP/2 alike).
-pub fn encode_message(payload : Bytes, compressed? : Bool = false) -> Bytes {
+pub fn encode_message(payload : Bytes, compressed~ : Bool = false) -> Bytes {
   let n = payload.length()
   let buf = Buffer()
   buf.write_byte((if compressed { 1 } else { 0 }).to_byte())
@@ -46,7 +46,7 @@ pub fn decode_message(data : Bytes) -> (Bool, Bytes)? {
 /// is told from a real one before anything is sliced on it. Every reader of this
 /// framing goes through here — there are five of them across the client, the server
 /// and the socket transport, and they have to agree.
-pub fn message_len(data : BytesView, at? : Int = 0) -> Int? {
+pub fn message_len(data : BytesView, at~ : Int32 = 0) -> Int32? {
   @fixed.read_u32(data, at=at + 1).map(v => v.reinterpret_as_int())
 }
 
@@ -90,7 +90,7 @@ pub(all) enum Status {
 
 ///|
 /// The numeric `grpc-status` code.
-pub fn Status::code(self : Status) -> Int {
+pub fn Status::code(self : Status) -> Int32 {
   match self {
     Ok => 0
     Cancelled => 1
@@ -142,7 +142,7 @@ pub fn Status::name(self : Status) -> String {
 /// Status"). A refused stream was never processed, so it is UNAVAILABLE and safe to
 /// retry; anything the table does not name is INTERNAL, since the peer broke the
 /// transport rather than the call.
-pub fn Status::from_h2_error(code : Int) -> Status {
+pub fn Status::from_h2_error(code : Int32) -> Status {
   if code == @http2.error_refused_stream {
     Unavailable
   } else if code == @http2.error_enhance_your_calm {
@@ -160,7 +160,7 @@ pub fn Status::from_h2_error(code : Int) -> Status {
 /// The status a non-200 HTTP response maps to when it carries no `grpc-status` — a
 /// proxy or a plain HTTP server answering on the gRPC port (gRPC
 /// http-grpc-status-mapping). Anything outside the table is UNKNOWN.
-pub fn Status::from_http(code : Int) -> Status {
+pub fn Status::from_http(code : Int32) -> Status {
   match code {
     400 => Internal
     401 => Unauthenticated

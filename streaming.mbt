@@ -13,13 +13,13 @@
 pub(all) struct RpcContext {
   path : String
   metadata : Array[@header.Header]
-  deadline_millis : Int?
+  deadline_millis : Int32?
   resp_headers : Array[@header.Header]
   resp_trailers : Array[@header.Header]
   // Set by a handler that wants to end the call with a non-OK gRPC status
   // (`(code, message)`); the server emits it as the `grpc-status` / `grpc-message`
   // trailer and discards any reply the handler also returned.
-  mut status_fail : (Int, String)?
+  mut status_fail : (Int32, String)?
   // Serialized `google.protobuf.Any` details attached to a non-OK status; the server
   // packs them into a `google.rpc.Status` and emits it as `grpc-status-details-bin`.
   error_details : Array[Bytes]
@@ -48,7 +48,7 @@ pub fn RpcContext::empty() -> RpcContext {
 /// [`Status`]; any code is accepted.
 pub fn RpcContext::fail(
   self : RpcContext,
-  code : Int,
+  code : Int32,
   message : String,
 ) -> Unit {
   self.status_fail = Some((code, message))
@@ -124,7 +124,7 @@ pub(all) enum Handler {
 /// Parse a `grpc-timeout` value (RFC: up to 8 ASCII digits then a unit —
 /// `H`/`M`/`S`/`m`/`u`/`n`) to whole milliseconds, flooring sub-millisecond units.
 /// `None` for a malformed value.
-pub fn parse_grpc_timeout(v : Bytes) -> Int? {
+pub fn parse_grpc_timeout(v : Bytes) -> Int32? {
   if v.length() < 2 {
     return None
   }

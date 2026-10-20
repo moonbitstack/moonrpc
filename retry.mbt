@@ -10,11 +10,11 @@
 /// is in `retryable`. Backoff starts at `initial_backoff_millis` and grows by
 /// `backoff_multiplier` each retry, capped at `max_backoff_millis`.
 pub(all) struct RetryPolicy {
-  max_attempts : Int
-  initial_backoff_millis : Int
-  max_backoff_millis : Int
+  max_attempts : Int32
+  initial_backoff_millis : Int32
+  max_backoff_millis : Int32
   backoff_multiplier : Double
-  retryable : Array[Int]
+  retryable : Array[Int32]
 }
 
 ///|
@@ -37,8 +37,8 @@ pub fn RetryPolicy::default() -> RetryPolicy {
 /// non-OK and listed as retryable.
 pub fn RetryPolicy::should_retry(
   self : RetryPolicy,
-  status_code : Int,
-  attempts_made : Int,
+  status_code : Int32,
+  attempts_made : Int32,
 ) -> Bool {
   // gRPC caps the effective attempt count at 5 regardless of the configured value.
   let cap = if self.max_attempts > 5 { 5 } else { self.max_attempts }
@@ -60,8 +60,8 @@ pub fn RetryPolicy::should_retry(
 /// the deterministic upper bound (which is also what a jitter-free driver sleeps).
 pub fn RetryPolicy::backoff_millis(
   self : RetryPolicy,
-  retry_index : Int,
-) -> Int {
+  retry_index : Int32,
+) -> Int32 {
   // Before the first retry there is nothing to back off from, and the policy's own
   // starting value is the answer; the arithmetic after it is moonpool's.
   let index = if retry_index < 1 { 1 } else { retry_index }

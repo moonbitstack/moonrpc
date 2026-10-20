@@ -160,13 +160,13 @@ pub fn StreamState::on_recv(
 /// A mutable stream: its identifier and current lifecycle state. `send`/`recv`
 /// advance the state in place, raising on an illegal transition.
 pub(all) struct Stream {
-  id : Int
+  id : Int32
   mut state : StreamState
 }
 
 ///|
 /// A fresh idle stream with the given identifier.
-pub fn Stream::new(id : Int) -> Stream {
+pub fn Stream::new(id : Int32) -> Stream {
   { id, state: Idle, }
 }
 
@@ -194,13 +194,13 @@ pub fn Stream::recv(
 
 ///|
 /// Whether `id` is a client-initiated stream: a non-zero odd identifier.
-pub fn stream_is_client_initiated(id : Int) -> Bool {
+pub fn stream_is_client_initiated(id : Int32) -> Bool {
   id > 0 && id % 2 == 1
 }
 
 ///|
 /// Whether `id` is a server-initiated (pushed) stream: a non-zero even identifier.
-pub fn stream_is_server_initiated(id : Int) -> Bool {
+pub fn stream_is_server_initiated(id : Int32) -> Bool {
   id > 0 && id % 2 == 0
 }
 
@@ -208,7 +208,7 @@ pub fn stream_is_server_initiated(id : Int) -> Bool {
 /// Whether a peer that is a client (`by_client = true`) or server may legally
 /// *open* stream `id`: clients use odd ids, servers use even ids, and `0` is the
 /// connection control stream, openable by neither (RFC 7540 §5.1.1).
-pub fn stream_id_valid_for_initiator(id : Int, by_client~ : Bool) -> Bool {
+pub fn stream_id_valid_for_initiator(id : Int32, by_client~ : Bool) -> Bool {
   if by_client {
     stream_is_client_initiated(id)
   } else {

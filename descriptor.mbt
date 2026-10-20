@@ -35,7 +35,7 @@ pub(all) enum FieldType {
 
 ///|
 /// The descriptor.proto enum number of a field type.
-pub fn FieldType::code(self : FieldType) -> Int {
+pub fn FieldType::code(self : FieldType) -> Int32 {
   match self {
     TypeDouble => 1
     TypeFloat => 2
@@ -60,7 +60,7 @@ pub fn FieldType::code(self : FieldType) -> Int {
 ///|
 /// The field type for a descriptor.proto enum number; an unrecognised number
 /// (including the removed group type `10`) reads as `TypeMessage`.
-pub fn FieldType::from_code(n : Int) -> FieldType {
+pub fn FieldType::from_code(n : Int32) -> FieldType {
   match n {
     1 => TypeDouble
     2 => TypeFloat
@@ -93,7 +93,7 @@ pub(all) enum FieldLabel {
 
 ///|
 /// The descriptor.proto enum number of a label.
-pub fn FieldLabel::code(self : FieldLabel) -> Int {
+pub fn FieldLabel::code(self : FieldLabel) -> Int32 {
   match self {
     LabelOptional => 1
     LabelRequired => 2
@@ -104,7 +104,7 @@ pub fn FieldLabel::code(self : FieldLabel) -> Int {
 ///|
 /// The label for a descriptor.proto enum number; anything else reads as
 /// `LabelOptional`.
-pub fn FieldLabel::from_code(n : Int) -> FieldLabel {
+pub fn FieldLabel::from_code(n : Int32) -> FieldLabel {
   match n {
     2 => LabelRequired
     3 => LabelRepeated
@@ -118,7 +118,7 @@ pub fn FieldLabel::from_code(n : Int) -> FieldLabel {
 /// `TypeEnum`, and empty for scalars.
 pub(all) struct FieldDescriptor {
   name : String
-  number : Int
+  number : Int32
   label : FieldLabel
   type_ : FieldType
   type_name : String
@@ -128,9 +128,9 @@ pub(all) struct FieldDescriptor {
 /// A field with a scalar type and no composite `type_name`.
 pub fn FieldDescriptor::scalar(
   name : String,
-  number : Int,
+  number : Int32,
   type_ : FieldType,
-  label? : FieldLabel = LabelOptional,
+  label~ : FieldLabel = LabelOptional,
 ) -> FieldDescriptor {
   { name, number, label, type_, type_name: "", }
 }
@@ -310,8 +310,8 @@ pub(all) struct FileDescriptor {
 pub fn FileDescriptor::new(
   name : String,
   package_ : String,
-  messages? : Array[MessageDescriptor] = [],
-  services? : Array[ServiceDescriptor] = [],
+  messages~ : Array[MessageDescriptor] = [],
+  services~ : Array[ServiceDescriptor] = [],
 ) -> FileDescriptor {
   { name, package_, messages, services, syntax: "proto3", }
 }

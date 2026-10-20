@@ -8,7 +8,7 @@
 //     moon run examples/12-flow-control
 
 ///|
-fn all_done(client : @moonrpc.H2Client, id : Int) -> Bool {
+fn all_done(client : @moonrpc.H2Client, id : Int32) -> Bool {
   client.is_done(id)
 }
 

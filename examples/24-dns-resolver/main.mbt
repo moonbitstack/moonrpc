@@ -7,13 +7,13 @@
 //     moon run examples/24-dns-resolver
 
 ///|
-fn be16(buf : Buffer, v : Int) -> Unit {
+fn be16(buf : Buffer, v : Int32) -> Unit {
   buf.write_byte(((v >> 8) & 0xFF).to_byte())
   buf.write_byte((v & 0xFF).to_byte())
 }
 
 ///|
-fn push_all(buf : Buffer, xs : Array[Int]) -> Unit {
+fn push_all(buf : Buffer, xs : Array[Int32]) -> Unit {
   for x in xs {
     buf.write_byte((x & 0xFF).to_byte())
   }
@@ -48,7 +48,7 @@ fn build_response() -> Bytes {
   be16(buf, 1)
   be16(buf, 1)
   // Answer 1: A 93.184.216.34.
-  fn a_record(rdata : Array[Int]) -> Unit {
+  fn a_record(rdata : Array[Int32]) -> Unit {
     push_all(buf, [0xC0, 0x0C]) // pointer to the question name
     be16(buf, 1) // type A
     be16(buf, 1) // class IN

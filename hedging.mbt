@@ -13,9 +13,9 @@
 /// finished attempt commits the whole call unless its status is one of `non_fatal`, in which
 /// case hedging continues.
 pub(all) struct HedgingPolicy {
-  max_attempts : Int
-  hedging_delay_millis : Int
-  non_fatal : Array[Int]
+  max_attempts : Int32
+  hedging_delay_millis : Int32
+  non_fatal : Array[Int32]
 }
 
 ///|
@@ -33,7 +33,7 @@ pub fn HedgingPolicy::default() -> HedgingPolicy {
 ///|
 /// The effective attempt cap: the configured `max_attempts`, but never above gRPC's ceiling
 /// of 5.
-pub fn HedgingPolicy::attempt_cap(self : HedgingPolicy) -> Int {
+pub fn HedgingPolicy::attempt_cap(self : HedgingPolicy) -> Int32 {
   if self.max_attempts > 5 {
     5
   } else {
@@ -46,7 +46,7 @@ pub fn HedgingPolicy::attempt_cap(self : HedgingPolicy) -> Int {
 /// launched): only while attempts remain under the cap.
 pub fn HedgingPolicy::can_start_another(
   self : HedgingPolicy,
-  attempts_started : Int,
+  attempts_started : Int32,
 ) -> Bool {
   attempts_started < self.attempt_cap()
 }
@@ -58,7 +58,7 @@ pub fn HedgingPolicy::can_start_another(
 /// continues.
 pub fn HedgingPolicy::should_commit(
   self : HedgingPolicy,
-  status_code : Int,
+  status_code : Int32,
 ) -> Bool {
   if status_code == 0 {
     return true
@@ -74,7 +74,7 @@ pub fn HedgingPolicy::should_commit(
 ///|
 /// The delay between originating hedged attempts. The async driver waits this long before
 /// launching the next parallel attempt; `0` fires them all at once.
-pub fn HedgingPolicy::delay_millis(self : HedgingPolicy) -> Int {
+pub fn HedgingPolicy::delay_millis(self : HedgingPolicy) -> Int32 {
   if self.hedging_delay_millis < 0 {
     0
   } else {

@@ -9,7 +9,7 @@
 fn drive(
   server : @moonrpc.H2Server,
   client : @moonrpc.H2Client,
-  ids : Array[Int],
+  ids : Array[Int32],
   initial : Array[@http2.Frame],
 ) -> Unit raise {
   let to_server : Array[@http2.Frame] = []
@@ -47,7 +47,7 @@ fn drive(
 }
 
 ///|
-fn all_done(client : @moonrpc.H2Client, ids : Array[Int]) -> Bool {
+fn all_done(client : @moonrpc.H2Client, ids : Array[Int32]) -> Bool {
   for id in ids {
     if !client.is_done(id) {
       return false
@@ -57,14 +57,14 @@ fn all_done(client : @moonrpc.H2Client, ids : Array[Int]) -> Bool {
 }
 
 ///|
-fn int_msg(n : Int) -> Bytes {
+fn int_msg(n : Int32) -> Bytes {
   let w = @moonrpc.PbWriter::new()
   w.int32(1, n)
   w.to_bytes()
 }
 
 ///|
-fn read_int_field(msg : Bytes) -> Int {
+fn read_int_field(msg : Bytes) -> Int32 {
   let r = @moonrpc.PbReader::new(msg)
   try {
     let _ = r.read_tag()

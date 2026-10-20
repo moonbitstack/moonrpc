@@ -7,7 +7,7 @@
 //     moon run examples/21-retry-hedging
 
 ///|
-fn status_label(code : Int) -> String {
+fn status_label(code : Int32) -> String {
   match code {
     0 => "OK"
     4 => "DEADLINE_EXCEEDED"

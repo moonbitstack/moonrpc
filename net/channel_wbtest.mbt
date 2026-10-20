@@ -113,7 +113,7 @@ async test "channel: a bidi-streaming call exchanges a run of messages over a so
 async fn drive_slow(
   conn : @socket.Tcp,
   engine : @moonrpc.H2Server,
-  delay : Int,
+  delay : Int32,
 ) -> Unit {
   let got = conn.read_exactly(@http2.preface.length())
   if !@http2.has_preface(got) {

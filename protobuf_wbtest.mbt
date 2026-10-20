@@ -103,7 +103,7 @@ test "sint32 / sint64: zigzag keeps small negatives short" {
   w.sint32(1, -1)
   assert_eq(w.to_bytes() == b"\x08\x01", true)
   // exhaustive round-trip of the zigzag inverse.
-  let cases32 : Array[Int] = [0, -1, 1, -2, 2, 2147483647, -2147483648]
+  let cases32 : Array[Int32] = [0, -1, 1, -2, 2, 2147483647, -2147483648]
   for v in cases32 {
     let e = PbWriter::new()
     e.sint32(3, v)
@@ -256,7 +256,7 @@ test "protobuf: map<string,string> entries and packed repeated int32 round-trip"
   w.packed_int32(2, [1, -1, 300, 0])
   let r = PbReader::new(w.to_bytes())
   let entries : Array[(String, String)] = []
-  let mut packed : Array[Int] = []
+  let mut packed : Array[Int32] = []
   while !r.eof() {
     let (field, wire) = r.read_tag()
     match field {

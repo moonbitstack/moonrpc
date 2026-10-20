@@ -33,7 +33,7 @@ pub impl Show for WireType with fn output(self, logger) {
 
 ///|
 /// The wire-type number (the tag's low three bits).
-pub fn WireType::code(self : WireType) -> Int {
+pub fn WireType::code(self : WireType) -> Int32 {
   match self {
     Varint => 0
     Fixed64 => 1
@@ -45,7 +45,7 @@ pub fn WireType::code(self : WireType) -> Int {
 ///|
 /// The wire type for a tag's low three bits, or `None` for the deprecated group
 /// types (`3`/`4`) and any out-of-range value.
-pub fn WireType::from_code(n : Int) -> WireType? {
+pub fn WireType::from_code(n : Int32) -> WireType? {
   match n {
     0 => Some(Varint)
     1 => Some(Fixed64)
@@ -61,7 +61,7 @@ pub fn WireType::from_code(n : Int) -> WireType? {
 /// longer than ten octets, and `BadUtf8` for an invalid string field.
 pub suberror PbError {
   Truncated
-  BadWireType(Int)
+  BadWireType(Int32)
   Overflow
   BadUtf8
 } derive(Eq)
@@ -111,7 +111,7 @@ pub fn PbWriter::write_varint(self : PbWriter, value : UInt64) -> Unit {
 /// Append a field tag: `(field_number << 3) | wire_type`, itself a varint.
 pub fn PbWriter::write_tag(
   self : PbWriter,
-  field : Int,
+  field : Int32,
   wire : WireType,
 ) -> Unit {
   self.write_varint(((field << 3) | wire.code()).to_uint64())
@@ -119,7 +119,7 @@ pub fn PbWriter::write_tag(
 
 ///|
 /// Append a little-endian 32-bit fixed value (wire type 5, no tag).
-pub fn PbWriter::write_fixed32(self : PbWriter, v : UInt) -> Unit {
+pub fn PbWriter::write_fixed32(self : PbWriter, v : UInt32) -> Unit {
   @fixed.write_u32(self.buf, v, order=Little)
 }
 
@@ -142,84 +142,84 @@ pub fn PbWriter::write_len_delim(self : PbWriter, body : Bytes) -> Unit {
 ///|
 /// Write an `int32` field. Negative values sign-extend to a full ten-octet varint,
 /// exactly as the reference implementation encodes them.
-pub fn PbWriter::int32(self : PbWriter, field : Int, v : Int) -> Unit {
+pub fn PbWriter::int32(self : PbWriter, field : Int32, v : Int32) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(v.to_int64().reinterpret_as_uint64())
 }
 
 ///|
 /// Write an `int64` field.
-pub fn PbWriter::int64(self : PbWriter, field : Int, v : Int64) -> Unit {
+pub fn PbWriter::int64(self : PbWriter, field : Int32, v : Int64) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(v.reinterpret_as_uint64())
 }
 
 ///|
 /// Write a `uint32` field.
-pub fn PbWriter::uint32(self : PbWriter, field : Int, v : UInt) -> Unit {
+pub fn PbWriter::uint32(self : PbWriter, field : Int32, v : UInt32) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(v.to_uint64())
 }
 
 ///|
 /// Write a `uint64` field.
-pub fn PbWriter::uint64(self : PbWriter, field : Int, v : UInt64) -> Unit {
+pub fn PbWriter::uint64(self : PbWriter, field : Int32, v : UInt64) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(v)
 }
 
 ///|
 /// Write a `sint32` field (zigzag-encoded so small-magnitude negatives stay short).
-pub fn PbWriter::sint32(self : PbWriter, field : Int, v : Int) -> Unit {
+pub fn PbWriter::sint32(self : PbWriter, field : Int32, v : Int32) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(@leb128.zigzag(v.to_int64()))
 }
 
 ///|
 /// Write a `sint64` field (zigzag-encoded).
-pub fn PbWriter::sint64(self : PbWriter, field : Int, v : Int64) -> Unit {
+pub fn PbWriter::sint64(self : PbWriter, field : Int32, v : Int64) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(@leb128.zigzag(v))
 }
 
 ///|
 /// Write a `bool` field.
-pub fn PbWriter::bool_(self : PbWriter, field : Int, v : Bool) -> Unit {
+pub fn PbWriter::bool_(self : PbWriter, field : Int32, v : Bool) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(if v { 1 } else { 0 })
 }
 
 ///|
 /// Write an enum field (its integer value, as a varint).
-pub fn PbWriter::enum_(self : PbWriter, field : Int, v : Int) -> Unit {
+pub fn PbWriter::enum_(self : PbWriter, field : Int32, v : Int32) -> Unit {
   self.write_tag(field, Varint)
   self.write_varint(v.to_int64().reinterpret_as_uint64())
 }
 
 ///|
 /// Write a `fixed32`/`sfixed32`/`float` field.
-pub fn PbWriter::fixed32(self : PbWriter, field : Int, v : UInt) -> Unit {
+pub fn PbWriter::fixed32(self : PbWriter, field : Int32, v : UInt32) -> Unit {
   self.write_tag(field, Fixed32)
   self.write_fixed32(v)
 }
 
 ///|
 /// Write a `fixed64`/`sfixed64`/`double` field.
-pub fn PbWriter::fixed64(self : PbWriter, field : Int, v : UInt64) -> Unit {
+pub fn PbWriter::fixed64(self : PbWriter, field : Int32, v : UInt64) -> Unit {
   self.write_tag(field, Fixed64)
   self.write_fixed64(v)
 }
 
 ///|
 /// Write a `bytes` field.
-pub fn PbWriter::bytes_(self : PbWriter, field : Int, v : Bytes) -> Unit {
+pub fn PbWriter::bytes_(self : PbWriter, field : Int32, v : Bytes) -> Unit {
   self.write_tag(field, LengthDelim)
   self.write_len_delim(v)
 }
 
 ///|
 /// Write a `string` field (UTF-8 encoded).
-pub fn PbWriter::string_(self : PbWriter, field : Int, v : String) -> Unit {
+pub fn PbWriter::string_(self : PbWriter, field : Int32, v : String) -> Unit {
   self.write_tag(field, LengthDelim)
   self.write_len_delim(@utf8.encode(v))
 }
@@ -227,7 +227,7 @@ pub fn PbWriter::string_(self : PbWriter, field : Int, v : String) -> Unit {
 ///|
 /// Write an embedded-message field: the pre-encoded sub-message as a
 /// length-delimited body.
-pub fn PbWriter::message_(self : PbWriter, field : Int, v : Bytes) -> Unit {
+pub fn PbWriter::message_(self : PbWriter, field : Int32, v : Bytes) -> Unit {
   self.write_tag(field, LengthDelim)
   self.write_len_delim(v)
 }
@@ -241,7 +241,7 @@ pub fn PbWriter::message_(self : PbWriter, field : Int, v : Bytes) -> Unit {
 /// (protobuf forward compatibility).
 pub struct PbReader {
   data : Bytes
-  mut pos : Int
+  mut pos : Int32
 }
 
 ///|
@@ -271,7 +271,7 @@ pub fn PbReader::read_varint(self : PbReader) -> UInt64 raise PbError {
 ///|
 /// Read a field tag, returning `(field_number, wire_type)`. Raises `BadWireType`
 /// for a group or unknown wire type.
-pub fn PbReader::read_tag(self : PbReader) -> (Int, WireType) raise PbError {
+pub fn PbReader::read_tag(self : PbReader) -> (Int32, WireType) raise PbError {
   let tag = self.read_varint().to_int()
   let field = tag >> 3
   match WireType::from_code(tag & 0x7) {
@@ -282,7 +282,7 @@ pub fn PbReader::read_tag(self : PbReader) -> (Int, WireType) raise PbError {
 
 ///|
 /// Read a little-endian 32-bit fixed value.
-pub fn PbReader::read_fixed32(self : PbReader) -> UInt raise PbError {
+pub fn PbReader::read_fixed32(self : PbReader) -> UInt32 raise PbError {
   guard @fixed.read_u32(self.data[:], at=self.pos, order=Little) is Some(v) else {
     raise Truncated
   }
@@ -316,7 +316,7 @@ pub fn PbReader::read_len_delim(self : PbReader) -> Bytes raise PbError {
 
 ///|
 /// Read an `int32` field body (the low 32 bits of the varint).
-pub fn PbReader::read_int32(self : PbReader) -> Int raise PbError {
+pub fn PbReader::read_int32(self : PbReader) -> Int32 raise PbError {
   self.read_varint().to_int()
 }
 
@@ -328,7 +328,7 @@ pub fn PbReader::read_int64(self : PbReader) -> Int64 raise PbError {
 
 ///|
 /// Read a `uint32` field body.
-pub fn PbReader::read_uint32(self : PbReader) -> UInt raise PbError {
+pub fn PbReader::read_uint32(self : PbReader) -> UInt32 raise PbError {
   self.read_varint().to_uint()
 }
 
@@ -340,7 +340,7 @@ pub fn PbReader::read_uint64(self : PbReader) -> UInt64 raise PbError {
 
 ///|
 /// Read a `sint32` field body (zigzag-decoded).
-pub fn PbReader::read_sint32(self : PbReader) -> Int raise PbError {
+pub fn PbReader::read_sint32(self : PbReader) -> Int32 raise PbError {
   let u = self.read_varint()
   @leb128.unzigzag(u).to_int()
 }
@@ -398,7 +398,7 @@ pub fn PbReader::skip(self : PbReader, wire : WireType) -> Unit raise PbError {
 /// `{ key = 1, value = 2 }`, emitted once per pair (a proto map is repeated entries).
 pub fn PbWriter::map_string_string(
   self : PbWriter,
-  field : Int,
+  field : Int32,
   key : String,
   value : String,
 ) -> Unit {
@@ -413,8 +413,8 @@ pub fn PbWriter::map_string_string(
 /// one length-delimited field (proto3's default for scalar repeated).
 pub fn PbWriter::packed_int32(
   self : PbWriter,
-  field : Int,
-  values : Array[Int],
+  field : Int32,
+  values : Array[Int32],
 ) -> Unit {
   let body = PbWriter::new()
   for v in values {
@@ -446,9 +446,11 @@ pub fn PbReader::read_map_string_string(
 ///|
 /// Read a packed `repeated int32` field: the length-delimited body decoded as
 /// back-to-back int32 varints.
-pub fn PbReader::read_packed_int32(self : PbReader) -> Array[Int] raise PbError {
+pub fn PbReader::read_packed_int32(
+  self : PbReader,
+) -> Array[Int32] raise PbError {
   let r = PbReader::new(self.read_len_delim())
-  let out : Array[Int] = []
+  let out : Array[Int32] = []
   while !r.eof() {
     out.push(r.read_int32())
   }

@@ -15,7 +15,7 @@ pub(all) enum ServingStatus {
 
 ///|
 /// The wire value of a serving status (the protobuf enum number).
-pub fn ServingStatus::code(self : ServingStatus) -> Int {
+pub fn ServingStatus::code(self : ServingStatus) -> Int32 {
   match self {
     StatusUnknown => 0
     Serving => 1
@@ -27,7 +27,7 @@ pub fn ServingStatus::code(self : ServingStatus) -> Int {
 ///|
 /// The serving status for a protobuf enum number; out-of-range numbers read as
 /// `StatusUnknown`.
-pub fn ServingStatus::from_code(n : Int) -> ServingStatus {
+pub fn ServingStatus::from_code(n : Int32) -> ServingStatus {
   match n {
     1 => Serving
     2 => NotServing

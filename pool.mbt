@@ -11,7 +11,7 @@ pub struct ConnectionPool {
   order : Array[String]
   subconns : Map[String, SubConn]
   policy : LbPolicy
-  mut cursor : Int
+  mut cursor : Int32
 }
 
 ///|
@@ -19,7 +19,7 @@ pub struct ConnectionPool {
 /// the READY ones with `policy` (default `PickFirst`).
 pub fn ConnectionPool::new(
   addresses : Array[String],
-  policy? : LbPolicy = PickFirst,
+  policy~ : LbPolicy = PickFirst,
 ) -> ConnectionPool {
   let order : Array[String] = []
   let subconns : Map[String, SubConn] = Map([])

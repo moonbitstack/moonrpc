@@ -32,8 +32,8 @@ fn unavailable_reply() -> @moonrpc.CallReply {
 /// across the ones that came up. Addresses keep their given order, which is the order
 /// `RoundRobin` cycles and `PickFirst` prefers.
 pub async fn ManagedChannel::connect(
-  targets : Array[(String, Int)],
-  policy? : @moonrpc.LbPolicy = PickFirst,
+  targets : Array[(String, Int32)],
+  policy~ : @moonrpc.LbPolicy = PickFirst,
 ) -> ManagedChannel {
   let keys = targets.map(t => t.0 + ":" + t.1.to_string())
   let pool = @moonrpc.ConnectionPool::new(keys, policy~)
@@ -59,11 +59,11 @@ pub async fn ManagedChannel::connect(
 /// target end to end (name resolution feeding the connection pool).
 pub async fn ManagedChannel::dns_connect(
   dns_server : String,
-  dns_port : Int,
+  dns_port : Int32,
   name : String,
-  target_port : Int,
-  policy? : @moonrpc.LbPolicy = PickFirst,
-  id? : Int = 0x2a2a,
+  target_port : Int32,
+  policy~ : @moonrpc.LbPolicy = PickFirst,
+  id~ : Int32 = 0x2a2a,
 ) -> ManagedChannel {
   let addrs = resolve_a(dns_server, dns_port, name, id~)
   ManagedChannel::connect(addrs.map(a => (a, target_port)), policy~)
@@ -114,8 +114,8 @@ pub async fn ManagedChannel::unary(
   self : ManagedChannel,
   path : String,
   request : Bytes,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
   retry? : @moonrpc.RetryPolicy,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
@@ -132,8 +132,8 @@ pub async fn ManagedChannel::unary_hedged(
   path : String,
   request : Bytes,
   hedging : @moonrpc.HedgingPolicy,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   @async.with_task_group(g => {
     let tasks : Array[@async.Task[@moonrpc.CallReply]] = []
@@ -172,8 +172,8 @@ pub async fn ManagedChannel::server_streaming(
   self : ManagedChannel,
   path : String,
   request : Bytes,
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
   ch.server_streaming(path, request, metadata~, timeout_millis?)
@@ -185,8 +185,8 @@ pub async fn ManagedChannel::client_streaming(
   self : ManagedChannel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
   ch.client_streaming(path, requests, metadata~, timeout_millis?)
@@ -198,8 +198,8 @@ pub async fn ManagedChannel::bidi(
   self : ManagedChannel,
   path : String,
   requests : Array[Bytes],
-  metadata? : Array[@header.Header] = [],
-  timeout_millis? : Int,
+  metadata~ : Array[@header.Header] = [],
+  timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
   guard self.pick() is Some(ch) else { return unavailable_reply() }
   ch.bidi(path, requests, metadata~, timeout_millis?)

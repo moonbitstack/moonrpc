@@ -11,7 +11,7 @@
 fn drive_pair(
   server : H2Server,
   client : H2Client,
-  id : Int,
+  id : Int32,
   initial : Array[@http2.Frame],
 ) -> Unit raise {
   let to_server : Array[@http2.Frame] = []
@@ -312,7 +312,7 @@ fn header_present(
 /// Count DATA octets in a batch and note whether an END_STREAM DATA frame appears.
 fn tally_data(
   frames : Array[@http2.Frame],
-  octets : Ref[Int],
+  octets : Ref[Int32],
   fin : Ref[Bool],
 ) -> Unit {
   for f in frames {
@@ -485,7 +485,7 @@ test "an oversized request header block is split into CONTINUATION frames" {
 /// Feed `client` a complete response header block for call `id`, ending the stream.
 fn respond(
   client : H2Client,
-  id : Int,
+  id : Int32,
   headers : Array[@header.Header],
 ) -> Unit raise {
   let _ = client.feed(

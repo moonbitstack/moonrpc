@@ -10,7 +10,7 @@
 fn drive(
   server : @moonrpc.H2Server,
   client : @moonrpc.H2Client,
-  id : Int,
+  id : Int32,
   initial : Array[@http2.Frame],
 ) -> Unit raise {
   let to_server : Array[@http2.Frame] = []
@@ -78,7 +78,7 @@ fn make_detail(type_url : String, value : String) -> Bytes {
 ///|
 /// Decode the `google.rpc.Status` in a `grpc-status-details-bin` trailer: `code = 1`,
 /// `message = 2`, repeated `details = 3`.
-fn decode_status_details(body : Bytes) -> (Int, String, Int) raise {
+fn decode_status_details(body : Bytes) -> (Int32, String, Int32) raise {
   let r = @moonrpc.PbReader::new(body)
   let mut code = 0
   let mut message = ""

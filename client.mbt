@@ -13,23 +13,23 @@
 /// the messages already pulled out, the recv window, the captured `:status` and
 /// `grpc-status`, and the response initial and trailing metadata).
 pub(all) struct ClientCall {
-  id : Int
+  id : Int32
   path : Bytes
   authority : Bytes
   metadata : Array[@header.Header]
   timeout : Bytes?
   mut out : Bytes
-  mut out_off : Int
+  mut out_off : Int32
   mut req_ended : Bool
   mut req_headers_sent : Bool
   mut req_fin_sent : Bool
-  mut send_window : Int
+  mut send_window : Int32
   data : Buffer
-  mut data_off : Int
+  mut data_off : Int32
   mut messages : Array[Bytes]
-  mut recv_window : Int
+  mut recv_window : Int32
   mut status : Bytes
-  mut grpc_status : Int?
+  mut grpc_status : Int32?
   // The peer's `grpc-message` (percent-decoded); empty when none was sent.
   mut grpc_message : String
   // The response's `grpc-encoding` (empty = identity). A reply message with the
@@ -57,12 +57,12 @@ pub(all) struct ClientCall {
 
 ///|
 fn ClientCall::new(
-  id : Int,
+  id : Int32,
   path : Bytes,
   authority : Bytes,
   metadata : Array[@header.Header],
   timeout : Bytes?,
-  send_window : Int,
+  send_window : Int32,
 ) -> ClientCall {
   {
     id,
@@ -102,7 +102,7 @@ fn ClientCall::new(
 /// messages in order, and the trailing metadata.
 pub(all) struct CallReply {
   status : Bytes
-  grpc_status : Int
+  grpc_status : Int32
   grpc_message : String
   headers : Array[@header.Header]
   messages : Array[Bytes]
@@ -117,21 +117,21 @@ pub(all) struct CallReply {
 pub struct H2Client {
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
-  calls : Map[Int, ClientCall]
-  mut next_id : Int
-  mut conn_send_window : Int
-  mut conn_recv_window : Int
-  mut remote_initial_window : Int
-  mut remote_max_frame : Int
+  calls : Map[Int32, ClientCall]
+  mut next_id : Int32
+  mut conn_send_window : Int32
+  mut conn_recv_window : Int32
+  mut remote_initial_window : Int32
+  mut remote_max_frame : Int32
   mut goaway_received : Bool
   // The peer's last processed stream id from its GOAWAY (RFC 7540 §6.8): calls above
   // it were never seen by the server, so they are safe to re-issue on a fresh
   // connection. Mirrors `H2Server::last_client_stream`.
-  mut goaway_last_stream_id : Int
+  mut goaway_last_stream_id : Int32
   // @header.Header blocks arriving for streams this client no longer tracks. They still
   // have to reach the decoder — HPACK's table is per-connection — so they are
   // accumulated here and dropped once complete.
-  orphan_blocks : Map[Int, @buffer.Buffer]
+  orphan_blocks : Map[Int32, @buffer.Buffer]
 }
 
 ///|
@@ -140,10 +140,10 @@ pub struct H2Client {
 /// both exist because a field block is one logical unit that the framing layer has
 /// to cut up, and a peer treats an oversized frame as a connection error.
 fn emit_request_header_frames(
-  stream_id : Int,
+  stream_id : Int32,
   block : Bytes,
   end_stream : Bool,
-  max_frame_in : Int,
+  max_frame_in : Int32,
 ) -> Array[@http2.Frame] {
   let max_frame = if max_frame_in < 1 {
     default_max_frame_size
@@ -228,10 +228,10 @@ pub fn H2Client::preface(self : H2Client) -> Array[@http2.Frame] {
 pub fn H2Client::open(
   self : H2Client,
   path : String,
-  metadata? : Array[@header.Header] = [],
-  authority? : String = "127.0.0.1",
-  timeout_millis? : Int,
-) -> Int {
+  metadata~ : Array[@header.Header] = [],
+  authority~ : String = "127.0.0.1",
+  timeout_millis? : Int32,
+) -> Int32 {
   // A draining connection (the peer sent GOAWAY) starts no new stream: it would race
   // the shutdown and never be processed. Refuse with the reserved stream id 0 (§5.1.1,
   // never a real call) so no HEADERS leave and no id is consumed; the caller surfaces
@@ -263,9 +263,9 @@ pub fn H2Client::open(
 /// windows allow). Set `end` on the last message to half-close the request.
 pub fn H2Client::send(
   self : H2Client,
-  id : Int,
+  id : Int32,
   message : Bytes,
-  end? : Bool = false,
+  end~ : Bool = false,
 ) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
@@ -282,7 +282,7 @@ pub fn H2Client::send(
 ///|
 /// Half-close the request side of a call (no more request messages) and return any
 /// frames that completes — the trailing END_STREAM.
-pub fn H2Client::close_send(self : H2Client, id : Int) -> Array[@http2.Frame] {
+pub fn H2Client::close_send(self : H2Client, id : Int32) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
       c.req_ended = true
@@ -299,10 +299,10 @@ pub fn H2Client::unary(
   self : H2Client,
   path : String,
   request : Bytes,
-  metadata? : Array[@header.Header] = [],
-  authority? : String = "127.0.0.1",
-  timeout_millis? : Int,
-) -> (Int, Array[@http2.Frame]) {
+  metadata~ : Array[@header.Header] = [],
+  authority~ : String = "127.0.0.1",
+  timeout_millis? : Int32,
+) -> (Int32, Array[@http2.Frame]) {
   let id = self.open(path, metadata~, authority~, timeout_millis?)
   (id, self.send(id, request, end=true))
 }
@@ -503,7 +503,7 @@ pub fn H2Client::feed(
 /// never fed leaves our decoder disagreeing with the peer's encoder for good.
 fn H2Client::drain_orphan_block(
   self : H2Client,
-  stream_id : Int,
+  stream_id : Int32,
   fragment : Bytes,
   end_headers : Bool,
 ) -> Unit raise {
@@ -565,7 +565,7 @@ fn H2Client::deliver_headers(self : H2Client, c : ClientCall) -> Unit raise {
 ///|
 /// Apply a peer SETTINGS parameter, mirroring the delta of a changed
 /// `INITIAL_WINDOW_SIZE` onto every open call's send window (RFC 7540 §6.9.2).
-fn H2Client::apply_setting(self : H2Client, id : Int, value : Int) -> Unit {
+fn H2Client::apply_setting(self : H2Client, id : Int32, value : Int32) -> Unit {
   if id == @http2.settings_initial_window_size {
     // Ignore an out-of-range window (RFC 7540 §6.5.2 caps it at 2^31-1) rather than
     // letting a negative value corrupt every call's send-window math.
@@ -633,14 +633,14 @@ fn H2Client::pump_requests(self : H2Client) -> Array[@http2.Frame] {
 /// so a long-lived connection would keep one full request and response per RPC it has
 /// ever made, and every WINDOW_UPDATE and SETTINGS frame would walk that whole history.
 /// An unknown or already-released id is a no-op.
-pub fn H2Client::release(self : H2Client, id : Int) -> Unit {
+pub fn H2Client::release(self : H2Client, id : Int32) -> Unit {
   self.calls.remove(id)
 }
 
 ///|
 /// Whether a call has fully completed (its response ended). An unknown id counts as
 /// done so a driver loop terminates.
-pub fn H2Client::is_done(self : H2Client, id : Int) -> Bool {
+pub fn H2Client::is_done(self : H2Client, id : Int32) -> Bool {
   match self.calls.get(id) {
     Some(c) => c.done
     None => true
@@ -657,7 +657,7 @@ pub fn H2Client::goaway_received(self : H2Client) -> Bool {
 ///|
 /// The peer's last processed stream id from its GOAWAY (`0` if none was seen); a call
 /// whose stream id is above it was never handled by the server.
-pub fn H2Client::goaway_last_stream_id(self : H2Client) -> Int {
+pub fn H2Client::goaway_last_stream_id(self : H2Client) -> Int32 {
   self.goaway_last_stream_id
 }
 
@@ -666,7 +666,7 @@ pub fn H2Client::goaway_last_stream_id(self : H2Client) -> Int {
 /// last processed id, so the server never saw it and re-issuing the RPC on a fresh
 /// connection is safe (gRPC transport GOAWAY / RFC 7540 §6.8). False for a call at or
 /// below that id — it may have been processed — and when no GOAWAY arrived.
-pub fn H2Client::is_retryable(self : H2Client, id : Int) -> Bool {
+pub fn H2Client::is_retryable(self : H2Client, id : Int32) -> Bool {
   match self.calls.get(id) {
     Some(c) => c.retryable
     None => false
@@ -675,7 +675,7 @@ pub fn H2Client::is_retryable(self : H2Client, id : Int) -> Bool {
 
 ///|
 /// The completed result of a call. Meaningful once `is_done` is true.
-pub fn H2Client::reply(self : H2Client, id : Int) -> CallReply {
+pub fn H2Client::reply(self : H2Client, id : Int32) -> CallReply {
   match self.calls.get(id) {
     Some(c) => {
       let grpc = if c.decode_failed {
@@ -720,7 +720,7 @@ pub fn H2Client::reply(self : H2Client, id : Int) -> CallReply {
 ///|
 /// Whether a call has reply messages buffered but not yet taken — for reading a streaming
 /// response incrementally as it arrives, rather than all at once via `reply`.
-pub fn H2Client::has_messages(self : H2Client, id : Int) -> Bool {
+pub fn H2Client::has_messages(self : H2Client, id : Int32) -> Bool {
   match self.calls.get(id) {
     Some(c) => c.messages.length() > 0
     None => false
@@ -730,7 +730,7 @@ pub fn H2Client::has_messages(self : H2Client, id : Int) -> Bool {
 ///|
 /// Take every reply message received so far, clearing the call's buffer — the incremental
 /// counterpart to `reply`, for a server- or bidi-streaming response read message by message.
-pub fn H2Client::take_messages(self : H2Client, id : Int) -> Array[Bytes] {
+pub fn H2Client::take_messages(self : H2Client, id : Int32) -> Array[Bytes] {
   match self.calls.get(id) {
     Some(c) => {
       let msgs = c.messages
@@ -787,7 +787,7 @@ fn drain_call_messages(c : ClientCall) -> Unit {
 ///|
 /// Parse ASCII decimal `Bytes` (a `grpc-status` value) to an `Int`; non-digits stop
 /// the scan.
-fn ascii_bytes_to_int(b : Bytes) -> Int {
+fn ascii_bytes_to_int(b : Bytes) -> Int32 {
   let mut n = 0
   for i = 0; i < b.length(); i = i + 1 {
     let c = b[i].to_int()
@@ -803,7 +803,7 @@ fn ascii_bytes_to_int(b : Bytes) -> Int {
 /// Encode whole `millis` as a `grpc-timeout` header value (RFC gRPC HTTP/2 mapping):
 /// the `m` (millisecond) unit when the count fits the 8-digit field, else seconds
 /// with the `S` unit.
-pub fn encode_grpc_timeout(millis : Int) -> Bytes {
+pub fn encode_grpc_timeout(millis : Int32) -> Bytes {
   if millis <= 99999999 {
     cat(int_to_ascii_bytes(millis), b"m")
   } else {

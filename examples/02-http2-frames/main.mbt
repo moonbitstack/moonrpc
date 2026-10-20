@@ -8,7 +8,7 @@
 //     moon run examples/02-http2-frames
 
 ///|
-fn type_name(t : Int) -> String {
+fn type_name(t : Int32) -> String {
   if t == @http2.frame_data {
     "DATA"
   } else if t == @http2.frame_headers {

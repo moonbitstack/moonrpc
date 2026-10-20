@@ -22,23 +22,23 @@ pub fn decode_reflection_request(Bytes) -> ReflectionRequest raise PbError
 
 pub fn decode_reflection_response(Bytes) -> ReflectionResponse raise PbError
 
-pub let default_max_frame_size : Int
+pub let default_max_frame_size : Int32
 
-pub let default_max_streams : Int
+pub let default_max_streams : Int32
 
-pub let default_window_size : Int
+pub let default_window_size : Int32
 
 pub fn dns_decode_response(Bytes) -> DnsResponse
 
-pub fn dns_encode_query(Int, String, Int) -> Bytes
+pub fn dns_encode_query(Int32, String, Int32) -> Bytes
 
-pub let dns_type_a : Int
+pub let dns_type_a : Int32
 
-pub let dns_type_aaaa : Int
+pub let dns_type_aaaa : Int32
 
 pub fn encode_file_descriptor_set(Array[FileDescriptor]) -> Bytes
 
-pub fn encode_grpc_timeout(Int) -> Bytes
+pub fn encode_grpc_timeout(Int32) -> Bytes
 
 pub fn encode_health_request(Bytes) -> Bytes
 
@@ -54,17 +54,17 @@ pub let health_watch_path : String
 
 pub fn is_binary_metadata(Bytes) -> Bool
 
-pub let max_header_list_size : Int
+pub let max_header_list_size : Int32
 
-pub let max_message_size : Int
+pub let max_message_size : Int32
 
-pub fn message_len(BytesView, at? : Int) -> Int?
+pub fn message_len(BytesView, at? : Int32) -> Int32?
 
 pub fn metadata_value_from_wire(Bytes, Bytes) -> Bytes
 
 pub fn metadata_value_to_wire(Bytes, Bytes) -> Bytes
 
-pub fn parse_grpc_timeout(Bytes) -> Int?
+pub fn parse_grpc_timeout(Bytes) -> Int32?
 
 pub fn percent_decode(Bytes) -> String
 
@@ -74,16 +74,16 @@ pub let reflection_v1alpha_path : String
 
 pub fn split_messages(Bytes) -> Array[Bytes]
 
-pub fn stream_id_valid_for_initiator(Int, by_client~ : Bool) -> Bool
+pub fn stream_id_valid_for_initiator(Int32, by_client~ : Bool) -> Bool
 
-pub fn stream_is_client_initiated(Int) -> Bool
+pub fn stream_is_client_initiated(Int32) -> Bool
 
-pub fn stream_is_server_initiated(Int) -> Bool
+pub fn stream_is_server_initiated(Int32) -> Bool
 
 // Errors
 pub suberror PbError {
   Truncated
-  BadWireType(Int)
+  BadWireType(Int32)
   Overflow
   BadUtf8
 } derive(Eq)
@@ -110,7 +110,7 @@ pub(all) struct BidiHandler {
 
 pub(all) struct CallReply {
   status : Bytes
-  grpc_status : Int
+  grpc_status : Int32
   grpc_message : String
   headers : Array[@header.Header]
   messages : Array[Bytes]
@@ -118,23 +118,23 @@ pub(all) struct CallReply {
 }
 
 pub(all) struct ClientCall {
-  id : Int
+  id : Int32
   path : Bytes
   authority : Bytes
   metadata : Array[@header.Header]
   timeout : Bytes?
   mut out : Bytes
-  mut out_off : Int
+  mut out_off : Int32
   mut req_ended : Bool
   mut req_headers_sent : Bool
   mut req_fin_sent : Bool
-  mut send_window : Int
+  mut send_window : Int32
   data : @buffer.Buffer
-  mut data_off : Int
+  mut data_off : Int32
   mut messages : Array[Bytes]
-  mut recv_window : Int
+  mut recv_window : Int32
   mut status : Bytes
-  mut grpc_status : Int?
+  mut grpc_status : Int32?
   mut grpc_message : String
   mut resp_encoding : Bytes
   resp_headers : Array[@header.Header]
@@ -152,7 +152,7 @@ pub struct ConnectionPool {
   order : Array[String]
   subconns : Map[String, SubConn]
   policy : LbPolicy
-  mut cursor : Int
+  mut cursor : Int32
 }
 pub fn ConnectionPool::new(Array[String], policy? : LbPolicy) -> Self
 pub fn ConnectionPool::pick(Self) -> String?
@@ -172,8 +172,8 @@ pub fn ConnectivityState::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DnsRecord {
   name : String
-  rtype : Int
-  ttl : Int
+  rtype : Int32
+  ttl : Int32
   address : String
 } derive(Eq, @debug.Debug)
 pub fn DnsRecord::equal(Self, Self) -> Bool
@@ -181,8 +181,8 @@ pub fn DnsRecord::not_equal(Self, Self) -> Bool
 pub fn DnsRecord::to_repr(Self) -> @debug.Repr
 
 pub(all) struct DnsResponse {
-  id : Int
-  rcode : Int
+  id : Int32
+  rcode : Int32
   answers : Array[DnsRecord]
 } derive(Eq, @debug.Debug)
 pub fn DnsResponse::addresses(Self) -> Array[String]
@@ -192,7 +192,7 @@ pub fn DnsResponse::to_repr(Self) -> @debug.Repr
 
 pub(all) struct FieldDescriptor {
   name : String
-  number : Int
+  number : Int32
   label : FieldLabel
   type_ : FieldType
   type_name : String
@@ -201,16 +201,16 @@ pub fn FieldDescriptor::decode(Bytes) -> Self raise PbError
 pub fn FieldDescriptor::encode(Self) -> Bytes
 pub fn FieldDescriptor::equal(Self, Self) -> Bool
 pub fn FieldDescriptor::not_equal(Self, Self) -> Bool
-pub fn FieldDescriptor::scalar(String, Int, FieldType, label? : FieldLabel) -> Self
+pub fn FieldDescriptor::scalar(String, Int32, FieldType, label? : FieldLabel) -> Self
 
 pub(all) enum FieldLabel {
   LabelOptional
   LabelRequired
   LabelRepeated
 } derive(Eq)
-pub fn FieldLabel::code(Self) -> Int
+pub fn FieldLabel::code(Self) -> Int32
 pub fn FieldLabel::equal(Self, Self) -> Bool
-pub fn FieldLabel::from_code(Int) -> Self
+pub fn FieldLabel::from_code(Int32) -> Self
 pub fn FieldLabel::not_equal(Self, Self) -> Bool
 
 pub(all) enum FieldType {
@@ -232,9 +232,9 @@ pub(all) enum FieldType {
   TypeSint32
   TypeSint64
 } derive(Eq)
-pub fn FieldType::code(Self) -> Int
+pub fn FieldType::code(Self) -> Int32
 pub fn FieldType::equal(Self, Self) -> Bool
-pub fn FieldType::from_code(Int) -> Self
+pub fn FieldType::from_code(Int32) -> Self
 pub fn FieldType::not_equal(Self, Self) -> Bool
 
 pub(all) struct FileDescriptor {
@@ -255,59 +255,59 @@ pub fn FileDescriptor::symbols(Self) -> Array[String]
 pub struct H2Client {
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
-  calls : Map[Int, ClientCall]
-  mut next_id : Int
-  mut conn_send_window : Int
-  mut conn_recv_window : Int
-  mut remote_initial_window : Int
-  mut remote_max_frame : Int
+  calls : Map[Int32, ClientCall]
+  mut next_id : Int32
+  mut conn_send_window : Int32
+  mut conn_recv_window : Int32
+  mut remote_initial_window : Int32
+  mut remote_max_frame : Int32
   mut goaway_received : Bool
-  mut goaway_last_stream_id : Int
-  orphan_blocks : Map[Int, @buffer.Buffer]
+  mut goaway_last_stream_id : Int32
+  orphan_blocks : Map[Int32, @buffer.Buffer]
 }
-pub fn H2Client::close_send(Self, Int) -> Array[@http2.Frame]
+pub fn H2Client::close_send(Self, Int32) -> Array[@http2.Frame]
 pub fn H2Client::feed(Self, @http2.Frame) -> Array[@http2.Frame] raise
-pub fn H2Client::goaway_last_stream_id(Self) -> Int
+pub fn H2Client::goaway_last_stream_id(Self) -> Int32
 pub fn H2Client::goaway_received(Self) -> Bool
-pub fn H2Client::has_messages(Self, Int) -> Bool
-pub fn H2Client::is_done(Self, Int) -> Bool
-pub fn H2Client::is_retryable(Self, Int) -> Bool
+pub fn H2Client::has_messages(Self, Int32) -> Bool
+pub fn H2Client::is_done(Self, Int32) -> Bool
+pub fn H2Client::is_retryable(Self, Int32) -> Bool
 pub fn H2Client::new() -> Self
-pub fn H2Client::open(Self, String, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> Int
+pub fn H2Client::open(Self, String, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> Int32
 pub fn H2Client::preface(Self) -> Array[@http2.Frame]
-pub fn H2Client::release(Self, Int) -> Unit
-pub fn H2Client::reply(Self, Int) -> CallReply
-pub fn H2Client::send(Self, Int, Bytes, end? : Bool) -> Array[@http2.Frame]
-pub fn H2Client::take_messages(Self, Int) -> Array[Bytes]
-pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int) -> (Int, Array[@http2.Frame])
+pub fn H2Client::release(Self, Int32) -> Unit
+pub fn H2Client::reply(Self, Int32) -> CallReply
+pub fn H2Client::send(Self, Int32, Bytes, end? : Bool) -> Array[@http2.Frame]
+pub fn H2Client::take_messages(Self, Int32) -> Array[Bytes]
+pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> (Int32, Array[@http2.Frame])
 
 pub struct H2Server {
   handlers : Map[String, Handler]
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
-  streams : Map[Int, SrvStream]
+  streams : Map[Int32, SrvStream]
   unary_interceptors : Array[(RpcContext, Bytes, (RpcContext, Bytes) -> Bytes) -> Bytes]
   stream_interceptors : Array[(RpcContext, Bytes, (RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]]
-  mut conn_recv_window : Int
-  mut conn_send_window : Int
-  mut remote_initial_window : Int
-  mut remote_max_frame : Int
-  mut max_streams : Int
+  mut conn_recv_window : Int32
+  mut conn_send_window : Int32
+  mut remote_initial_window : Int32
+  mut remote_max_frame : Int32
+  mut max_streams : Int32
   mut clock : () -> Int64
-  mut continuing : Int?
+  mut continuing : Int32?
   mut goaway_received : Bool
-  mut last_client_stream : Int
+  mut last_client_stream : Int32
   mut closing : Bool
-  mut drained : Int?
+  mut drained : Int32?
 }
-pub fn H2Server::active_streams(Self) -> Int
+pub fn H2Server::active_streams(Self) -> Int32
 pub fn H2Server::add_stream_interceptor(Self, (RpcContext, Bytes, (RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]) -> Unit
 pub fn H2Server::add_unary_interceptor(Self, (RpcContext, Bytes, (RpcContext, Bytes) -> Bytes) -> Bytes) -> Unit
 pub fn H2Server::closing(Self) -> Bool
 pub fn H2Server::feed(Self, @http2.Frame) -> Array[@http2.Frame]
-pub fn H2Server::goaway(Self, Int) -> Array[@http2.Frame]
+pub fn H2Server::goaway(Self, Int32) -> Array[@http2.Frame]
 pub fn H2Server::goaway_received(Self) -> Bool
-pub fn H2Server::highest_stream(Self) -> Int
+pub fn H2Server::highest_stream(Self) -> Int32
 pub fn H2Server::new() -> Self
 pub fn H2Server::preface(Self) -> Array[@http2.Frame]
 pub fn H2Server::register(Self, String, (Bytes) -> Bytes) -> Unit
@@ -316,10 +316,10 @@ pub fn H2Server::register_client_streaming(Self, String, (RpcContext, Array[Byte
 pub fn H2Server::register_handler(Self, String, Handler) -> Unit
 pub fn H2Server::register_server_streaming(Self, String, (RpcContext, Bytes) -> Array[Bytes]) -> Unit
 pub fn H2Server::register_unary(Self, String, (RpcContext, Bytes) -> Bytes) -> Unit
-pub fn H2Server::release(Self, Int) -> Unit
+pub fn H2Server::release(Self, Int32) -> Unit
 pub fn H2Server::set_clock(Self, () -> Int64) -> Unit
-pub fn H2Server::set_max_streams(Self, Int) -> Unit
-pub fn H2Server::stream_state(Self, Int) -> StreamState
+pub fn H2Server::set_max_streams(Self, Int32) -> Unit
+pub fn H2Server::stream_state(Self, Int32) -> StreamState
 pub fn H2Server::tick(Self) -> Array[@http2.Frame]
 
 pub(all) enum Handler {
@@ -339,15 +339,15 @@ pub fn HealthService::new() -> Self
 pub fn HealthService::set_status(Self, String, ServingStatus) -> Unit
 
 pub(all) struct HedgingPolicy {
-  max_attempts : Int
-  hedging_delay_millis : Int
-  non_fatal : Array[Int]
+  max_attempts : Int32
+  hedging_delay_millis : Int32
+  non_fatal : Array[Int32]
 }
-pub fn HedgingPolicy::attempt_cap(Self) -> Int
-pub fn HedgingPolicy::can_start_another(Self, Int) -> Bool
+pub fn HedgingPolicy::attempt_cap(Self) -> Int32
+pub fn HedgingPolicy::can_start_another(Self, Int32) -> Bool
 pub fn HedgingPolicy::default() -> Self
-pub fn HedgingPolicy::delay_millis(Self) -> Int
-pub fn HedgingPolicy::should_commit(Self, Int) -> Bool
+pub fn HedgingPolicy::delay_millis(Self) -> Int32
+pub fn HedgingPolicy::should_commit(Self, Int32) -> Bool
 
 pub struct Keepalive {
   keepalive_time : Int64
@@ -374,11 +374,11 @@ pub fn LbPolicy::to_repr(Self) -> @debug.Repr
 pub struct LoadBalancer {
   addresses : Array[String]
   policy : LbPolicy
-  mut cursor : Int
+  mut cursor : Int32
 }
 pub fn LoadBalancer::new(Array[String], policy? : LbPolicy) -> Self
 pub fn LoadBalancer::pick(Self) -> String?
-pub fn LoadBalancer::size(Self) -> Int
+pub fn LoadBalancer::size(Self) -> Int32
 
 pub(all) struct MessageDescriptor {
   name : String
@@ -409,24 +409,24 @@ pub fn MethodDescriptor::not_equal(Self, Self) -> Bool
 
 pub struct PbReader {
   data : Bytes
-  mut pos : Int
+  mut pos : Int32
 }
 pub fn PbReader::eof(Self) -> Bool
 pub fn PbReader::new(Bytes) -> Self
 pub fn PbReader::read_bool(Self) -> Bool raise PbError
 pub fn PbReader::read_bytes(Self) -> Bytes raise PbError
-pub fn PbReader::read_fixed32(Self) -> UInt raise PbError
+pub fn PbReader::read_fixed32(Self) -> UInt32 raise PbError
 pub fn PbReader::read_fixed64(Self) -> UInt64 raise PbError
-pub fn PbReader::read_int32(Self) -> Int raise PbError
+pub fn PbReader::read_int32(Self) -> Int32 raise PbError
 pub fn PbReader::read_int64(Self) -> Int64 raise PbError
 pub fn PbReader::read_len_delim(Self) -> Bytes raise PbError
 pub fn PbReader::read_map_string_string(Self) -> (String, String) raise PbError
-pub fn PbReader::read_packed_int32(Self) -> Array[Int] raise PbError
-pub fn PbReader::read_sint32(Self) -> Int raise PbError
+pub fn PbReader::read_packed_int32(Self) -> Array[Int32] raise PbError
+pub fn PbReader::read_sint32(Self) -> Int32 raise PbError
 pub fn PbReader::read_sint64(Self) -> Int64 raise PbError
 pub fn PbReader::read_string(Self) -> String raise PbError
-pub fn PbReader::read_tag(Self) -> (Int, WireType) raise PbError
-pub fn PbReader::read_uint32(Self) -> UInt raise PbError
+pub fn PbReader::read_tag(Self) -> (Int32, WireType) raise PbError
+pub fn PbReader::read_uint32(Self) -> UInt32 raise PbError
 pub fn PbReader::read_uint64(Self) -> UInt64 raise PbError
 pub fn PbReader::read_varint(Self) -> UInt64 raise PbError
 pub fn PbReader::skip(Self, WireType) -> Unit raise PbError
@@ -434,27 +434,27 @@ pub fn PbReader::skip(Self, WireType) -> Unit raise PbError
 pub struct PbWriter {
   buf : @buffer.Buffer
 }
-pub fn PbWriter::bool_(Self, Int, Bool) -> Unit
-pub fn PbWriter::bytes_(Self, Int, Bytes) -> Unit
-pub fn PbWriter::enum_(Self, Int, Int) -> Unit
-pub fn PbWriter::fixed32(Self, Int, UInt) -> Unit
-pub fn PbWriter::fixed64(Self, Int, UInt64) -> Unit
-pub fn PbWriter::int32(Self, Int, Int) -> Unit
-pub fn PbWriter::int64(Self, Int, Int64) -> Unit
-pub fn PbWriter::map_string_string(Self, Int, String, String) -> Unit
-pub fn PbWriter::message_(Self, Int, Bytes) -> Unit
+pub fn PbWriter::bool_(Self, Int32, Bool) -> Unit
+pub fn PbWriter::bytes_(Self, Int32, Bytes) -> Unit
+pub fn PbWriter::enum_(Self, Int32, Int32) -> Unit
+pub fn PbWriter::fixed32(Self, Int32, UInt32) -> Unit
+pub fn PbWriter::fixed64(Self, Int32, UInt64) -> Unit
+pub fn PbWriter::int32(Self, Int32, Int32) -> Unit
+pub fn PbWriter::int64(Self, Int32, Int64) -> Unit
+pub fn PbWriter::map_string_string(Self, Int32, String, String) -> Unit
+pub fn PbWriter::message_(Self, Int32, Bytes) -> Unit
 pub fn PbWriter::new() -> Self
-pub fn PbWriter::packed_int32(Self, Int, Array[Int]) -> Unit
-pub fn PbWriter::sint32(Self, Int, Int) -> Unit
-pub fn PbWriter::sint64(Self, Int, Int64) -> Unit
-pub fn PbWriter::string_(Self, Int, String) -> Unit
+pub fn PbWriter::packed_int32(Self, Int32, Array[Int32]) -> Unit
+pub fn PbWriter::sint32(Self, Int32, Int32) -> Unit
+pub fn PbWriter::sint64(Self, Int32, Int64) -> Unit
+pub fn PbWriter::string_(Self, Int32, String) -> Unit
 pub fn PbWriter::to_bytes(Self) -> Bytes
-pub fn PbWriter::uint32(Self, Int, UInt) -> Unit
-pub fn PbWriter::uint64(Self, Int, UInt64) -> Unit
-pub fn PbWriter::write_fixed32(Self, UInt) -> Unit
+pub fn PbWriter::uint32(Self, Int32, UInt32) -> Unit
+pub fn PbWriter::uint64(Self, Int32, UInt64) -> Unit
+pub fn PbWriter::write_fixed32(Self, UInt32) -> Unit
 pub fn PbWriter::write_fixed64(Self, UInt64) -> Unit
 pub fn PbWriter::write_len_delim(Self, Bytes) -> Unit
-pub fn PbWriter::write_tag(Self, Int, WireType) -> Unit
+pub fn PbWriter::write_tag(Self, Int32, WireType) -> Unit
 pub fn PbWriter::write_varint(Self, UInt64) -> Unit
 
 pub(all) enum ReflectionRequest {
@@ -469,15 +469,15 @@ pub fn ReflectionRequest::not_equal(Self, Self) -> Bool
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
-  ReflectionError(Int, String)
+  ReflectionError(Int32, String)
 } derive(Eq)
 pub fn ReflectionResponse::equal(Self, Self) -> Bool
 pub fn ReflectionResponse::not_equal(Self, Self) -> Bool
 
 pub struct ReflectionService {
   files : Array[FileDescriptor]
-  by_symbol : Map[String, Int]
-  by_filename : Map[String, Int]
+  by_symbol : Map[String, Int32]
+  by_filename : Map[String, Int32]
   services : Array[String]
 }
 pub fn ReflectionService::add_file(Self, FileDescriptor) -> Unit
@@ -487,30 +487,30 @@ pub fn ReflectionService::install(Self, H2Server) -> Unit
 pub fn ReflectionService::new() -> Self
 
 pub(all) struct RetryPolicy {
-  max_attempts : Int
-  initial_backoff_millis : Int
-  max_backoff_millis : Int
+  max_attempts : Int32
+  initial_backoff_millis : Int32
+  max_backoff_millis : Int32
   backoff_multiplier : Double
-  retryable : Array[Int]
+  retryable : Array[Int32]
 }
-pub fn RetryPolicy::backoff_millis(Self, Int) -> Int
+pub fn RetryPolicy::backoff_millis(Self, Int32) -> Int32
 pub fn RetryPolicy::default() -> Self
-pub fn RetryPolicy::should_retry(Self, Int, Int) -> Bool
+pub fn RetryPolicy::should_retry(Self, Int32, Int32) -> Bool
 
 pub(all) struct RpcContext {
   path : String
   metadata : Array[@header.Header]
-  deadline_millis : Int?
+  deadline_millis : Int32?
   resp_headers : Array[@header.Header]
   resp_trailers : Array[@header.Header]
-  mut status_fail : (Int, String)?
+  mut status_fail : (Int32, String)?
   error_details : Array[Bytes]
 }
 pub fn RpcContext::add_error_detail(Self, Bytes) -> Unit
 pub fn RpcContext::add_header(Self, Bytes, Bytes) -> Unit
 pub fn RpcContext::add_trailer(Self, Bytes, Bytes) -> Unit
 pub fn RpcContext::empty() -> Self
-pub fn RpcContext::fail(Self, Int, String) -> Unit
+pub fn RpcContext::fail(Self, Int32, String) -> Unit
 pub fn RpcContext::metadata_get(Self, Bytes) -> Bytes?
 
 pub(all) struct ServiceDescriptor {
@@ -528,36 +528,36 @@ pub(all) enum ServingStatus {
   NotServing
   ServiceUnknown
 } derive(Eq)
-pub fn ServingStatus::code(Self) -> Int
+pub fn ServingStatus::code(Self) -> Int32
 pub fn ServingStatus::equal(Self, Self) -> Bool
-pub fn ServingStatus::from_code(Int) -> Self
+pub fn ServingStatus::from_code(Int32) -> Self
 pub fn ServingStatus::not_equal(Self, Self) -> Bool
 
 pub(all) struct SrvStream {
-  id : Int
+  id : Int32
   mut state : StreamState
   header_block : @buffer.Buffer
   data : @buffer.Buffer
-  mut req_off : Int
+  mut req_off : Int32
   req_msgs : Array[Bytes]
-  mut bidi_processed : Int
+  mut bidi_processed : Int32
   mut headers_complete : Bool
   mut in_headers : Bool
   mut end_stream_recv : Bool
   mut path : String
   mut ctx : RpcContext
   mut deadline_at : Int64?
-  mut recv_window : Int
-  mut send_window : Int
+  mut recv_window : Int32
+  mut send_window : Int32
   mut out : Bytes
-  mut out_off : Int
+  mut out_off : Int32
   mut started : Bool
   mut started_response : Bool
   mut response_ended : Bool
   mut finalized : Bool
   mut trailers_only : Bool
-  mut http_status : Int
-  mut status_code : Int
+  mut http_status : Int32
+  mut status_code : Int32
   mut status_message : String
   mut req_encoding : Bytes
   mut compressed_unsupported : Bool
@@ -586,18 +586,18 @@ pub(all) enum Status {
   DataLoss
   Unauthenticated
 } derive(Eq)
-pub fn Status::code(Self) -> Int
+pub fn Status::code(Self) -> Int32
 pub fn Status::equal(Self, Self) -> Bool
-pub fn Status::from_h2_error(Int) -> Self
-pub fn Status::from_http(Int) -> Self
+pub fn Status::from_h2_error(Int32) -> Self
+pub fn Status::from_http(Int32) -> Self
 pub fn Status::name(Self) -> String
 pub fn Status::not_equal(Self, Self) -> Bool
 
 pub(all) struct Stream {
-  id : Int
+  id : Int32
   mut state : StreamState
 }
-pub fn Stream::new(Int) -> Self
+pub fn Stream::new(Int32) -> Self
 pub fn Stream::recv(Self, StreamEvent) -> StreamState raise StreamError
 pub fn Stream::send(Self, StreamEvent) -> StreamState raise StreamError
 
@@ -646,9 +646,9 @@ pub(all) enum WireType {
   LengthDelim
   Fixed32
 } derive(Eq)
-pub fn WireType::code(Self) -> Int
+pub fn WireType::code(Self) -> Int32
 pub fn WireType::equal(Self, Self) -> Bool
-pub fn WireType::from_code(Int) -> Self?
+pub fn WireType::from_code(Int32) -> Self?
 pub fn WireType::not_equal(Self, Self) -> Bool
 pub fn WireType::output(Self, &Logger) -> Unit
 pub fn WireType::to_string(Self) -> String
