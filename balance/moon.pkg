@@ -1,0 +1,10 @@
+// Client-side resolution and balancing: DNS, subchannels and their
+// connectivity states, load-balancing policies, connection pools, retry and
+// hedging policies.
+import {
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moondate",
+  "moonbitstack/moonpool",
+  "moonbitstack/moonvar/fixed",
+  "moonbitlang/core/encoding/utf8",
+}

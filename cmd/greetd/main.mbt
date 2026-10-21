@@ -38,13 +38,11 @@ fn say_hello(ctx : @moonrpc.RpcContext, req : Bytes) -> Bytes {
 fn greet_file() -> @moonrpc.FileDescriptor {
   let request = @moonrpc.MessageDescriptor::{
     name: "HelloRequest",
-    fields: [@moonrpc.FieldDescriptor::scalar("name", 1, @moonrpc.TypeString)],
+    fields: [@moonrpc.FieldDescriptor::scalar("name", 1, TypeString)],
   }
   let reply = @moonrpc.MessageDescriptor::{
     name: "HelloReply",
-    fields: [
-      @moonrpc.FieldDescriptor::scalar("message", 1, @moonrpc.TypeString),
-    ],
+    fields: [@moonrpc.FieldDescriptor::scalar("message", 1, TypeString)],
   }
   let greeter = @moonrpc.ServiceDescriptor::{
     name: "Greeter",

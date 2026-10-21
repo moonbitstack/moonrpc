@@ -5,75 +5,41 @@ gh-pages from the package sources' `///` doc comments. Reproducible: reads the
 import re, html, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# One section per package, in layer order; each lists every source file in it.
 SECTIONS = [
-    ("rpc", "rpc.mbt", "Framing & status",
-     "encode_message / decode_message implement gRPC length-prefixed framing; "
-     "Status is the 17-code grpc-status model; Method renders the /Service/Method path."),
-    ("protobuf", "protobuf.mbt", "Protobuf wire runtime",
-     "The pure protobuf binary wire codec: PbWriter / PbReader carry the four proto3 "
-     "wire types (varint, fixed32/64, length-delimited) plus zigzag for the sint types, "
-     "with tag packing, unknown-field skipping, and truncation / overflow / group-type "
-     "rejection on decode."),
-    ("descriptor", "descriptor.mbt", "Descriptor model",
-     "The descriptor model for services and messages and its codec to the "
-     "FileDescriptorProto / FileDescriptorSet wire bytes of descriptor.proto — the unit "
-     "Server Reflection returns, encoding from a programmatic model and decoding a "
-     "protoc-produced FileDescriptorSet through the same types."),
-    ("stream", "stream.mbt", "HTTP/2 stream state machine",
-     "The RFC 7540 §5.1 stream lifecycle (idle / open / half-closed / closed) and "
-     "the §5.1.1 stream-identifier parity rules."),
-    ("server", "server.mbt", "gRPC server engine",
-     "The pure, transport-independent server core: H2Server::feed turns a stream of "
-     "decoded frames into the frames to send back — driving the stream state machine, "
-     "the stateful HPACK codec, and connection- and stream-level flow control (RFC 7540 "
-     "§6.9), routing a completed application/grpc request to a handler of any of the four "
-     "call kinds and framing each produced message as its own length-prefixed DATA, closed "
-     "by grpc-status trailers. Exercised in-memory on every backend."),
-    ("streaming", "streaming.mbt", "Streaming call kinds & context",
-     "The four gRPC cardinalities (Unary / ServerStreaming / ClientStreaming / Bidi) and "
-     "the per-call RpcContext: request metadata, the grpc-timeout deadline, and response "
-     "initial/trailing metadata the handler can set."),
-    ("client", "client.mbt", "gRPC client engine",
-     "The pure client core, symmetric to H2Server: H2Client allocates client stream ids, "
-     "builds request HEADERS and length-prefixed DATA honouring the send windows, and turns "
-     "the response frames back into a CallReply — the :status, grpc-status, reply messages, "
-     "and initial/trailing metadata. Runs in-memory on every backend."),
-    ("interceptor", "interceptor.mbt", "Server interceptors",
-     "Unary and server-streaming interceptor chains wrapped around a method handler, folded "
-     "outermost-first: each interceptor sees the context and request, calls next to proceed, "
-     "or returns without it to short-circuit."),
-    ("health", "health.mbt", "Health service",
-     "The grpc.health.v1.Health service (Check + Watch) with a hand-coded protobuf codec for "
-     "its two messages and a per-service ServingStatus table."),
-    ("reflection", "reflection.mbt", "Server Reflection service",
-     "The grpc.reflection.v1.ServerReflection service (and its v1alpha alias) as a bidi "
-     "stream: ListServices enumerates registered services, FileContainingSymbol and "
-     "FileByFilename return the real FileDescriptorProto bytes, so a reflection client "
-     "such as grpcurl can list and describe a service."),
-    ("net", "net/serve.mbt", "h2c socket transport (native)",
-     "The native driver that pumps bytes between a real @socket.Tcp connection and the "
-     "H2Server engine: GrpcServer registers handlers of every call kind and serves them "
-     "over the self-built HTTP/2 (h2c) transport. Native-only — real sockets and "
-     "moonbitlang/async have no JS/Wasm backend."),
-    ("channel", "net/channel.mbt", "Channel client (native)",
-     "The native Channel: a long-lived, multiplexed h2c connection over a real @socket.Tcp, "
-     "driven by the H2Client engine, performing unary, server- and client-streaming calls and "
-     "enforcing the grpc-timeout deadline by racing the read loop against a timer."),
-    ("policy", ("retry.mbt", "hedging.mbt", "keepalive.mbt"), "Call policy",
-     "What a client does around a call rather than inside it: the retry policy and "
-     "its backoff, hedged attempts across backends, and the keepalive pings that "
-     "keep an idle connection from being reaped."),
-    ("balancing", ("loadbalancer.mbt", "connectivity.mbt", "dns.mbt", "pool.mbt"), "Load balancing and naming",
-     "Picking a backend and knowing whether it is reachable: the balancers, the "
-     "connectivity state machine gRPC defines, DNS resolution, and the channel pool."),
-    ("channels", ("net/mux_channel.mbt", "net/managed_channel.mbt", "net/resolver.mbt"), "Channels over a socket",
-     "The native client transports: a multiplexing channel that demultiplexes "
-     "concurrent calls on one connection, a managed channel that dials several "
-     "backends and routes around the dead ones, and the resolver behind it."),
-    ("codecs", "metadata.mbt", "Metadata",
-     "The metadata rules that decide which keys travel base64 encoded. The gzip "
-     "compression gRPC negotiates is moonzip's, and the header compression is "
-     "moonhttp's."),
+    ("wire", "wire", "wire: framing, status, metadata",
+     "gRPC length-prefixed message framing, the 17-code Status and its mapping from "
+     "HTTP/2 and HTTP errors, the /Service/Method path, the metadata rules that decide "
+     "which keys travel base64 encoded, keepalive pings, and the HTTP/2 defaults both "
+     "engines start from."),
+    ("proto", "proto", "proto: protobuf and descriptors",
+     "The protobuf binary wire codec (PbWriter / PbReader over the four proto3 wire "
+     "types, zigzag, tag packing, unknown-field skipping, rejection of truncation and "
+     "overflow) and the descriptor model with its codec to FileDescriptorProto and "
+     "FileDescriptorSet bytes."),
+    ("stream", "stream", "stream: stream lifecycle and handlers",
+     "The RFC 9113 §5.1 stream state machine and identifier parity, the four call kinds "
+     "(Unary / ServerStreaming / ClientStreaming / Bidi) and the per-call RpcContext: "
+     "request metadata, the grpc-timeout deadline, and response metadata."),
+    ("balance", "balance", "balance: call policy and load balancing",
+     "What a client does around a call: retry with backoff, hedged attempts, the "
+     "connectivity state machine, the balancers, DNS resolution and the channel pool."),
+    ("client", "client", "client: the client engine",
+     "H2Client allocates stream ids, builds request HEADERS and length-prefixed DATA "
+     "within the send windows, and turns response frames back into a CallReply. Pure; "
+     "runs in memory on every backend."),
+    ("server", "server", "server: the server engine",
+     "H2Server::feed turns decoded frames into the frames to send back: stream state, "
+     "HPACK, connection and stream flow control, routing to a handler of any call kind, "
+     "grpc-status trailers, and the interceptor chains around handlers. Pure; runs in "
+     "memory on every backend."),
+    ("service", "service", "service: health and reflection",
+     "grpc.health.v1.Health (Check and Watch) and grpc.reflection.v1 ServerReflection "
+     "(and its v1alpha alias), so grpcurl can list and describe a service."),
+    ("net", "net", "net: sockets (native)",
+     "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
+     "multiplexing channel and the managed channel dial one or many backends. Native "
+     "only: moonbitlang/async has no JS or Wasm sockets."),
 ]
 KIND = {"struct": "struct", "enum": "enum", "fn": "fn", "type": "type", "let": "let"}
 
@@ -231,12 +197,12 @@ document.addEventListener("DOMContentLoaded",()=>{
 """
 
 CONTRACT = """let server = @net.GrpcServer::new()
-server.register("/greet.Greeter/SayHello", req => handle(req))   // (bytes) -> bytes
-server.serve(port=50051)          // a real unary gRPC call over self-built h2c
+server.register("/greet.Greeter/SayHello", req => handle(req))   // (Bytes) -> Bytes
+server.serve()                    // listens on 12000
 
-// under the hood — a pure, all-backend protocol engine over the frame + HPACK codecs:
-let engine = H2Server::new()
-let out = engine.feed(frame)      // frames in -> HEADERS + DATA + grpc-status trailers out"""
+// below serve: a pure engine, frames in and frames out, on every backend
+let engine = @moonrpc.H2Server::new()
+let out = engine.feed(frame)      // HEADERS + DATA + grpc-status trailers"""
 
 
 def esc(t):
@@ -261,18 +227,15 @@ def main():
              '<button class="theme-btn" id="theme">◐ toggle theme</button>'
              '<div class="side-foot">'
              '<a href="https://github.com/moonbitstack/moonrpc/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/moonbitstack/moonrpc/ci.yml?branch=master&label=CI&logo=github"></a>'
-             '<a href="https://mooncakes.io/docs/moonbitstack/moonrpc"><img alt="mooncakes" src="https://img.shields.io/badge/mooncakes-Lfan--ke%2Fmoonrpc-1f6feb"></a>'
+             '<a href="https://mooncakes.io/docs/moonbitstack/moonrpc"><img alt="mooncakes" src="https://img.shields.io/badge/mooncakes-moonbitstack%2Fmoonrpc-1f6feb"></a>'
              '</div></aside>']
 
     hero = ('<main><header class="hero"><h1>moonrpc</h1>'
-            '<p class="tag">A real gRPC implementation for MoonBit &#8212; not gRPC-Web. It now '
-            '<strong>serves a real unary gRPC call</strong> over a self-built HTTP/2 (h2c) '
-            'transport: the RFC 7540 frame layer, the stream state machine, complete HPACK '
-            '(RFC 7541), and connection- and stream-level flow control &#8212; the protocol '
-            'engine is pure and runs on every backend; the socket driver is native.</p>'
+            '<p class="tag">Real gRPC for MoonBit, not gRPC-Web: all four call kinds over HTTP/2 '
+            '(RFC 9113) with HPACK (RFC 7541). The protocol engines are pure and run on every '
+            'backend; the socket driver is native.</p>'
             '<div class="badges">'
             '<a href="https://github.com/moonbitstack/moonrpc/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/moonbitstack/moonrpc/ci.yml?branch=master&label=CI&logo=github"></a>'
-            '<img alt="tests" src="https://img.shields.io/badge/tests-66%20%C3%974%20backends%20%2B%20native%20h2c-0ca678">'
             '<a href="https://github.com/moonbitstack/moonrpc"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-source-24292f?logo=github"></a>'
             '<img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-6d5efc"></div>'
             '<div class="install"><span class="prompt">$</span><code>moon add moonbitstack/moonrpc</code>'
@@ -285,8 +248,9 @@ def main():
     for sid, rel, title, desc in SECTIONS:
         body.append('<section class="pkg" id="%s"><h2><span class="at">§</span>%s</h2>'
                     '<p class="pdesc">%s</p>' % (sid, title, esc(desc)))
-        files = rel if isinstance(rel, tuple) else (rel,)
-        for kind, sig, doc in [it for f in files for it in parse(ROOT / f)]:
+        files = sorted(f for f in (ROOT / rel).glob("*.mbt")
+                       if not f.stem.endswith(("_test", "_wbtest")))
+        for kind, sig, doc in [it for f in files for it in parse(f)]:
             total += 1
             body.append('<div class="item" data-k="%s"><span class="kind">%s</span>'
                         '<pre class="sig">%s</pre>%s</div>'

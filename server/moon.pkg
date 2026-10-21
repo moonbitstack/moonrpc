@@ -1,0 +1,21 @@
+// The HTTP/2 gRPC server: stream multiplexing, flow control, interceptors and
+// status details.
+import {
+  "moonbitlang/core/cmp",
+  "moonbitstack/moonrpc/internal/h2",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/url",
+  "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonzip/gzip",
+  "moonbitstack/moonbase/base64",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "moonbitstack/moonbase/base16",
+  "moonbitstack/moonrpc/client",
+} for "wbtest"

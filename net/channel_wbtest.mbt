@@ -7,9 +7,9 @@
 async test "channel: unary and Health/Check over a real socket, multiplexed on one connection" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
-    server.register("/echo.Echo/Say", req => cat(b"echo:", req))
+    server.register("/echo.Echo/Say", req => b"echo:" + req)
     let health = @moonrpc.HealthService::new()
-    health.set_status("pkg.Svc", @moonrpc.Serving)
+    health.set_status("pkg.Svc", Serving)
     server.register_health(health)
     let task = g.spawn(() => server.serve(port=18081))
     @async.sleep(300)
@@ -28,10 +28,7 @@ async test "channel: unary and Health/Check over a real socket, multiplexed on o
       @moonrpc.encode_health_request(b"pkg.Svc"),
     )
     assert_eq(hr.grpc_status, 0)
-    assert_eq(
-      @moonrpc.decode_health_response(hr.messages[0]) == @moonrpc.Serving,
-      true,
-    )
+    assert_eq(@moonrpc.decode_health_response(hr.messages[0]) == Serving, true)
     chan.close()
     task.cancel()
   })
@@ -42,7 +39,7 @@ async test "channel: a server-streaming call receives every framed reply in orde
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
-      [cat(req, b"-1"), cat(req, b"-2"), cat(req, b"-3")]
+      [req + b"-1", req + b"-2", req + b"-3"]
     })
     let task = g.spawn(() => server.serve(port=18082))
     @async.sleep(300)
@@ -88,7 +85,7 @@ async test "channel: a bidi-streaming call exchanges a run of messages over a so
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register_bidi("/chat.C/Talk", _ctx => {
-      on_message: m => [cat(b"re:", m)],
+      on_message: m => [b"re:" + m],
       on_end: () => [b"bye"],
     })
     let task = g.spawn(() => server.serve(port=18085))
@@ -239,7 +236,7 @@ async test "channel: a call past its deadline is cancelled with DEADLINE_EXCEEDE
     let task = g.spawn(() => {
       server.run_forever((conn, _addr) => {
         let engine = @moonrpc.H2Server::new()
-        engine.register("/slow.S/Wait", req => cat(b"ok:", req))
+        engine.register("/slow.S/Wait", req => b"ok:" + req)
         drive_slow(conn, engine, 400) catch {
           _ => ()
         }
@@ -344,7 +341,7 @@ async test "channel stream_take: collects streamed replies inline without a pump
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
-      [cat(req, b"-1"), cat(req, b"-2"), cat(req, b"-3")]
+      [req + b"-1", req + b"-2", req + b"-3"]
     })
     let task = g.spawn(() => server.serve(port=18132))
     @async.sleep(300)

@@ -26,7 +26,7 @@ pub fn HedgingPolicy::default() -> HedgingPolicy {
   {
     max_attempts: 3,
     hedging_delay_millis: 500,
-    non_fatal: [Status::code(Unavailable)],
+    non_fatal: [@wire.Status::code(Unavailable)],
   }
 }
 

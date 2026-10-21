@@ -9,52 +9,12 @@
 // runs in-memory on every backend; the socket driver in `net/` only pumps bytes.
 
 ///|
-/// The HTTP/2 default flow-control window and initial `SETTINGS_INITIAL_WINDOW_SIZE`
-/// (RFC 7540 §6.9.2): 65 535 octets.
-pub let default_window_size : Int32 = 65535
-
-///|
-/// The HTTP/2 default (and minimum) `SETTINGS_MAX_FRAME_SIZE` (RFC 7540 §6.5.2).
-pub let default_max_frame_size : Int32 = 16384
-
-///|
 /// The `SETTINGS_MAX_CONCURRENT_STREAMS` the server advertises and enforces unless a
 /// caller says otherwise: 100, the value gRPC and nghttp2 both settle on. RFC 9113
 /// §5.1.2 leaves the setting unset by default, which means unbounded — and every live
 /// stream holds a request buffer, so a peer that opens streams and never finishes them
 /// pins memory for as long as the connection lasts.
 pub let default_max_streams : Int32 = 100
-
-///|
-/// Add a flow-control increment to a window, saturating at the ±2^31-1 range RFC 7540
-/// §6.9.1 allows instead of wrapping. A wrap to a large negative window would stall
-/// every send on that stream/connection (a WINDOW_UPDATE-driven deadlock), and a wrap
-/// to a bogus positive one would over-send; the sum is taken in 64 bits and clamped.
-fn add_window(cur : Int32, inc : Int32) -> Int32 {
-  let sum = cur.to_int64() + inc.to_int64()
-  if sum > 0x7FFFFFFFL {
-    0x7FFFFFFF
-  } else if sum < -0x7FFFFFFFL {
-    -0x7FFFFFFF
-  } else {
-    sum.to_int()
-  }
-}
-
-///|
-/// Raise once an accumulated field block has grown past `max_header_list_size` — the
-/// backstop against a CONTINUATION flood pinning unbounded memory. RFC 9113 §4.2 makes
-/// a block over a limit the endpoint will hold a FRAME_SIZE_ERROR, and it is fatal to
-/// the connection: the block never reaches the decoder, so the HPACK context stops
-/// matching the peer's.
-fn guard_header_size(buf : Buffer) -> Unit raise H2Fault {
-  if buf.length() > max_header_list_size {
-    raise ConnFault(
-      code=@http2.error_frame_size_error,
-      why="field block over " + max_header_list_size.to_string() + " octets",
-    )
-  }
-}
 
 ///|
 /// One server-side stream: its lifecycle state, the accumulating request header
@@ -64,7 +24,7 @@ fn guard_header_size(buf : Buffer) -> Unit raise H2Fault {
 /// out, and any live bidi call state.
 pub(all) struct SrvStream {
   id : Int32
-  mut state : StreamState
+  mut state : @stream.StreamState
   header_block : Buffer
   data : Buffer
   mut req_off : Int32
@@ -77,7 +37,7 @@ pub(all) struct SrvStream {
   mut in_headers : Bool
   mut end_stream_recv : Bool
   mut path : String
-  mut ctx : RpcContext
+  mut ctx : @stream.RpcContext
   // When the call's `grpc-timeout` runs out, on the clock the driver installed. `None`
   // when the request carried no timeout.
   mut deadline_at : Int64?
@@ -110,7 +70,7 @@ pub(all) struct SrvStream {
   mut oversize : Bool
   mut headers_sent : Bool
   mut trailers_sent : Bool
-  mut bidi : BidiHandler?
+  mut bidi : @stream.BidiHandler?
 }
 
 ///|
@@ -127,9 +87,9 @@ fn SrvStream::new(id : Int32, send_window : Int32) -> SrvStream {
     in_headers: false,
     end_stream_recv: false,
     path: "",
-    ctx: RpcContext::empty(),
+    ctx: @stream.RpcContext::empty(),
     deadline_at: None,
-    recv_window: default_window_size,
+    recv_window: @wire.default_window_size,
     send_window,
     out: b"",
     out_off: 0,
@@ -172,7 +132,7 @@ fn SrvStream::retire(self : SrvStream) -> Unit {
 /// that bound what we may send. Persistent across the whole connection because
 /// HPACK and flow control are stateful.
 pub struct H2Server {
-  handlers : Map[String, Handler]
+  handlers : Map[String, @stream.Handler]
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
   streams : Map[Int32, SrvStream]
@@ -216,10 +176,10 @@ pub fn H2Server::new() -> H2Server {
     streams: Map([]),
     unary_interceptors: [],
     stream_interceptors: [],
-    conn_recv_window: default_window_size,
-    conn_send_window: default_window_size,
-    remote_initial_window: default_window_size,
-    remote_max_frame: default_max_frame_size,
+    conn_recv_window: @wire.default_window_size,
+    conn_send_window: @wire.default_window_size,
+    remote_initial_window: @wire.default_window_size,
+    remote_max_frame: @wire.default_max_frame_size,
     max_streams: default_max_streams,
     clock: () => 0L,
     continuing: None,
@@ -255,7 +215,7 @@ pub fn H2Server::release(self : H2Server, id : Int32) -> Unit {
 pub fn H2Server::register_handler(
   self : H2Server,
   path : String,
-  handler : Handler,
+  handler : @stream.Handler,
 ) -> Unit {
   self.handlers[path] = handler
 }
@@ -266,7 +226,7 @@ pub fn H2Server::register_handler(
 pub fn H2Server::register_unary(
   self : H2Server,
   path : String,
-  handler : (RpcContext, Bytes) -> Bytes,
+  handler : (@stream.RpcContext, Bytes) -> Bytes,
 ) -> Unit {
   self.handlers[path] = Unary(handler)
 }
@@ -277,7 +237,7 @@ pub fn H2Server::register_unary(
 pub fn H2Server::register_server_streaming(
   self : H2Server,
   path : String,
-  handler : (RpcContext, Bytes) -> Array[Bytes],
+  handler : (@stream.RpcContext, Bytes) -> Array[Bytes],
 ) -> Unit {
   self.handlers[path] = ServerStreaming(handler)
 }
@@ -288,7 +248,7 @@ pub fn H2Server::register_server_streaming(
 pub fn H2Server::register_client_streaming(
   self : H2Server,
   path : String,
-  handler : (RpcContext, Array[Bytes]) -> Bytes,
+  handler : (@stream.RpcContext, Array[Bytes]) -> Bytes,
 ) -> Unit {
   self.handlers[path] = ClientStreaming(handler)
 }
@@ -300,7 +260,7 @@ pub fn H2Server::register_client_streaming(
 pub fn H2Server::register_bidi(
   self : H2Server,
   path : String,
-  factory : (RpcContext) -> BidiHandler,
+  factory : (@stream.RpcContext) -> @stream.BidiHandler,
 ) -> Unit {
   self.handlers[path] = Bidi(factory)
 }
@@ -371,17 +331,6 @@ pub fn H2Server::closing(self : H2Server) -> Bool {
 // -- small octet helpers ----------------------------------------------------
 
 ///|
-/// Latin-1 `Bytes` → `String`, one code unit per octet. HTTP/2 header names/values
-/// are byte strings; `:path` and `:method` are ASCII, so this is exact for them.
-fn bytes_to_ascii(b : Bytes) -> String {
-  let sb = StringBuilder()
-  for i = 0; i < b.length(); i = i + 1 {
-    sb.write_char(b[i].to_int().unsafe_to_char())
-  }
-  sb.to_string()
-}
-
-///|
 /// @http2.Frame an HPACK header block as HEADERS plus, when it exceeds the peer's
 /// `SETTINGS_MAX_FRAME_SIZE`, one or more CONTINUATION frames (RFC 7540 §4.3 / §6.10):
 /// the block is split into `max_frame`-sized fragments, the first a HEADERS with
@@ -395,7 +344,7 @@ fn emit_header_frames(
   // Never fragment at zero: a bad peer MAX_FRAME_SIZE is clamped on apply, but floor
   // here too so the split loop always advances rather than looping on empty chunks.
   let max_frame = if max_frame_in < 1 {
-    default_max_frame_size
+    @wire.default_max_frame_size
   } else {
     max_frame_in
   }
@@ -452,7 +401,7 @@ fn encode_status_details(
   message : String,
   details : Array[Bytes],
 ) -> Bytes {
-  let w = PbWriter::new()
+  let w = @proto.PbWriter::new()
   w.int32(1, code)
   w.string_(2, message)
   for d in details {
@@ -476,35 +425,6 @@ fn percent_encode(msg : String) -> Bytes {
 /// The printable ASCII a `grpc-message` leaves as it is beyond RFC 3986's unreserved
 /// characters: everything from space to `~` except `%`, which introduces an escape.
 let grpc_safe : String = " !\"#$&'()*+,/:;<=>?@[\\]^`{|}"
-
-///|
-/// A small non-negative integer as its ASCII decimal `Bytes` (for `grpc-status`).
-fn int_to_ascii_bytes(n : Int32) -> Bytes {
-  let buf = Buffer()
-  if n == 0 {
-    buf.write_byte(b'0')
-  } else {
-    let digits : Array[Int32] = []
-    let mut v = n
-    while v > 0 {
-      digits.push(v % 10)
-      v = v / 10
-    }
-    for i = digits.length() - 1; i >= 0; i = i - 1 {
-      buf.write_byte((digits[i] + 0x30).to_byte())
-    }
-  }
-  buf.to_bytes()
-}
-
-///|
-/// Concatenate two byte strings.
-fn cat(a : Bytes, b : Bytes) -> Bytes {
-  let buf = Buffer()
-  buf.write_bytes(a)
-  buf.write_bytes(b)
-  buf.to_bytes()
-}
 
 ///|
 /// The value of the first header named `name` in `headers`, or `None`.
@@ -546,44 +466,23 @@ fn request_reject(headers : Array[@header.Header]) -> (Int32, Int32, String)? {
       return Some(
         (
           415,
-          Status::code(InvalidArgument),
+          @wire.Status::code(InvalidArgument),
           "content-type is not application/grpc",
         ),
       )
   }
   match header_value(headers, b":method") {
     Some(m) if m == b"POST" => ()
-    _ => return Some((405, Status::code(Internal), ":method is not POST"))
+    _ => return Some((405, @wire.Status::code(Internal), ":method is not POST"))
   }
   match header_value(headers, b"te") {
     Some(te) if te == b"trailers" => ()
-    _ => return Some((400, Status::code(Internal), "te: trailers is missing"))
+    _ =>
+      return Some(
+        (400, @wire.Status::code(Internal), "te: trailers is missing"),
+      )
   }
   None
-}
-
-///|
-/// Whether a request header is a pseudo-header (`:`-prefixed) or a reserved gRPC/
-/// HTTP header, and so is *not* surfaced as call metadata (RFC 7540 §8.1.2.1 plus
-/// the gRPC HTTP/2 mapping).
-fn is_reserved_header(name : Bytes) -> Bool {
-  (name.length() > 0 && name[0] == b':') ||
-  name == b"content-type" ||
-  name == b"te" ||
-  name == b"grpc-timeout" ||
-  name == b"grpc-encoding" ||
-  name == b"grpc-accept-encoding" ||
-  name == b"user-agent"
-}
-
-///|
-fn min3(a : Int32, b : Int32, c : Int32) -> Int32 {
-  let m = if a < b { a } else { b }
-  if m < c {
-    m
-  } else {
-    c
-  }
 }
 
 ///|
@@ -596,10 +495,10 @@ fn drain_messages(s : SrvStream) -> Unit {
   let mut off = s.req_off
   while n - off >= 5 {
     let compressed = all[off].to_int() != 0
-    let len = message_len(all[:], at=off).unwrap()
+    let len = @wire.message_len(all[:], at=off).unwrap()
     // A high-bit-set prefix decodes negative; either that or a length past the cap is
     // rejected before it can drive an out-of-bounds slice or pin unbounded buffer.
-    if len < 0 || len > max_message_size {
+    if len < 0 || len > @wire.max_message_size {
       s.oversize = true
       break
     }
@@ -656,13 +555,13 @@ fn H2Server::apply_setting(self : H2Server, id : Int32, value : Int32) -> Unit {
     let delta = value - self.remote_initial_window
     self.remote_initial_window = value
     for _, s in self.streams {
-      s.send_window = add_window(s.send_window, delta)
+      s.send_window = @h2.add_window(s.send_window, delta)
     }
   } else if id == @http2.settings_max_frame_size {
     // Clamp to the RFC 7540 §6.5.2 range [2^14, 2^24-1]; a smaller value (e.g. 0)
     // would stall header emission in an endless empty-CONTINUATION loop.
-    self.remote_max_frame = if value < default_max_frame_size {
-      default_max_frame_size
+    self.remote_max_frame = if value < @wire.default_max_frame_size {
+      @wire.default_max_frame_size
     } else if value > 0xFFFFFF {
       0xFFFFFF
     } else {
@@ -680,8 +579,8 @@ fn H2Server::apply_setting(self : H2Server, id : Int32, value : Int32) -> Unit {
 /// below half the default, replenishing it to the default (a simple, correct
 /// auto-tuning policy; RFC 7540 §6.9).
 fn H2Server::credit_conn(self : H2Server) -> Array[@http2.Frame] {
-  if self.conn_recv_window < default_window_size / 2 {
-    let inc = default_window_size - self.conn_recv_window
+  if self.conn_recv_window < @wire.default_window_size / 2 {
+    let inc = @wire.default_window_size - self.conn_recv_window
     self.conn_recv_window = self.conn_recv_window + inc
     return [WindowUpdate(stream_id=0, increment=inc)]
   }
@@ -693,9 +592,9 @@ fn H2Server::credit_conn(self : H2Server) -> Array[@http2.Frame] {
 /// has fallen below half the default, replenishing it to the default.
 fn H2Server::replenish(self : H2Server, s : SrvStream) -> Array[@http2.Frame] {
   let frames = self.credit_conn()
-  let threshold = default_window_size / 2
+  let threshold = @wire.default_window_size / 2
   if s.recv_window < threshold {
-    let inc = default_window_size - s.recv_window
+    let inc = @wire.default_window_size - s.recv_window
     s.recv_window = s.recv_window + inc
     frames.push(WindowUpdate(stream_id=s.id, increment=inc))
   }
@@ -728,7 +627,7 @@ pub fn H2Server::feed(
 /// stream's octets were counted against: the peer spent them on a window it shares with
 /// every other stream, and a connection that never returns them stalls a window's worth
 /// at a time.
-fn H2Server::report(self : H2Server, f : H2Fault) -> Array[@http2.Frame] {
+fn H2Server::report(self : H2Server, f : @h2.Fault) -> Array[@http2.Frame] {
   let frames : Array[@http2.Frame] = []
   match f {
     ConnFault(..) => self.closing = true
@@ -781,10 +680,10 @@ fn H2Server::past_deadline(self : H2Server, s : SrvStream) -> Bool {
 fn H2Server::expire(
   self : H2Server,
   s : SrvStream,
-) -> Array[@http2.Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise @h2.Fault {
   s.out = b""
   s.out_off = 0
-  s.status_code = Status::code(DeadlineExceeded)
+  s.status_code = @wire.Status::code(DeadlineExceeded)
   s.status_message = "deadline exceeded"
   if !s.headers_sent {
     s.trailers_only = true
@@ -803,7 +702,7 @@ fn H2Server::expire(
 ///|
 /// Close out every stream whose deadline has passed. A stream that has already sent its
 /// status is finished and out of the deadline's reach, whatever its state says.
-fn H2Server::sweep(self : H2Server) -> Array[@http2.Frame] raise H2Fault {
+fn H2Server::sweep(self : H2Server) -> Array[@http2.Frame] raise @h2.Fault {
   let frames : Array[@http2.Frame] = []
   for _, s in self.streams {
     if !(s.state is Closed) && !s.trailers_sent && self.past_deadline(s) {
@@ -822,7 +721,7 @@ fn H2Server::sweep(self : H2Server) -> Array[@http2.Frame] raise H2Fault {
 fn H2Server::flush(
   self : H2Server,
   s : SrvStream,
-) -> Array[@http2.Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise @h2.Fault {
   if !s.trailers_sent && self.past_deadline(s) {
     return self.expire(s)
   }
@@ -831,7 +730,10 @@ fn H2Server::flush(
 
 ///|
 /// Advance a stream by a received event, classifying a refused §5.1 transition.
-fn recv_event(s : SrvStream, ev : StreamEvent) -> StreamState raise H2Fault {
+fn recv_event(
+  s : SrvStream,
+  ev : @stream.StreamEvent,
+) -> @stream.StreamState raise @h2.Fault {
   s.state.on_recv(ev) catch {
     InvalidTransition(m) => raise transition_fault(s.id, s.state, m)
   }
@@ -840,10 +742,13 @@ fn recv_event(s : SrvStream, ev : StreamEvent) -> StreamState raise H2Fault {
 ///|
 /// Advance a stream by an event we are sending. A refusal here is our own bug, not the
 /// peer's, so it ends the connection with INTERNAL_ERROR rather than blaming a stream.
-fn send_event(s : SrvStream, ev : StreamEvent) -> StreamState raise H2Fault {
+fn send_event(
+  s : SrvStream,
+  ev : @stream.StreamEvent,
+) -> @stream.StreamState raise @h2.Fault {
   s.state.on_send(ev) catch {
     InvalidTransition(m) =>
-      raise ConnFault(code=@http2.error_internal_error, why=m)
+      raise @h2.ConnFault(code=@http2.error_internal_error, why=m)
   }
 }
 
@@ -853,7 +758,7 @@ fn send_event(s : SrvStream, ev : StreamEvent) -> StreamState raise H2Fault {
 fn H2Server::step(
   self : H2Server,
   frame : @http2.Frame,
-) -> Array[@http2.Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise @h2.Fault {
   // §6.10: a field block is a contiguous run of HEADERS then CONTINUATION. Nothing may
   // be interleaved into it — not a frame on another stream, not one on this one — so
   // while a block is open the only frame that can be processed is its continuation.
@@ -863,7 +768,7 @@ fn H2Server::step(
       _ => false
     }
     if !continues {
-      raise ConnFault(
+      raise @h2.ConnFault(
         code=@http2.error_protocol_error,
         why="frame interleaved into an open field block",
       )
@@ -886,37 +791,41 @@ fn H2Server::step(
       if increment == 0 {
         let why = "WINDOW_UPDATE with a zero increment"
         if stream_id == 0 {
-          raise ConnFault(code=@http2.error_protocol_error, why~)
+          raise @h2.ConnFault(code=@http2.error_protocol_error, why~)
         }
-        raise StreamFault(id=stream_id, code=@http2.error_protocol_error, why~)
+        raise @h2.StreamFault(
+          id=stream_id,
+          code=@http2.error_protocol_error,
+          why~,
+        )
       }
       if stream_id == 0 {
         // §6.9.1: a window may not exceed 2^31-1, and the endpoint whose window would
         // overflow terminates rather than quietly clamping.
         if window_overflows(self.conn_send_window, increment) {
-          raise ConnFault(
+          raise @h2.ConnFault(
             code=@http2.error_flow_control_error,
             why="connection window over 2^31-1",
           )
         }
-        self.conn_send_window = add_window(self.conn_send_window, increment)
+        self.conn_send_window = @h2.add_window(self.conn_send_window, increment)
       } else {
         let s = self.stream(stream_id)
         if window_overflows(s.send_window, increment) {
-          raise StreamFault(
+          raise @h2.StreamFault(
             id=stream_id,
             code=@http2.error_flow_control_error,
             why="stream window over 2^31-1",
           )
         }
-        s.send_window = add_window(s.send_window, increment)
+        s.send_window = @h2.add_window(s.send_window, increment)
       }
       self.pump_all()
     }
     Headers(stream_id~, fragment~, end_stream~, end_headers~, ..) => {
       // §5.1.1: stream 0 is the connection control stream and carries no request.
       if stream_id == 0 {
-        raise ConnFault(
+        raise @h2.ConnFault(
           code=@http2.error_protocol_error,
           why="HEADERS on stream 0",
         )
@@ -925,9 +834,9 @@ fn H2Server::step(
       // client stream seen (RFC 7540 §5.1.1); an even/zero/re-used id would otherwise
       // silently open — or reopen — a stream on the wrong state.
       if self.streams.get(stream_id) is None {
-        if !stream_is_client_initiated(stream_id) ||
+        if !@stream.stream_is_client_initiated(stream_id) ||
           stream_id <= self.last_client_stream {
-          raise ConnFault(
+          raise @h2.ConnFault(
             code=@http2.error_protocol_error,
             why="invalid client stream id " + stream_id.to_string(),
           )
@@ -936,7 +845,7 @@ fn H2Server::step(
         // declined outright — REFUSED_STREAM says it was never processed.
         match self.drained {
           Some(last) if stream_id > last =>
-            raise StreamFault(
+            raise @h2.StreamFault(
               id=stream_id,
               code=@http2.error_refused_stream,
               why="server is draining",
@@ -947,7 +856,7 @@ fn H2Server::step(
         // that is refused rather than served — REFUSED_STREAM says it was never
         // processed, so the client is free to re-issue it on another connection.
         if self.active_streams() >= self.max_streams {
-          raise StreamFault(
+          raise @h2.StreamFault(
             id=stream_id,
             code=@http2.error_refused_stream,
             why="over SETTINGS_MAX_CONCURRENT_STREAMS",
@@ -958,7 +867,7 @@ fn H2Server::step(
       let s = self.stream(stream_id)
       s.state = recv_event(s, Headers(end_stream~))
       s.header_block.write_bytes(fragment)
-      guard_header_size(s.header_block)
+      @h2.guard_header_size(s.header_block)
       if end_stream {
         s.end_stream_recv = true
       }
@@ -972,7 +881,7 @@ fn H2Server::step(
     }
     Continuation(stream_id~, fragment~, end_headers~) => {
       if stream_id == 0 {
-        raise ConnFault(
+        raise @h2.ConnFault(
           code=@http2.error_protocol_error,
           why="CONTINUATION on stream 0",
         )
@@ -983,13 +892,13 @@ fn H2Server::step(
       let s = match self.streams.get(stream_id) {
         Some(s) if s.in_headers => s
         _ =>
-          raise ConnFault(
+          raise @h2.ConnFault(
             code=@http2.error_protocol_error,
             why="CONTINUATION with no field block in progress",
           )
       }
       s.header_block.write_bytes(fragment)
-      guard_header_size(s.header_block)
+      @h2.guard_header_size(s.header_block)
       if end_headers {
         self.continuing = None
         self.complete_headers(s)
@@ -999,7 +908,7 @@ fn H2Server::step(
     Data(stream_id~, data~, end_stream~, padding~) => {
       // §6.1: DATA belongs to a stream, never to the connection.
       if stream_id == 0 {
-        raise ConnFault(
+        raise @h2.ConnFault(
           code=@http2.error_protocol_error,
           why="DATA on stream 0",
         )
@@ -1012,7 +921,7 @@ fn H2Server::step(
       let flow_len = data.length() + padding + (if padding > 0 { 1 } else { 0 })
       self.conn_recv_window = self.conn_recv_window - flow_len
       if self.conn_recv_window < 0 {
-        raise ConnFault(
+        raise @h2.ConnFault(
           code=@http2.error_flow_control_error,
           why="DATA past the connection receive window",
         )
@@ -1021,7 +930,7 @@ fn H2Server::step(
       s.state = recv_event(s, Data(end_stream~))
       s.recv_window = s.recv_window - flow_len
       if s.recv_window < 0 {
-        raise StreamFault(
+        raise @h2.StreamFault(
           id=stream_id,
           code=@http2.error_flow_control_error,
           why="DATA past the stream receive window",
@@ -1040,7 +949,7 @@ fn H2Server::step(
     RstStream(stream_id~, ..) => {
       // §6.4: RST_STREAM names the stream it resets; stream 0 names none.
       if stream_id == 0 {
-        raise ConnFault(
+        raise @h2.ConnFault(
           code=@http2.error_protocol_error,
           why="RST_STREAM on stream 0",
         )
@@ -1065,19 +974,19 @@ fn H2Server::step(
 fn H2Server::complete_headers(
   self : H2Server,
   s : SrvStream,
-) -> Unit raise H2Fault {
+) -> Unit raise @h2.Fault {
   // §4.3: a field block that will not decode leaves the HPACK context unusable for
   // every later block on the connection, so it is fatal to the connection, not to
   // this stream.
   let headers = self.decoder.decode(s.header_block.to_bytes()) catch {
     e =>
-      raise ConnFault(
+      raise @h2.ConnFault(
         code=@http2.error_compression_error,
         why=Show::to_string(e),
       )
   }
   s.path = match header_value(headers, b":path") {
-    Some(p) => bytes_to_ascii(p)
+    Some(p) => @utf8.decode_lossy(p)
     None => ""
   }
   s.headers_complete = true
@@ -1095,16 +1004,16 @@ fn H2Server::complete_headers(
   }
   let metadata : Array[@header.Header] = []
   for h in headers {
-    if !is_reserved_header(h.name) {
+    if !@h2.is_reserved_header(h.name) {
       // A `-bin` metadata value arrives base64-encoded; surface the raw bytes.
       metadata.push({
         name: h.name,
-        value: metadata_value_from_wire(h.name, h.value),
+        value: @wire.metadata_value_from_wire(h.name, h.value),
       })
     }
   }
   let deadline = match header_value(headers, b"grpc-timeout") {
-    Some(v) => parse_grpc_timeout(v)
+    Some(v) => @stream.parse_grpc_timeout(v)
     None => None
   }
   s.deadline_at = match deadline {
@@ -1134,7 +1043,7 @@ fn H2Server::complete_headers(
 fn H2Server::advance(
   self : H2Server,
   s : SrvStream,
-) -> Array[@http2.Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise @h2.Fault {
   if !s.headers_complete {
     return []
   }
@@ -1145,7 +1054,7 @@ fn H2Server::advance(
       Some(_) => ()
       None => {
         s.trailers_only = true
-        s.status_code = Status::code(Unimplemented)
+        s.status_code = @wire.Status::code(Unimplemented)
         s.status_message = "method not found"
         s.response_ended = true
       }
@@ -1163,7 +1072,7 @@ fn H2Server::advance(
     // running the handler over misread bytes.
     if s.compressed_unsupported && !s.response_ended {
       s.trailers_only = true
-      s.status_code = Status::code(Unimplemented)
+      s.status_code = @wire.Status::code(Unimplemented)
       s.status_message = "grpc-encoding not supported; server accepts identity, gzip"
       s.response_ended = true
       return self.produce(s)
@@ -1172,7 +1081,7 @@ fn H2Server::advance(
     // the declared length (gRPC's RESOURCE_EXHAUSTED for an over-size message).
     if s.oversize && !s.response_ended {
       s.trailers_only = true
-      s.status_code = Status::code(ResourceExhausted)
+      s.status_code = @wire.Status::code(ResourceExhausted)
       s.status_message = "received message larger than max"
       s.response_ended = true
       return self.produce(s)
@@ -1210,7 +1119,7 @@ fn H2Server::advance(
 /// mark that a normal response has begun (so its initial HEADERS get sent).
 fn H2Server::enqueue(self : H2Server, s : SrvStream, msg : Bytes) -> Unit {
   ignore(self)
-  s.out = cat(s.out, encode_message(msg))
+  s.out = s.out + @wire.encode_message(msg)
   s.started_response = true
 }
 
@@ -1276,15 +1185,18 @@ fn H2Server::deliver(
 fn H2Server::produce(
   self : H2Server,
   s : SrvStream,
-) -> Array[@http2.Frame] raise H2Fault {
+) -> Array[@http2.Frame] raise @h2.Fault {
   let frames : Array[@http2.Frame] = []
   if s.trailers_only {
     if !s.trailers_sent {
       let tr : Array[@header.Header] = [
-        { name: b":status", value: int_to_ascii_bytes(s.http_status), },
+        { name: b":status", value: @utf8.encode(s.http_status.to_string()), },
         { name: b"content-type", value: b"application/grpc", },
         { name: b"grpc-accept-encoding", value: b"identity,gzip", },
-        { name: b"grpc-status", value: int_to_ascii_bytes(s.status_code), },
+        {
+          name: b"grpc-status",
+          value: @utf8.encode(s.status_code.to_string()),
+        },
         { name: b"grpc-message", value: percent_encode(s.status_message), },
       ]
       if s.status_code != 0 {
@@ -1318,7 +1230,7 @@ fn H2Server::produce(
     for h in s.ctx.resp_headers {
       headers.push({
         name: h.name,
-        value: metadata_value_to_wire(h.name, h.value),
+        value: @wire.metadata_value_to_wire(h.name, h.value),
       })
     }
     let block = self.encoder.encode(headers)
@@ -1330,9 +1242,8 @@ fn H2Server::produce(
   }
   while s.out_off < s.out.length() {
     let remaining = s.out.length() - s.out_off
-    let budget = min3(
-      self.conn_send_window,
-      s.send_window,
+    let budget = @cmp.minimum(
+      @cmp.minimum(self.conn_send_window, s.send_window),
       self.remote_max_frame,
     )
     if budget <= 0 {
@@ -1350,7 +1261,7 @@ fn H2Server::produce(
     s.headers_sent &&
     !s.trailers_sent {
     let trailers : Array[@header.Header] = [
-      { name: b"grpc-status", value: int_to_ascii_bytes(s.status_code), },
+      { name: b"grpc-status", value: @utf8.encode(s.status_code.to_string()), },
     ]
     // A non-OK status that surfaced after the body already started rides the closing
     // trailers together with its message.
@@ -1375,7 +1286,7 @@ fn H2Server::produce(
     for h in s.ctx.resp_trailers {
       trailers.push({
         name: h.name,
-        value: metadata_value_to_wire(h.name, h.value),
+        value: @wire.metadata_value_to_wire(h.name, h.value),
       })
     }
     let block = self.encoder.encode(trailers)
@@ -1403,7 +1314,7 @@ fn H2Server::produce(
 ///|
 /// Pump every stream that has started but not finished sending (after a
 /// connection-level WINDOW_UPDATE lifts back-pressure on all of them at once).
-fn H2Server::pump_all(self : H2Server) -> Array[@http2.Frame] raise H2Fault {
+fn H2Server::pump_all(self : H2Server) -> Array[@http2.Frame] raise @h2.Fault {
   let frames : Array[@http2.Frame] = []
   for _, s in self.streams {
     // A stream we reset, or the peer did, sends nothing more — asking it to would be
@@ -1444,7 +1355,10 @@ pub fn H2Server::active_streams(self : H2Server) -> Int32 {
 
 ///|
 /// The lifecycle state of stream `id`, or `Idle` if the engine has never seen it.
-pub fn H2Server::stream_state(self : H2Server, id : Int32) -> StreamState {
+pub fn H2Server::stream_state(
+  self : H2Server,
+  id : Int32,
+) -> @stream.StreamState {
   match self.streams.get(id) {
     Some(s) => s.state
     None => Idle

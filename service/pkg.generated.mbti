@@ -1,0 +1,87 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/service"
+
+import {
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/server",
+  "moonbitstack/moonrpc/stream",
+}
+
+// Values
+pub fn decode_health_request(Bytes) -> Bytes
+
+pub fn decode_health_response(Bytes) -> ServingStatus
+
+pub fn decode_reflection_request(Bytes) -> ReflectionRequest raise @proto.PbError
+
+pub fn decode_reflection_response(Bytes) -> ReflectionResponse raise @proto.PbError
+
+pub fn encode_health_request(Bytes) -> Bytes
+
+pub fn encode_health_response(ServingStatus) -> Bytes
+
+pub fn encode_reflection_request(ReflectionRequest) -> Bytes
+
+pub let health_check_path : String
+
+pub let health_watch_path : String
+
+pub let reflection_v1_path : String
+
+pub let reflection_v1alpha_path : String
+
+// Errors
+
+// Types and methods
+pub struct HealthService {
+  statuses : Map[String, ServingStatus]
+}
+pub fn HealthService::check(Self, String) -> ServingStatus
+pub fn HealthService::handlers(Self) -> Array[(String, @stream.Handler)]
+pub fn HealthService::install(Self, @server.H2Server) -> Unit
+pub fn HealthService::new() -> Self
+pub fn HealthService::set_status(Self, String, ServingStatus) -> Unit
+
+pub(all) enum ReflectionRequest {
+  ListServices(String)
+  FileByFilename(String)
+  FileContainingSymbol(String)
+  Unsupported
+} derive(Eq)
+pub fn ReflectionRequest::equal(Self, Self) -> Bool
+pub fn ReflectionRequest::not_equal(Self, Self) -> Bool
+
+pub(all) enum ReflectionResponse {
+  ServiceList(Array[String])
+  FileDescriptors(Array[Bytes])
+  ReflectionError(Int32, String)
+} derive(Eq)
+pub fn ReflectionResponse::equal(Self, Self) -> Bool
+pub fn ReflectionResponse::not_equal(Self, Self) -> Bool
+
+pub struct ReflectionService {
+  files : Array[@proto.FileDescriptor]
+  by_symbol : Map[String, Int32]
+  by_filename : Map[String, Int32]
+  services : Array[String]
+}
+pub fn ReflectionService::add_file(Self, @proto.FileDescriptor) -> Unit
+pub fn ReflectionService::handle(Self, Bytes) -> Bytes
+pub fn ReflectionService::handler(Self) -> @stream.Handler
+pub fn ReflectionService::install(Self, @server.H2Server) -> Unit
+pub fn ReflectionService::new() -> Self
+
+pub(all) enum ServingStatus {
+  StatusUnknown
+  Serving
+  NotServing
+  ServiceUnknown
+} derive(Eq)
+pub fn ServingStatus::code(Self) -> Int32
+pub fn ServingStatus::equal(Self, Self) -> Bool
+pub fn ServingStatus::from_code(Int32) -> Self
+pub fn ServingStatus::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

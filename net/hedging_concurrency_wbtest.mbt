@@ -10,7 +10,7 @@ async test "hedging with no delay does not double up on a single backend" {
     let backend = GrpcServer::new()
     backend.register("/echo.E/Say", req => {
       count[0] = count[0] + 1
-      cat(b"A:", req)
+      b"A:" + req
     })
     let tb = g.spawn(() => backend.serve(port=18193))
     @async.sleep(300)
@@ -40,12 +40,12 @@ async test "hedging runs two attempts in parallel across two backends" {
     let a = GrpcServer::new()
     a.register("/echo.E/Say", req => {
       a_hits[0] = a_hits[0] + 1
-      cat(b"A:", req)
+      b"A:" + req
     })
     let b = GrpcServer::new()
     b.register("/echo.E/Say", req => {
       b_hits[0] = b_hits[0] + 1
-      cat(b"B:", req)
+      b"B:" + req
     })
     let ta = g.spawn(() => a.serve(port=18194))
     let tb2 = g.spawn(() => b.serve(port=18195))

@@ -1,24 +1,16 @@
-// moonrpc (<- gRPC). The north star is REAL gRPC: a self-built HTTP/2 (RFC 7540)
-// + HPACK (RFC 7541) transport with stream multiplexing — not gRPC-Web. v0 lands
-// the wire primitives shared by every gRPC transport: the length-prefixed message
-// framing and the status model. Pure logic; the h2 stack (h2c path, since the
-// async TLS layer exposes no ALPN) is sequenced after.
+// moonrpc (<- gRPC): real gRPC over a self-built HTTP/2 (RFC 9113) and HPACK
+// (RFC 7541), not gRPC-Web. The root re-exports every layer; each layer is a
+// subpackage a program can import on its own.
 import {
-  "moonbitstack/moonhttp/hpack",
-  "moonbitstack/moondate",
-  "moonbitstack/moonpool",
-  "moonbitstack/moonhttp/url",
-  "moonbitstack/moonhttp/http2",
-  "moonbitstack/moonhttp/header",
-  "moonbitstack/moonzip/gzip",
-  "moonbitlang/core/buffer",
-  "moonbitstack/moonvar/leb128",
-  "moonbitstack/moonvar/fixed",
-  "moonbitstack/moonbase",
-  "moonbitstack/moonbase/base64",
-  "moonbitlang/core/encoding/utf8",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/balance",
+  "moonbitstack/moonrpc/client",
+  "moonbitstack/moonrpc/server",
+  "moonbitstack/moonrpc/service",
 }
 
 import {
-  "moonbitstack/moonbase/base16",
+  "moonbitstack/moonhttp/http2",
 } for "wbtest"

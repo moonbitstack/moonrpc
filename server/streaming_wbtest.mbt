@@ -49,7 +49,7 @@ fn collect(
       _ => ()
     }
   }
-  for m in split_messages(acc.to_bytes()) {
+  for m in @wire.split_messages(acc.to_bytes()) {
     c.messages.push(m)
   }
   c
@@ -98,7 +98,7 @@ fn req_headers(
 
 ///|
 fn data_msg(payload : Bytes, end_stream~ : Bool) -> @http2.Frame {
-  Data(stream_id=1, data=encode_message(payload), end_stream~, padding=0)
+  Data(stream_id=1, data=@wire.encode_message(payload), end_stream~, padding=0)
 }
 
 ///|
@@ -106,7 +106,7 @@ test "server-streaming: one request fans out to many ordered reply messages" {
   let engine = H2Server::new()
   engine.register_server_streaming("/count.C/Up", (_ctx, req) => {
     let base = req
-    [cat(base, b"-1"), cat(base, b"-2"), cat(base, b"-3")]
+    [base + b"-1", base + b"-2", base + b"-3"]
   })
   let enc = @hpack.Encoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
@@ -157,10 +157,10 @@ test "bidi-streaming: replies interleave with requests, each message echoed as i
   let seen = Ref(0)
   engine.register_bidi("/chat.C/Echo", _ctx => {
     let count = seen
-    BidiHandler::{
+    @stream.BidiHandler::{
       on_message: m => {
         count.val = count.val + 1
-        [cat(b"re:", m)]
+        [b"re:" + m]
       },
       on_end: () => [b"bye"],
     }
@@ -244,7 +244,7 @@ test "metadata and grpc-timeout deadline are surfaced to the handler" {
       None => b"none"
     }
     let deadline = match ctx.deadline_millis {
-      Some(ms) => int_to_ascii_bytes(ms)
+      Some(ms) => @utf8.encode(ms.to_string())
       None => b"no-deadline"
     }
     let buf = Buffer()
@@ -304,18 +304,18 @@ test "metadata and grpc-timeout deadline are surfaced to the handler" {
 
 ///|
 test "grpc-timeout parses every unit to milliseconds" {
-  assert_eq(parse_grpc_timeout(b"1H") == Some(3600000), true)
-  assert_eq(parse_grpc_timeout(b"5M") == Some(300000), true)
-  assert_eq(parse_grpc_timeout(b"3S") == Some(3000), true)
-  assert_eq(parse_grpc_timeout(b"250m") == Some(250), true)
-  assert_eq(parse_grpc_timeout(b"5000u") == Some(5), true)
-  assert_eq(parse_grpc_timeout(b"2000000n") == Some(2), true)
-  assert_eq(parse_grpc_timeout(b"") == None, true)
-  assert_eq(parse_grpc_timeout(b"9X") == None, true)
-  assert_eq(parse_grpc_timeout(b"aS") == None, true)
+  assert_eq(@stream.parse_grpc_timeout(b"1H") == Some(3600000), true)
+  assert_eq(@stream.parse_grpc_timeout(b"5M") == Some(300000), true)
+  assert_eq(@stream.parse_grpc_timeout(b"3S") == Some(3000), true)
+  assert_eq(@stream.parse_grpc_timeout(b"250m") == Some(250), true)
+  assert_eq(@stream.parse_grpc_timeout(b"5000u") == Some(5), true)
+  assert_eq(@stream.parse_grpc_timeout(b"2000000n") == Some(2), true)
+  assert_eq(@stream.parse_grpc_timeout(b"") == None, true)
+  assert_eq(@stream.parse_grpc_timeout(b"9X") == None, true)
+  assert_eq(@stream.parse_grpc_timeout(b"aS") == None, true)
   // More than 8 digits is malformed (RFC), not a giant deadline.
-  assert_eq(parse_grpc_timeout(b"999999999S") == None, true)
+  assert_eq(@stream.parse_grpc_timeout(b"999999999S") == None, true)
   // An 8-digit hour value overflows a 32-bit millisecond count; it saturates at
   // Int.MAX rather than wrapping to a negative (already-past) deadline.
-  assert_eq(parse_grpc_timeout(b"99999999H") == Some(2147483647), true)
+  assert_eq(@stream.parse_grpc_timeout(b"99999999H") == Some(2147483647), true)
 }

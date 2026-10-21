@@ -33,8 +33,8 @@ pub(all) enum ReflectionRequest {
 /// `host` (field 1) is accepted and ignored; an unset oneof reads as `Unsupported`.
 pub fn decode_reflection_request(
   body : Bytes,
-) -> ReflectionRequest raise PbError {
-  let r = PbReader::new(body)
+) -> ReflectionRequest raise @proto.PbError {
+  let r = @proto.PbReader::new(body)
   let mut out = Unsupported
   while !r.eof() {
     match r.read_tag() {
@@ -51,7 +51,7 @@ pub fn decode_reflection_request(
 /// Encode a `ServerReflectionRequest` carrying a single oneof arm. Used by an
 /// in-process reflection client (and by the round-trip tests).
 pub fn encode_reflection_request(req : ReflectionRequest) -> Bytes {
-  let w = PbWriter::new()
+  let w = @proto.PbWriter::new()
   match req {
     ListServices(v) => w.string_(7, v)
     FileByFilename(v) => w.string_(3, v)
@@ -74,7 +74,7 @@ pub(all) enum ReflectionResponse {
 ///|
 /// A `ServiceResponse { string name = 1 }`.
 fn encode_service_response(name : String) -> Bytes {
-  let w = PbWriter::new()
+  let w = @proto.PbWriter::new()
   w.string_(1, name)
   w.to_bytes()
 }
@@ -86,11 +86,11 @@ fn encode_list_services_response(
   services : Array[String],
   original : Bytes,
 ) -> Bytes {
-  let list = PbWriter::new()
+  let list = @proto.PbWriter::new()
   for name in services {
     list.message_(1, encode_service_response(name))
   }
-  let w = PbWriter::new()
+  let w = @proto.PbWriter::new()
   w.message_(2, original)
   w.message_(6, list.to_bytes())
   w.to_bytes()
@@ -103,11 +103,11 @@ fn encode_file_descriptor_response(
   protos : Array[Bytes],
   original : Bytes,
 ) -> Bytes {
-  let fdr = PbWriter::new()
+  let fdr = @proto.PbWriter::new()
   for p in protos {
     fdr.bytes_(1, p)
   }
-  let w = PbWriter::new()
+  let w = @proto.PbWriter::new()
   w.message_(2, original)
   w.message_(4, fdr.to_bytes())
   w.to_bytes()
@@ -120,10 +120,10 @@ fn encode_error_response(
   message : String,
   original : Bytes,
 ) -> Bytes {
-  let err = PbWriter::new()
+  let err = @proto.PbWriter::new()
   err.int32(1, code)
   err.string_(2, message)
-  let w = PbWriter::new()
+  let w = @proto.PbWriter::new()
   w.message_(2, original)
   w.message_(7, err.to_bytes())
   w.to_bytes()
@@ -134,13 +134,13 @@ fn encode_error_response(
 /// half an in-process reflection client (and the tests) needs to read an answer.
 pub fn decode_reflection_response(
   body : Bytes,
-) -> ReflectionResponse raise PbError {
-  let r = PbReader::new(body)
+) -> ReflectionResponse raise @proto.PbError {
+  let r = @proto.PbReader::new(body)
   let mut out = ReflectionError(2, "empty response")
   while !r.eof() {
     match r.read_tag() {
       (4, LengthDelim) => {
-        let inner = PbReader::new(r.read_bytes())
+        let inner = @proto.PbReader::new(r.read_bytes())
         let protos : Array[Bytes] = []
         while !inner.eof() {
           match inner.read_tag() {
@@ -151,12 +151,12 @@ pub fn decode_reflection_response(
         out = FileDescriptors(protos)
       }
       (6, LengthDelim) => {
-        let inner = PbReader::new(r.read_bytes())
+        let inner = @proto.PbReader::new(r.read_bytes())
         let names : Array[String] = []
         while !inner.eof() {
           match inner.read_tag() {
             (1, LengthDelim) => {
-              let svc = PbReader::new(inner.read_bytes())
+              let svc = @proto.PbReader::new(inner.read_bytes())
               let mut name = ""
               while !svc.eof() {
                 match svc.read_tag() {
@@ -172,7 +172,7 @@ pub fn decode_reflection_response(
         out = ServiceList(names)
       }
       (7, LengthDelim) => {
-        let inner = PbReader::new(r.read_bytes())
+        let inner = @proto.PbReader::new(r.read_bytes())
         let mut code = 2
         let mut message = ""
         while !inner.eof() {
@@ -199,7 +199,7 @@ pub fn decode_reflection_response(
 /// `FileContainingSymbol` or `FileByFilename` query resolves to the right file, and
 /// `ListServices` enumerates every registered service.
 pub struct ReflectionService {
-  files : Array[FileDescriptor]
+  files : Array[@proto.FileDescriptor]
   by_symbol : Map[String, Int32]
   by_filename : Map[String, Int32]
   services : Array[String]
@@ -217,7 +217,7 @@ pub fn ReflectionService::new() -> ReflectionService {
 /// and add its services to the `ListServices` set.
 pub fn ReflectionService::add_file(
   self : ReflectionService,
-  file : FileDescriptor,
+  file : @proto.FileDescriptor,
 ) -> Unit {
   let idx = self.files.length()
   self.files.push(file)
@@ -264,8 +264,8 @@ pub fn ReflectionService::handle(
 ///|
 /// The bidi handler backing `ServerReflectionInfo`: one response per request, none
 /// at half-close.
-pub fn ReflectionService::handler(self : ReflectionService) -> Handler {
-  Bidi(_ctx => BidiHandler::{
+pub fn ReflectionService::handler(self : ReflectionService) -> @stream.Handler {
+  Bidi(_ctx => @stream.BidiHandler::{
     on_message: m => [self.handle(m)],
     on_end: () => [],
   })
@@ -276,7 +276,7 @@ pub fn ReflectionService::handler(self : ReflectionService) -> Handler {
 /// server engine.
 pub fn ReflectionService::install(
   self : ReflectionService,
-  server : H2Server,
+  server : @server.H2Server,
 ) -> Unit {
   server.register_handler(reflection_v1_path, self.handler())
   server.register_handler(reflection_v1alpha_path, self.handler())

@@ -1,0 +1,97 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/server"
+
+import {
+  "moonbitlang/core/buffer",
+  "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonrpc/stream",
+}
+
+// Values
+pub let default_max_streams : Int32
+
+// Errors
+
+// Types and methods
+pub struct H2Server {
+  handlers : Map[String, @stream.Handler]
+  encoder : @hpack.Encoder
+  decoder : @hpack.Decoder
+  streams : Map[Int32, SrvStream]
+  unary_interceptors : Array[(@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes]
+  stream_interceptors : Array[(@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]]
+  mut conn_recv_window : Int32
+  mut conn_send_window : Int32
+  mut remote_initial_window : Int32
+  mut remote_max_frame : Int32
+  mut max_streams : Int32
+  mut clock : () -> Int64
+  mut continuing : Int32?
+  mut goaway_received : Bool
+  mut last_client_stream : Int32
+  mut closing : Bool
+  mut drained : Int32?
+}
+pub fn H2Server::active_streams(Self) -> Int32
+pub fn H2Server::add_stream_interceptor(Self, (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]) -> Unit
+pub fn H2Server::add_unary_interceptor(Self, (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes) -> Unit
+pub fn H2Server::closing(Self) -> Bool
+pub fn H2Server::feed(Self, @http2.Frame) -> Array[@http2.Frame]
+pub fn H2Server::goaway(Self, Int32) -> Array[@http2.Frame]
+pub fn H2Server::goaway_received(Self) -> Bool
+pub fn H2Server::highest_stream(Self) -> Int32
+pub fn H2Server::new() -> Self
+pub fn H2Server::preface(Self) -> Array[@http2.Frame]
+pub fn H2Server::register(Self, String, (Bytes) -> Bytes) -> Unit
+pub fn H2Server::register_bidi(Self, String, (@stream.RpcContext) -> @stream.BidiHandler) -> Unit
+pub fn H2Server::register_client_streaming(Self, String, (@stream.RpcContext, Array[Bytes]) -> Bytes) -> Unit
+pub fn H2Server::register_handler(Self, String, @stream.Handler) -> Unit
+pub fn H2Server::register_server_streaming(Self, String, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Unit
+pub fn H2Server::register_unary(Self, String, (@stream.RpcContext, Bytes) -> Bytes) -> Unit
+pub fn H2Server::release(Self, Int32) -> Unit
+pub fn H2Server::set_clock(Self, () -> Int64) -> Unit
+pub fn H2Server::set_max_streams(Self, Int32) -> Unit
+pub fn H2Server::stream_state(Self, Int32) -> @stream.StreamState
+pub fn H2Server::tick(Self) -> Array[@http2.Frame]
+
+pub(all) struct SrvStream {
+  id : Int32
+  mut state : @stream.StreamState
+  header_block : @buffer.Buffer
+  data : @buffer.Buffer
+  mut req_off : Int32
+  req_msgs : Array[Bytes]
+  mut bidi_processed : Int32
+  mut headers_complete : Bool
+  mut in_headers : Bool
+  mut end_stream_recv : Bool
+  mut path : String
+  mut ctx : @stream.RpcContext
+  mut deadline_at : Int64?
+  mut recv_window : Int32
+  mut send_window : Int32
+  mut out : Bytes
+  mut out_off : Int32
+  mut started : Bool
+  mut started_response : Bool
+  mut response_ended : Bool
+  mut finalized : Bool
+  mut trailers_only : Bool
+  mut http_status : Int32
+  mut status_code : Int32
+  mut status_message : String
+  mut req_encoding : Bytes
+  mut compressed_unsupported : Bool
+  mut oversize : Bool
+  mut headers_sent : Bool
+  mut trailers_sent : Bool
+  mut bidi : @stream.BidiHandler?
+}
+
+// Type aliases
+pub type StreamInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]
+
+pub type UnaryInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes
+
+// Traits

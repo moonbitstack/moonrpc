@@ -2,12 +2,12 @@
 test "retry: should_retry honours attempts, retryable codes, and OK" {
   let p = RetryPolicy::default()
   // a retryable status with attempts left is retried.
-  assert_eq(p.should_retry(Status::code(Unavailable), 1), true)
-  assert_eq(p.should_retry(Status::code(Unavailable), 2), true)
+  assert_eq(p.should_retry(@wire.Status::code(Unavailable), 1), true)
+  assert_eq(p.should_retry(@wire.Status::code(Unavailable), 2), true)
   // the last allowed attempt does not retry again (max_attempts = 3).
-  assert_eq(p.should_retry(Status::code(Unavailable), 3), false)
+  assert_eq(p.should_retry(@wire.Status::code(Unavailable), 3), false)
   // a non-retryable status is never retried.
-  assert_eq(p.should_retry(Status::code(NotFound), 1), false)
+  assert_eq(p.should_retry(@wire.Status::code(NotFound), 1), false)
   // OK is never retried.
   assert_eq(p.should_retry(0, 1), false)
 }
@@ -19,11 +19,14 @@ test "retry: custom retryable set" {
     initial_backoff_millis: 10,
     max_backoff_millis: 100,
     backoff_multiplier: 3.0,
-    retryable: [Status::code(ResourceExhausted), Status::code(Unavailable)],
+    retryable: [
+      @wire.Status::code(ResourceExhausted),
+      @wire.Status::code(Unavailable),
+    ],
   }
-  assert_eq(p.should_retry(Status::code(ResourceExhausted), 1), true)
-  assert_eq(p.should_retry(Status::code(Unavailable), 4), true)
-  assert_eq(p.should_retry(Status::code(Internal), 1), false)
+  assert_eq(p.should_retry(@wire.Status::code(ResourceExhausted), 1), true)
+  assert_eq(p.should_retry(@wire.Status::code(Unavailable), 4), true)
+  assert_eq(p.should_retry(@wire.Status::code(Internal), 1), false)
 }
 
 ///|
@@ -33,11 +36,11 @@ test "retry: the effective attempt count is capped at 5" {
     initial_backoff_millis: 10,
     max_backoff_millis: 100,
     backoff_multiplier: 2.0,
-    retryable: [Status::code(Unavailable)],
+    retryable: [@wire.Status::code(Unavailable)],
   }
   // Even with max_attempts 100, the 5th attempt is the last.
-  assert_eq(p.should_retry(Status::code(Unavailable), 4), true)
-  assert_eq(p.should_retry(Status::code(Unavailable), 5), false)
+  assert_eq(p.should_retry(@wire.Status::code(Unavailable), 4), true)
+  assert_eq(p.should_retry(@wire.Status::code(Unavailable), 5), false)
 }
 
 ///|

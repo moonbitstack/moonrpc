@@ -7,9 +7,9 @@
 async test "managed channel: round-robin spreads calls across two live backends" {
   @async.with_task_group(g => {
     let a = GrpcServer::new()
-    a.register("/echo.E/Say", req => cat(b"A:", req))
+    a.register("/echo.E/Say", req => b"A:" + req)
     let b = GrpcServer::new()
-    b.register("/echo.E/Say", req => cat(b"B:", req))
+    b.register("/echo.E/Say", req => b"B:" + req)
     let ta = g.spawn(() => a.serve(port=18101))
     let tb = g.spawn(() => b.serve(port=18102))
     @async.sleep(300)
@@ -41,7 +41,7 @@ async test "managed channel: hedging commits on the first OK and cancels the pen
     let backend = GrpcServer::new()
     backend.register("/echo.E/Say", req => {
       count[0] = count[0] + 1
-      cat(b"A:", req)
+      b"A:" + req
     })
     let tb = g.spawn(() => backend.serve(port=18107))
     @async.sleep(300)
@@ -66,9 +66,9 @@ async test "managed channel: hedging commits on the first OK and cancels the pen
 async test "managed channel: pick_first pins every call to the first backend" {
   @async.with_task_group(g => {
     let a = GrpcServer::new()
-    a.register("/echo.E/Say", req => cat(b"A:", req))
+    a.register("/echo.E/Say", req => b"A:" + req)
     let b = GrpcServer::new()
-    b.register("/echo.E/Say", req => cat(b"B:", req))
+    b.register("/echo.E/Say", req => b"B:" + req)
     let ta = g.spawn(() => a.serve(port=18103))
     let tb = g.spawn(() => b.serve(port=18104))
     @async.sleep(300)
@@ -95,7 +95,7 @@ let mock_localhost_response : Bytes = b"\x2a\x2a\x81\x80\x00\x01\x00\x01\x00\x00
 async test "managed channel: dns_connect resolves a name over UDP then calls the resolved backend" {
   @async.with_task_group(g => {
     let backend = GrpcServer::new()
-    backend.register("/echo.E/Say", req => cat(b"A:", req))
+    backend.register("/echo.E/Say", req => b"A:" + req)
     let tb = g.spawn(() => backend.serve(port=18106))
     let dns = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:15355"))
     let td = g.spawn(() => {
@@ -122,7 +122,7 @@ async test "managed channel: dns_connect resolves a name over UDP then calls the
 async test "managed channel: a backend that fails to dial is skipped; calls route to the live one" {
   @async.with_task_group(g => {
     let a = GrpcServer::new()
-    a.register("/echo.E/Say", req => cat(b"A:", req))
+    a.register("/echo.E/Say", req => b"A:" + req)
     let ta = g.spawn(() => a.serve(port=18105))
     @async.sleep(300)
     // 18999 has nothing listening: its dial fails and its sub-connection never goes READY.

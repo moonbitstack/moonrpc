@@ -48,14 +48,6 @@ fn drive(
 }
 
 ///|
-fn bcat(a : Bytes, b : Bytes) -> Bytes {
-  let buf = Buffer()
-  buf.write_bytes(a)
-  buf.write_bytes(b)
-  buf.to_bytes()
-}
-
-///|
 fn ascii(bs : Bytes) -> String {
   let buf = StringBuilder()
   for b in bs {
@@ -69,13 +61,11 @@ fn run() -> Unit raise {
   // A unary chain: registration order is outer-to-inner, so the first-registered
   // interceptor wraps the rest and its reply post-processing is the outermost.
   let server = @moonrpc.H2Server::new()
-  server.register("/svc.S/M", req => bcat(b"handler(", bcat(req, b")")))
+  server.register("/svc.S/M", req => b"handler(" + req + b")")
   server.add_unary_interceptor((ctx, req, next) => {
-    bcat(b"outer[", bcat(next(ctx, req), b"]"))
+    b"outer[" + next(ctx, req) + b"]"
   })
-  server.add_unary_interceptor((ctx, req, next) => {
-    next(ctx, bcat(b"inner+", req))
-  })
+  server.add_unary_interceptor((ctx, req, next) => next(ctx, b"inner+" + req))
   // A fresh client per server: an H2Client's HPACK codec is stateful over one connection.
   let c1 = @moonrpc.H2Client::new()
   let (id, initial) = c1.unary("/svc.S/M", b"x")
@@ -95,7 +85,7 @@ fn run() -> Unit raise {
   // A server-streaming interceptor appends a trailing message to the handler's run.
   let streamer = @moonrpc.H2Server::new()
   streamer.register_server_streaming("/svc.S/Feed", (_ctx, req) => {
-    [bcat(req, b"-1"), bcat(req, b"-2")]
+    [req + b"-1", req + b"-2"]
   })
   streamer.add_stream_interceptor((ctx, req, next) => {
     let out = next(ctx, req)

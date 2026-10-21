@@ -11,15 +11,19 @@
 /// A unary server interceptor: `(ctx, request, next) -> reply`, where `next` is the
 /// remainder of the chain. Call `next(ctx, request)` to proceed, or return without
 /// calling it to short-circuit.
-pub type UnaryInterceptor = (RpcContext, Bytes, (RpcContext, Bytes) -> Bytes) -> Bytes
+pub type UnaryInterceptor = (
+  @stream.RpcContext,
+  Bytes,
+  (@stream.RpcContext, Bytes) -> Bytes,
+) -> Bytes
 
 ///|
 /// A server-streaming interceptor: `(ctx, request, next) -> replies`. It can
 /// pre-process the request, post-process the reply sequence, or short-circuit.
 pub type StreamInterceptor = (
-  RpcContext,
+  @stream.RpcContext,
   Bytes,
-  (RpcContext, Bytes) -> Array[Bytes],
+  (@stream.RpcContext, Bytes) -> Array[Bytes],
 ) -> Array[Bytes]
 
 ///|
@@ -27,8 +31,8 @@ pub type StreamInterceptor = (
 /// `chain` is the outermost. With an empty chain this is the base handler unchanged.
 fn compose_unary(
   chain : Array[UnaryInterceptor],
-  base : (RpcContext, Bytes) -> Bytes,
-) -> (RpcContext, Bytes) -> Bytes {
+  base : (@stream.RpcContext, Bytes) -> Bytes,
+) -> (@stream.RpcContext, Bytes) -> Bytes {
   let mut h = base
   for i = chain.length() - 1; i >= 0; i = i - 1 {
     let ic = chain[i]
@@ -43,8 +47,8 @@ fn compose_unary(
 /// interceptor outermost.
 fn compose_stream(
   chain : Array[StreamInterceptor],
-  base : (RpcContext, Bytes) -> Array[Bytes],
-) -> (RpcContext, Bytes) -> Array[Bytes] {
+  base : (@stream.RpcContext, Bytes) -> Array[Bytes],
+) -> (@stream.RpcContext, Bytes) -> Array[Bytes] {
   let mut h = base
   for i = chain.length() - 1; i >= 0; i = i - 1 {
     let ic = chain[i]

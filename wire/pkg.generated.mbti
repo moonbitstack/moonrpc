@@ -1,0 +1,78 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/wire"
+
+// Values
+pub fn decode_message(Bytes) -> (Bool, Bytes)?
+
+pub let default_max_frame_size : Int32
+
+pub let default_window_size : Int32
+
+pub fn encode_message(Bytes, compressed? : Bool) -> Bytes
+
+pub fn is_binary_metadata(Bytes) -> Bool
+
+pub let max_header_list_size : Int32
+
+pub let max_message_size : Int32
+
+pub fn message_len(BytesView, at? : Int32) -> Int32?
+
+pub fn metadata_value_from_wire(Bytes, Bytes) -> Bytes
+
+pub fn metadata_value_to_wire(Bytes, Bytes) -> Bytes
+
+pub fn split_messages(Bytes) -> Array[Bytes]
+
+// Errors
+
+// Types and methods
+pub struct Keepalive {
+  keepalive_time : Int64
+  keepalive_timeout : Int64
+  mut last_activity : Int64
+  mut ping_outstanding : Bool
+  mut ping_sent_at : Int64
+}
+pub fn Keepalive::is_timed_out(Self, Int64) -> Bool
+pub fn Keepalive::new(keepalive_time~ : Int64, keepalive_timeout~ : Int64, now? : Int64) -> Self
+pub fn Keepalive::on_activity(Self, Int64) -> Unit
+pub fn Keepalive::on_ping_ack(Self, Int64) -> Unit
+pub fn Keepalive::on_ping_sent(Self, Int64) -> Unit
+pub fn Keepalive::should_ping(Self, Int64) -> Bool
+
+pub(all) struct Method {
+  service : String
+  name : String
+}
+pub fn Method::path(Self) -> String
+
+pub(all) enum Status {
+  Ok
+  Cancelled
+  Unknown
+  InvalidArgument
+  DeadlineExceeded
+  NotFound
+  AlreadyExists
+  PermissionDenied
+  ResourceExhausted
+  FailedPrecondition
+  Aborted
+  OutOfRange
+  Unimplemented
+  Internal
+  Unavailable
+  DataLoss
+  Unauthenticated
+} derive(Eq)
+pub fn Status::code(Self) -> Int32
+pub fn Status::equal(Self, Self) -> Bool
+pub fn Status::from_h2_error(Int32) -> Self
+pub fn Status::from_http(Int32) -> Self
+pub fn Status::name(Self) -> String
+pub fn Status::not_equal(Self, Self) -> Bool
+
+// Type aliases
+
+// Traits

@@ -47,7 +47,7 @@ test "FileContainingSymbol returns the descriptor that decodes back to the file"
   match decode_reflection_response(resp) {
     FileDescriptors(protos) => {
       assert_eq(protos.length(), 1)
-      let file = FileDescriptor::decode(protos[0])
+      let file = @proto.FileDescriptor::decode(protos[0])
       assert_eq(file == greet_file(), true)
       assert_eq(file.services[0].name == "Greeter", true)
     }
@@ -63,7 +63,10 @@ test "FileContainingSymbol resolves a message symbol too" {
   )
   match decode_reflection_response(resp) {
     FileDescriptors(protos) =>
-      assert_eq(FileDescriptor::decode(protos[0]).name == "greet.proto", true)
+      assert_eq(
+        @proto.FileDescriptor::decode(protos[0]).name == "greet.proto",
+        true,
+      )
     _ => abort("expected a FileDescriptors response")
   }
 }
@@ -76,7 +79,7 @@ test "FileByFilename returns the named file" {
   )
   match decode_reflection_response(resp) {
     FileDescriptors(protos) =>
-      assert_eq(FileDescriptor::decode(protos[0]) == greet_file(), true)
+      assert_eq(@proto.FileDescriptor::decode(protos[0]) == greet_file(), true)
     _ => abort("expected a FileDescriptors response")
   }
 }
@@ -140,11 +143,14 @@ test "MUTATION: a corrupted descriptor length breaks the client-side decode" {
     _ => abort("expected a FileDescriptors response")
   }
   let good = protos[0]
-  assert_eq(FileDescriptor::decode(good).services[0].name == "Greeter", true)
+  assert_eq(
+    @proto.FileDescriptor::decode(good).services[0].name == "Greeter",
+    true,
+  )
   let arr = good.to_array()
   arr[1] = (0x7F).to_byte() // inflate the first field's length past the buffer
   let raised = try {
-    let _ = FileDescriptor::decode(Bytes::from_array(arr))
+    let _ = @proto.FileDescriptor::decode(Bytes::from_array(arr))
     false
   } catch {
     _ => true

@@ -1,0 +1,8 @@
+// Protocol Buffers: the wire format (varints, length-delimited fields, packed
+// repeats) and descriptors for messages, services and files. Usable on its own,
+// without any gRPC transport.
+import {
+  "moonbitstack/moonvar/leb128",
+  "moonbitstack/moonvar/fixed",
+  "moonbitlang/core/encoding/utf8",
+}

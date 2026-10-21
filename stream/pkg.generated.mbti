@@ -1,0 +1,94 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/stream"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitstack/moonhttp/header",
+}
+
+// Values
+pub fn parse_grpc_timeout(Bytes) -> Int32?
+
+pub fn stream_id_valid_for_initiator(Int32, by_client~ : Bool) -> Bool
+
+pub fn stream_is_client_initiated(Int32) -> Bool
+
+pub fn stream_is_server_initiated(Int32) -> Bool
+
+// Errors
+pub suberror StreamError {
+  InvalidTransition(String)
+} derive(Eq)
+pub fn StreamError::equal(Self, Self) -> Bool
+pub fn StreamError::not_equal(Self, Self) -> Bool
+pub fn StreamError::output(Self, &Logger) -> Unit
+pub fn StreamError::to_string(Self) -> String
+pub impl Show for StreamError
+
+// Types and methods
+pub(all) struct BidiHandler {
+  on_message : (Bytes) -> Array[Bytes]
+  on_end : () -> Array[Bytes]
+}
+
+pub(all) enum Handler {
+  Unary((RpcContext, Bytes) -> Bytes)
+  ServerStreaming((RpcContext, Bytes) -> Array[Bytes])
+  ClientStreaming((RpcContext, Array[Bytes]) -> Bytes)
+  Bidi((RpcContext) -> BidiHandler)
+}
+
+pub(all) struct RpcContext {
+  path : String
+  metadata : Array[@header.Header]
+  deadline_millis : Int32?
+  resp_headers : Array[@header.Header]
+  resp_trailers : Array[@header.Header]
+  mut status_fail : (Int32, String)?
+  error_details : Array[Bytes]
+}
+pub fn RpcContext::add_error_detail(Self, Bytes) -> Unit
+pub fn RpcContext::add_header(Self, Bytes, Bytes) -> Unit
+pub fn RpcContext::add_trailer(Self, Bytes, Bytes) -> Unit
+pub fn RpcContext::empty() -> Self
+pub fn RpcContext::fail(Self, Int32, String) -> Unit
+pub fn RpcContext::metadata_get(Self, Bytes) -> Bytes?
+
+pub(all) struct Stream {
+  id : Int32
+  mut state : StreamState
+}
+pub fn Stream::new(Int32) -> Self
+pub fn Stream::recv(Self, StreamEvent) -> StreamState raise StreamError
+pub fn Stream::send(Self, StreamEvent) -> StreamState raise StreamError
+
+pub(all) enum StreamEvent {
+  Headers(end_stream~ : Bool)
+  Data(end_stream~ : Bool)
+  Reserve
+  RstStream
+} derive(Eq)
+pub fn StreamEvent::equal(Self, Self) -> Bool
+pub fn StreamEvent::not_equal(Self, Self) -> Bool
+
+pub(all) enum StreamState {
+  Idle
+  ReservedLocal
+  ReservedRemote
+  Open
+  HalfClosedLocal
+  HalfClosedRemote
+  Closed
+} derive(Eq, @debug.Debug)
+pub fn StreamState::equal(Self, Self) -> Bool
+pub fn StreamState::not_equal(Self, Self) -> Bool
+pub fn StreamState::on_recv(Self, StreamEvent) -> Self raise StreamError
+pub fn StreamState::on_send(Self, StreamEvent) -> Self raise StreamError
+pub fn StreamState::output(Self, &Logger) -> Unit
+pub fn StreamState::to_repr(Self) -> @debug.Repr
+pub fn StreamState::to_string(Self) -> String
+pub impl Show for StreamState
+
+// Type aliases
+
+// Traits

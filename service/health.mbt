@@ -56,7 +56,7 @@ pub fn encode_health_request(service : Bytes) -> Bytes {
 /// Decode the `service` field of a `HealthCheckRequest`, or empty bytes when the
 /// field is absent (the overall-server check). Unknown fields are skipped.
 pub fn decode_health_request(msg : Bytes) -> Bytes {
-  let r = PbReader::new(msg)
+  let r = @proto.PbReader::new(msg)
   let mut service = b""
   // The bounded PbReader raises on any malformed/over-long field; a bad request then
   // reads as the empty (overall-server) check rather than aborting the process.
@@ -91,7 +91,7 @@ pub fn encode_health_response(status : ServingStatus) -> Bytes {
 /// Decode the `status` field of a `HealthCheckResponse`; an absent field reads as
 /// the `0` default (`StatusUnknown`).
 pub fn decode_health_response(msg : Bytes) -> ServingStatus {
-  let r = PbReader::new(msg)
+  let r = @proto.PbReader::new(msg)
   let mut status = 0
   try {
     while !r.eof() {
@@ -163,13 +163,13 @@ pub fn HealthService::check(
 /// status at subscribe time — the first message a real `Watch` always sends.
 pub fn HealthService::handlers(
   self : HealthService,
-) -> Array[(String, Handler)] {
-  let check : Handler = Unary((_ctx, req) => {
-    let service = bytes_to_ascii(decode_health_request(req))
+) -> Array[(String, @stream.Handler)] {
+  let check : @stream.Handler = Unary((_ctx, req) => {
+    let service = @utf8.decode_lossy(decode_health_request(req))
     encode_health_response(self.check(service))
   })
-  let watch : Handler = ServerStreaming((_ctx, req) => {
-    let service = bytes_to_ascii(decode_health_request(req))
+  let watch : @stream.Handler = ServerStreaming((_ctx, req) => {
+    let service = @utf8.decode_lossy(decode_health_request(req))
     [encode_health_response(self.check(service))]
   })
   [(health_check_path, check), (health_watch_path, watch)]
@@ -177,7 +177,10 @@ pub fn HealthService::handlers(
 
 ///|
 /// Register `Check` and `Watch` on a pure server engine.
-pub fn HealthService::install(self : HealthService, server : H2Server) -> Unit {
+pub fn HealthService::install(
+  self : HealthService,
+  server : @server.H2Server,
+) -> Unit {
   for entry in self.handlers() {
     server.register_handler(entry.0, entry.1)
   }

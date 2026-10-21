@@ -79,7 +79,7 @@ fn ClientCall::new(
     data: Buffer(),
     data_off: 0,
     messages: [],
-    recv_window: default_window_size,
+    recv_window: @wire.default_window_size,
     status: b"",
     grpc_status: None,
     grpc_message: "",
@@ -146,7 +146,7 @@ fn emit_request_header_frames(
   max_frame_in : Int32,
 ) -> Array[@http2.Frame] {
   let max_frame = if max_frame_in < 1 {
-    default_max_frame_size
+    @wire.default_max_frame_size
   } else {
     max_frame_in
   }
@@ -201,10 +201,10 @@ pub fn H2Client::new() -> H2Client {
     decoder: @hpack.Decoder::new(),
     calls: Map([]),
     next_id: 1,
-    conn_send_window: default_window_size,
-    conn_recv_window: default_window_size,
-    remote_initial_window: default_window_size,
-    remote_max_frame: default_max_frame_size,
+    conn_send_window: @wire.default_window_size,
+    conn_recv_window: @wire.default_window_size,
+    remote_initial_window: @wire.default_window_size,
+    remote_max_frame: @wire.default_max_frame_size,
     goaway_received: false,
     goaway_last_stream_id: 0,
     orphan_blocks: Map([]),
@@ -247,8 +247,8 @@ pub fn H2Client::open(
   }
   let call = ClientCall::new(
     id,
-    octets(path),
-    octets(authority),
+    @utf8.encode(path),
+    @utf8.encode(authority),
     metadata,
     timeout,
     self.remote_initial_window,
@@ -269,7 +269,7 @@ pub fn H2Client::send(
 ) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
-      c.out = cat(c.out, encode_message(message))
+      c.out = c.out + @wire.encode_message(message)
       if end {
         c.req_ended = true
       }
@@ -335,7 +335,7 @@ fn H2Client::produce_request(
       // A `-bin` metadata value goes on the wire base64-encoded.
       headers.push({
         name: h.name,
-        value: metadata_value_to_wire(h.name, h.value),
+        value: @wire.metadata_value_to_wire(h.name, h.value),
       })
     }
     let block = self.encoder.encode(headers)
@@ -352,9 +352,8 @@ fn H2Client::produce_request(
   }
   while c.out_off < c.out.length() {
     let remaining = c.out.length() - c.out_off
-    let budget = min3(
-      self.conn_send_window,
-      c.send_window,
+    let budget = @cmp.minimum(
+      @cmp.minimum(self.conn_send_window, c.send_window),
       self.remote_max_frame,
     )
     if budget <= 0 {
@@ -401,10 +400,10 @@ pub fn H2Client::feed(
     Ping(payload~, ack~) => if ack { [] } else { [Ping(payload~, ack=true)] }
     WindowUpdate(stream_id~, increment~) => {
       if stream_id == 0 {
-        self.conn_send_window = add_window(self.conn_send_window, increment)
+        self.conn_send_window = @h2.add_window(self.conn_send_window, increment)
       } else {
         match self.calls.get(stream_id) {
-          Some(c) => c.send_window = add_window(c.send_window, increment)
+          Some(c) => c.send_window = @h2.add_window(c.send_window, increment)
           None => ()
         }
       }
@@ -416,7 +415,7 @@ pub fn H2Client::feed(
           // Start a new header block; END_STREAM rides the HEADERS frame, so remember
           // it to apply once the block (which may continue across CONTINUATION) ends.
           c.header_block.write_bytes(fragment)
-          guard_header_size(c.header_block)
+          @h2.guard_header_size(c.header_block)
           c.pending_end_stream = end_stream
           if end_headers {
             self.deliver_headers(c)
@@ -437,7 +436,7 @@ pub fn H2Client::feed(
         Some(c) => {
           if c.in_headers {
             c.header_block.write_bytes(fragment)
-            guard_header_size(c.header_block)
+            @h2.guard_header_size(c.header_block)
             if end_headers {
               self.deliver_headers(c)
             }
@@ -472,7 +471,7 @@ pub fn H2Client::feed(
           // status from is the HTTP/2 error code. A `grpc-status` that already arrived
           // is the server's own word and outranks it.
           if c.grpc_status is None {
-            c.grpc_status = Some(Status::from_h2_error(error_code).code())
+            c.grpc_status = Some(@wire.Status::from_h2_error(error_code).code())
           }
         }
         None => ()
@@ -516,7 +515,7 @@ fn H2Client::drain_orphan_block(
     }
   }
   buf.write_bytes(fragment)
-  guard_header_size(buf)
+  @h2.guard_header_size(buf)
   if end_headers {
     let _ = self.decoder.decode(buf.to_bytes())
     self.orphan_blocks.remove(stream_id)
@@ -541,16 +540,16 @@ fn H2Client::deliver_headers(self : H2Client, c : ClientCall) -> Unit raise {
       c.resp_encoding = h.value
     } else if !c.headers_seen {
       // A `-bin` metadata value arrives base64-encoded; surface raw bytes.
-      if !is_reserved_header(h.name) {
+      if !@h2.is_reserved_header(h.name) {
         c.resp_headers.push({
           name: h.name,
-          value: metadata_value_from_wire(h.name, h.value),
+          value: @wire.metadata_value_from_wire(h.name, h.value),
         })
       }
     } else {
       c.resp_trailers.push({
         name: h.name,
-        value: metadata_value_from_wire(h.name, h.value),
+        value: @wire.metadata_value_from_wire(h.name, h.value),
       })
     }
   }
@@ -575,12 +574,12 @@ fn H2Client::apply_setting(self : H2Client, id : Int32, value : Int32) -> Unit {
     let delta = value - self.remote_initial_window
     self.remote_initial_window = value
     for _, c in self.calls {
-      c.send_window = add_window(c.send_window, delta)
+      c.send_window = @h2.add_window(c.send_window, delta)
     }
   } else if id == @http2.settings_max_frame_size {
     // Clamp to the RFC 7540 §6.5.2 range [2^14, 2^24-1].
-    self.remote_max_frame = if value < default_max_frame_size {
-      default_max_frame_size
+    self.remote_max_frame = if value < @wire.default_max_frame_size {
+      @wire.default_max_frame_size
     } else if value > 0xFFFFFF {
       0xFFFFFF
     } else {
@@ -598,14 +597,14 @@ fn H2Client::apply_setting(self : H2Client, id : Int32, value : Int32) -> Unit {
 /// fallen below half the default, replenishing it to the default (RFC 7540 §6.9).
 fn H2Client::replenish(self : H2Client, c : ClientCall) -> Array[@http2.Frame] {
   let frames : Array[@http2.Frame] = []
-  let threshold = default_window_size / 2
+  let threshold = @wire.default_window_size / 2
   if self.conn_recv_window < threshold {
-    let inc = default_window_size - self.conn_recv_window
+    let inc = @wire.default_window_size - self.conn_recv_window
     self.conn_recv_window = self.conn_recv_window + inc
     frames.push(WindowUpdate(stream_id=0, increment=inc))
   }
   if c.recv_window < threshold {
-    let inc = default_window_size - c.recv_window
+    let inc = @wire.default_window_size - c.recv_window
     c.recv_window = c.recv_window + inc
     frames.push(WindowUpdate(stream_id=c.id, increment=inc))
   }
@@ -679,7 +678,7 @@ pub fn H2Client::reply(self : H2Client, id : Int32) -> CallReply {
   match self.calls.get(id) {
     Some(c) => {
       let grpc = if c.decode_failed {
-        Status::code(Internal)
+        @wire.Status::code(Internal)
       } else {
         match c.grpc_status {
           Some(v) => v
@@ -691,7 +690,7 @@ pub fn H2Client::reply(self : H2Client, id : Int32) -> CallReply {
             if c.status.length() == 0 || http == 200 {
               -1
             } else {
-              Status::from_http(http).code()
+              @wire.Status::from_http(http).code()
             }
           }
         }
@@ -750,12 +749,12 @@ fn drain_call_messages(c : ClientCall) -> Unit {
   let mut off = c.data_off
   while n - off >= 5 {
     let compressed = all[off].to_int() != 0
-    let len = message_len(all[:], at=off).unwrap()
+    let len = @wire.message_len(all[:], at=off).unwrap()
     // A high-bit-set prefix decodes negative; reject that or a length past the cap
     // (surfacing RESOURCE_EXHAUSTED) instead of slicing the buffer out of bounds.
-    if len < 0 || len > max_message_size {
+    if len < 0 || len > @wire.max_message_size {
       if c.grpc_status is None {
-        c.grpc_status = Some(Status::code(ResourceExhausted))
+        c.grpc_status = Some(@wire.Status::code(ResourceExhausted))
       }
       break
     }
@@ -805,9 +804,9 @@ fn ascii_bytes_to_int(b : Bytes) -> Int32 {
 /// with the `S` unit.
 pub fn encode_grpc_timeout(millis : Int32) -> Bytes {
   if millis <= 99999999 {
-    cat(int_to_ascii_bytes(millis), b"m")
+    @utf8.encode(millis.to_string()) + b"m"
   } else {
-    cat(int_to_ascii_bytes(millis / 1000), b"S")
+    @utf8.encode((millis / 1000).to_string()) + b"S"
   }
 }
 

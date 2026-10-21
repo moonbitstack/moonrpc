@@ -287,15 +287,6 @@ fn GrpcServer::snapshot(
 }
 
 ///|
-/// Concatenate two byte strings.
-fn cat(a : Bytes, b : Bytes) -> Bytes {
-  let buf = @buffer.Buffer()
-  buf.write_bytes(a)
-  buf.write_bytes(b)
-  buf.to_bytes()
-}
-
-///|
 /// A minimal in-process h2c gRPC client built on the same frame + HPACK codecs:
 /// it drives a real unary call over a real TCP socket and returns
 /// `(:status, grpc-status, reply message)`. Proves the server end-to-end.
@@ -365,7 +356,7 @@ async fn unary_call(
           done = true
         }
       }
-      Data(data~, ..) => body = cat(body, data)
+      Data(data~, ..) => body = body + data
       _ => ()
     }
   }
@@ -381,7 +372,7 @@ async fn unary_call(
 async test "unary gRPC call served over the self-built h2c transport" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
-    server.register("/echo.Echo/Say", req => cat(b"echo:", req))
+    server.register("/echo.Echo/Say", req => b"echo:" + req)
     let task = g.spawn(() => server.serve(port=18071))
     @async.sleep(300)
     let (status, grpc_status, reply) = unary_call(
@@ -495,7 +486,7 @@ async test "server-streaming: a real h2c call receives multiple framed replies i
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
-      [cat(req, b"-1"), cat(req, b"-2"), cat(req, b"-3")]
+      [req + b"-1", req + b"-2", req + b"-3"]
     })
     let task = g.spawn(() => server.serve(port=18073))
     @async.sleep(300)
@@ -549,7 +540,7 @@ async test "bidi-streaming: a real h2c call echoes each message and closes with 
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register_bidi("/chat.C/Echo", _ctx => @moonrpc.BidiHandler::{
-      on_message: m => [cat(b"re:", m)],
+      on_message: m => [b"re:" + m],
       on_end: () => [b"bye"],
     })
     let task = g.spawn(() => server.serve(port=18075))
@@ -624,7 +615,7 @@ async test "reflection: a real h2c bidi call lists and describes a registered se
       "127.0.0.1",
       18076,
       refl_path,
-      [@moonrpc.encode_reflection_request(@moonrpc.ListServices("*"))],
+      [@moonrpc.encode_reflection_request(ListServices("*"))],
     )
     assert_eq(ls == b"200", true)
     assert_eq(ls_status == b"0", true)
@@ -641,7 +632,7 @@ async test "reflection: a real h2c bidi call lists and describes a registered se
       refl_path,
       [
         @moonrpc.encode_reflection_request(
-          @moonrpc.FileContainingSymbol("greet.Greeter"),
+          FileContainingSymbol("greet.Greeter"),
         ),
       ],
     )
@@ -682,7 +673,7 @@ async test "reflection: a real h2c bidi call lists and describes a registered se
 async test "graceful_stop drains in-flight calls and releases the port" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
-    server.register("/echo.Echo/Say", req => cat(b"echo:", req))
+    server.register("/echo.Echo/Say", req => b"echo:" + req)
     let mut served = false
     let task = g.spawn(() => {
       server.serve(port=18077)
@@ -711,7 +702,7 @@ async test "graceful_stop drains in-flight calls and releases the port" {
 async test "graceful_stop lets a call that is already open finish" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
-    server.register("/echo.Echo/Say", req => cat(b"echo:", req))
+    server.register("/echo.Echo/Say", req => b"echo:" + req)
     let task = g.spawn(() => server.serve(port=18079))
     @async.sleep(300)
     let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18079"))
@@ -766,7 +757,7 @@ async test "graceful_stop lets a call that is already open finish" {
             done = true
           }
         }
-        Data(data~, ..) => body = cat(body, data)
+        Data(data~, ..) => body = body + data
         _ => ()
       }
     }

@@ -3,14 +3,6 @@
 // mutation-verification target: break `dispatch`/`pump_stream` and these go red.
 
 ///|
-fn concat(a : Bytes, b : Bytes) -> Bytes {
-  let buf = Buffer()
-  buf.write_bytes(a)
-  buf.write_bytes(b)
-  buf.to_bytes()
-}
-
-///|
 /// A well-formed gRPC request header block: the pseudo-headers, `content-type` and `te`
 /// the server insists on, plus whatever the test is actually about. A block missing any
 /// of them is not a gRPC call and gets an HTTP status instead of a dispatch.
@@ -36,7 +28,7 @@ fn req_block(
 ///|
 test "engine: a unary request dispatches and is framed as HEADERS + DATA + trailers" {
   let engine = H2Server::new()
-  engine.register("/echo.Echo/Say", req => concat(b"echo:", req))
+  engine.register("/echo.Echo/Say", req => b"echo:" + req)
   let enc = @hpack.Encoder::new()
   let block = enc.encode([
     { name: b":method", value: b"POST", },
@@ -59,7 +51,12 @@ test "engine: a unary request dispatches and is framed as HEADERS + DATA + trail
     ),
   )
   let out = engine.feed(
-    Data(stream_id=1, data=encode_message(b"world"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"world"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   // the response is exactly HEADERS, DATA, trailer-HEADERS.
   assert_eq(out.length(), 3)
@@ -85,7 +82,7 @@ test "engine: a unary request dispatches and is framed as HEADERS + DATA + trail
           }
         }
       }
-      Data(data~, ..) => body = concat(body, data)
+      Data(data~, ..) => body = body + data
       _ => ()
     }
   }
@@ -93,7 +90,7 @@ test "engine: a unary request dispatches and is framed as HEADERS + DATA + trail
   assert_eq(status == b"200", true)
   assert_eq(ctype == b"application/grpc", true)
   assert_eq(grpc_status == b"0", true)
-  let msg = match decode_message(body) {
+  let msg = match @wire.decode_message(body) {
     Some((_, p)) => p
     None => b""
   }
@@ -284,9 +281,12 @@ test "engine: a compressed request under an unsupported encoding gets UNIMPLEMEN
 test "add_window saturates at 2^31-1 instead of wrapping negative" {
   // A WINDOW_UPDATE that pushes the window past 2^31-1 must not wrap to a large
   // negative window (which would stall every send); it saturates.
-  assert_eq(add_window(0x7FFFFFFF, 0x7FFFFFFF), 0x7FFFFFFF)
-  assert_eq(add_window(default_window_size, 1000), default_window_size + 1000)
-  assert_eq(add_window(100, -40), 60)
+  assert_eq(@h2.add_window(0x7FFFFFFF, 0x7FFFFFFF), 0x7FFFFFFF)
+  assert_eq(
+    @h2.add_window(@wire.default_window_size, 1000),
+    @wire.default_window_size + 1000,
+  )
+  assert_eq(@h2.add_window(100, -40), 60)
 }
 
 ///|
@@ -306,7 +306,7 @@ test "engine: a CONTINUATION past the header-size cap is rejected, not buffered 
     ),
   )
   let buf = Buffer()
-  for _i = 0; _i < max_header_list_size + 16; _i = _i + 1 {
+  for _i = 0; _i < @wire.max_header_list_size + 16; _i = _i + 1 {
     buf.write_byte(b'\x00')
   }
   let out = engine.feed(
@@ -418,7 +418,7 @@ test "engine: a gzip-compressed request is inflated and reaches the handler" {
   let out = engine.feed(
     Data(
       stream_id=1,
-      data=encode_message(gz, compressed=true),
+      data=@wire.encode_message(gz, compressed=true),
       end_stream=true,
       padding=0,
     ),
@@ -434,14 +434,14 @@ test "engine: a gzip-compressed request is inflated and reaches the handler" {
             grpc_status = h.value
           }
         }
-      Data(data~, ..) => body = concat(body, data)
+      Data(data~, ..) => body = body + data
       _ => ()
     }
   }
   assert_eq(grpc_status == b"0", true)
   // The reply frames the decoded plaintext as an identity gRPC message.
   assert_eq(
-    decode_message(body) is Some((false, msg)) && msg == plaintext,
+    @wire.decode_message(body) is Some((false, msg)) && msg == plaintext,
     true,
   )
 }
@@ -530,7 +530,12 @@ fn call_once(
     ),
   )
   let out = engine.feed(
-    Data(stream_id=id, data=encode_message(body), end_stream=true, padding=0),
+    Data(
+      stream_id=id,
+      data=@wire.encode_message(body),
+      end_stream=true,
+      padding=0,
+    ),
   )
   let mut status = b""
   for f in out {
@@ -550,7 +555,7 @@ fn call_once(
 ///|
 test "engine: a zero-increment WINDOW_UPDATE resets that stream and spares the connection" {
   let engine = H2Server::new()
-  engine.register("/e.E/M", req => concat(b"re:", req))
+  engine.register("/e.E/M", req => b"re:" + req)
   let enc = @hpack.Encoder::new()
   let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
@@ -580,7 +585,12 @@ test "engine: a frame on a finished stream is a stream error, not a connection o
   assert_eq(call_once(engine, enc, dec, 1, b"/e.E/M", b"hhh") == b"0", true)
   // Stream 1 is closed; §5.1 makes more DATA on it a STREAM_CLOSED stream error.
   let out = engine.feed(
-    Data(stream_id=1, data=encode_message(b"late"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"late"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   assert_eq(out.length(), 1)
   match out[0] {
@@ -719,7 +729,7 @@ test "engine: a stream opened after our own GOAWAY is refused, not served" {
 ///|
 test "engine: a reset stream stops mid-call and sends nothing more" {
   let engine = H2Server::new()
-  engine.register("/e.E/M", req => concat(b"re:", req))
+  engine.register("/e.E/M", req => b"re:" + req)
   let enc = @hpack.Encoder::new()
   let dec = @hpack.Decoder::new()
   let _ = engine.feed(Settings(params=[], ack=false))
@@ -748,7 +758,12 @@ test "engine: a reset stream stops mid-call and sends nothing more" {
   // it earns another reset — never the response the handler would have produced.
   assert_eq(engine.stream_state(1), Closed)
   let late = engine.feed(
-    Data(stream_id=1, data=encode_message(b"qwq"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"qwq"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   assert_eq(late.length(), 1)
   match late[0] {
@@ -805,7 +820,7 @@ test "engine: a handler that outruns its deadline gets DEADLINE_EXCEEDED, not it
   // The call is given two seconds and the handler spends five of them.
   engine.register_unary("/slow.S/Wait", (_ctx, req) => {
     now.val = now.val + 5000L
-    concat(b"late:", req)
+    b"late:" + req
   })
   let enc = @hpack.Encoder::new()
   let dec = @hpack.Decoder::new()
@@ -853,7 +868,7 @@ test "engine: tick expires a call that runs out of time waiting, and stops the c
   let now = Ref(0L)
   engine.set_clock(() => now.val)
   engine.register_client_streaming("/slow.S/Collect", (_ctx, msgs) => {
-    int_to_ascii_bytes(msgs.length())
+    @utf8.encode(msgs.length().to_string())
   })
   let enc = @hpack.Encoder::new()
   let dec = @hpack.Decoder::new()
@@ -909,7 +924,7 @@ test "engine: a call inside its deadline is served normally" {
   let engine = H2Server::new()
   let now = Ref(0L)
   engine.set_clock(() => now.val)
-  engine.register("/quick.S/Go", req => concat(b"ok:", req))
+  engine.register("/quick.S/Go", req => b"ok:" + req)
   let enc = @hpack.Encoder::new()
   let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/quick.S/Go", extra=[
@@ -928,7 +943,12 @@ test "engine: a call inside its deadline is served normally" {
   )
   now.val = 1999L
   let out = engine.feed(
-    Data(stream_id=1, data=encode_message(b"qwq"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"qwq"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   // HEADERS, DATA, trailers — the reply, not a deadline.
   assert_eq(out.length(), 3)
@@ -1125,7 +1145,12 @@ test "engine: one stream over the advertised limit is refused, not served" {
   assert_eq(engine.closing(), false)
   // Finishing one call frees its slot, and the refused stream is welcome then.
   let _ = engine.feed(
-    Data(stream_id=1, data=encode_message(b"hhh"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"hhh"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   assert_eq(engine.active_streams(), 1)
   assert_eq(open_stream(engine, enc, 5).length(), 0)
@@ -1161,7 +1186,7 @@ test "engine: DATA past the connection receive window is a FLOW_CONTROL_ERROR" {
   let out = engine.feed(
     Data(
       stream_id=1,
-      data=partial_message(default_window_size + 1),
+      data=partial_message(@wire.default_window_size + 1),
       end_stream=false,
       padding=0,
     ),
@@ -1281,7 +1306,7 @@ test "engine: any frame interleaved into an open field block ends the connection
 ///|
 test "engine: a request header block split across HEADERS + CONTINUATION is served" {
   let engine = H2Server::new()
-  engine.register("/e.E/M", req => concat(b"re:", req))
+  engine.register("/e.E/M", req => b"re:" + req)
   let enc = @hpack.Encoder::new()
   let dec = @hpack.Decoder::new()
   let block = req_block(enc, b"/e.E/M")
@@ -1306,7 +1331,12 @@ test "engine: a request header block split across HEADERS + CONTINUATION is serv
   )
   // END_HEADERS closed the block, so the DATA that follows is not an interleaving.
   let out = engine.feed(
-    Data(stream_id=1, data=encode_message(b"qwq"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"qwq"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   assert_eq(out.length(), 3)
   let mut status = b""
@@ -1352,7 +1382,12 @@ test "engine: a call already out of time when the request lands never reaches th
   // The client took longer than the call had to send the rest of the request.
   now.val = 2000L
   let out = engine.feed(
-    Data(stream_id=1, data=encode_message(b"qwq"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"qwq"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   assert_eq(out.length(), 1)
   let mut status = b""

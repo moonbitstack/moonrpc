@@ -1,0 +1,90 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/client"
+
+import {
+  "moonbitlang/core/buffer",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/http2",
+}
+
+// Values
+pub fn encode_grpc_timeout(Int32) -> Bytes
+
+pub fn percent_decode(Bytes) -> String
+
+// Errors
+
+// Types and methods
+pub(all) struct CallReply {
+  status : Bytes
+  grpc_status : Int32
+  grpc_message : String
+  headers : Array[@header.Header]
+  messages : Array[Bytes]
+  trailers : Array[@header.Header]
+}
+
+pub(all) struct ClientCall {
+  id : Int32
+  path : Bytes
+  authority : Bytes
+  metadata : Array[@header.Header]
+  timeout : Bytes?
+  mut out : Bytes
+  mut out_off : Int32
+  mut req_ended : Bool
+  mut req_headers_sent : Bool
+  mut req_fin_sent : Bool
+  mut send_window : Int32
+  data : @buffer.Buffer
+  mut data_off : Int32
+  mut messages : Array[Bytes]
+  mut recv_window : Int32
+  mut status : Bytes
+  mut grpc_status : Int32?
+  mut grpc_message : String
+  mut resp_encoding : Bytes
+  resp_headers : Array[@header.Header]
+  resp_trailers : Array[@header.Header]
+  mut headers_seen : Bool
+  header_block : @buffer.Buffer
+  mut in_headers : Bool
+  mut pending_end_stream : Bool
+  mut decode_failed : Bool
+  mut retryable : Bool
+  mut done : Bool
+}
+
+pub struct H2Client {
+  encoder : @hpack.Encoder
+  decoder : @hpack.Decoder
+  calls : Map[Int32, ClientCall]
+  mut next_id : Int32
+  mut conn_send_window : Int32
+  mut conn_recv_window : Int32
+  mut remote_initial_window : Int32
+  mut remote_max_frame : Int32
+  mut goaway_received : Bool
+  mut goaway_last_stream_id : Int32
+  orphan_blocks : Map[Int32, @buffer.Buffer]
+}
+pub fn H2Client::close_send(Self, Int32) -> Array[@http2.Frame]
+pub fn H2Client::feed(Self, @http2.Frame) -> Array[@http2.Frame] raise
+pub fn H2Client::goaway_last_stream_id(Self) -> Int32
+pub fn H2Client::goaway_received(Self) -> Bool
+pub fn H2Client::has_messages(Self, Int32) -> Bool
+pub fn H2Client::is_done(Self, Int32) -> Bool
+pub fn H2Client::is_retryable(Self, Int32) -> Bool
+pub fn H2Client::new() -> Self
+pub fn H2Client::open(Self, String, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> Int32
+pub fn H2Client::preface(Self) -> Array[@http2.Frame]
+pub fn H2Client::release(Self, Int32) -> Unit
+pub fn H2Client::reply(Self, Int32) -> CallReply
+pub fn H2Client::send(Self, Int32, Bytes, end? : Bool) -> Array[@http2.Frame]
+pub fn H2Client::take_messages(Self, Int32) -> Array[Bytes]
+pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> (Int32, Array[@http2.Frame])
+
+// Type aliases
+
+// Traits

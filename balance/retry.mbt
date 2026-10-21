@@ -27,7 +27,7 @@ pub fn RetryPolicy::default() -> RetryPolicy {
     initial_backoff_millis: 100,
     max_backoff_millis: 1000,
     backoff_multiplier: 2.0,
-    retryable: [Status::code(Unavailable)],
+    retryable: [@wire.Status::code(Unavailable)],
   }
 }
 

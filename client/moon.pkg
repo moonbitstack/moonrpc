@@ -1,0 +1,17 @@
+// The HTTP/2 gRPC client: calls, replies, deadlines and metadata.
+import {
+  "moonbitlang/core/cmp",
+  "moonbitstack/moonrpc/internal/h2",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonhttp/url",
+  "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonzip/gzip",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "moonbitstack/moonbase/base16",
+} for "wbtest"

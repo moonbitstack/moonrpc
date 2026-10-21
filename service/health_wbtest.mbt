@@ -39,40 +39,6 @@ test "health: check reports set status, the overall server, and unknown services
 }
 
 ///|
-test "health: a Check call round-trips over the two engines and reports NOT_SERVING" {
-  let server = H2Server::new()
-  let health = HealthService::new()
-  health.set_status("pkg.Down", NotServing)
-  health.install(server)
-  let client = H2Client::new()
-  let (id, frames) = client.unary(
-    health_check_path,
-    encode_health_request(b"pkg.Down"),
-  )
-  drive_pair(server, client, id, frames)
-  let reply = client.reply(id)
-  assert_eq(reply.grpc_status, 0)
-  assert_eq(reply.messages.length(), 1)
-  assert_eq(decode_health_response(reply.messages[0]) == NotServing, true)
-}
-
-///|
-test "health: a Watch call emits the current status as its first streamed message" {
-  let server = H2Server::new()
-  let health = HealthService::new()
-  health.set_status("pkg.Up", Serving)
-  health.install(server)
-  let client = H2Client::new()
-  let id = client.open(health_watch_path)
-  let frames = client.send(id, encode_health_request(b"pkg.Up"), end=true)
-  drive_pair(server, client, id, frames)
-  let reply = client.reply(id)
-  assert_eq(reply.grpc_status, 0)
-  assert_eq(reply.messages.length(), 1)
-  assert_eq(decode_health_response(reply.messages[0]) == Serving, true)
-}
-
-///|
 test "health: a request declaring more bytes than present decodes safely, not a crash" {
   // field 1, length-delimited, declared length 200, but only one body byte follows.
   // The hand-rolled decoder used to slice out of bounds and abort; it now yields the

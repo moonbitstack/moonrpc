@@ -1,52 +1,6 @@
-// In-memory drive of the client engine against the server engine: real request
-// frames out of `H2Client`, through the actual frame + HPACK codecs, into
-// `H2Server`, and its response frames back — no sockets, every backend. This is
-// the client-side mutation-verification target: break request framing, response
-// reassembly, or client flow control and these go red.
-
-///|
-/// Shuttle frames between a client and server engine until the call `id` completes:
-/// deliver the client's queued frames to the server, its replies back to the
-/// client, and repeat. The @http2.preface handshake is seeded first.
-fn drive_pair(
-  server : H2Server,
-  client : H2Client,
-  id : Int32,
-  initial : Array[@http2.Frame],
-) -> Unit raise {
-  let to_server : Array[@http2.Frame] = []
-  let to_client : Array[@http2.Frame] = []
-  for f in client.preface() {
-    to_server.push(f)
-  }
-  for f in server.preface() {
-    to_client.push(f)
-  }
-  for f in initial {
-    to_server.push(f)
-  }
-  let mut si = 0
-  let mut ci = 0
-  let mut steps = 0
-  while !client.is_done(id) && steps < 100000 {
-    steps = steps + 1
-    if si < to_server.length() {
-      let f = to_server[si]
-      si = si + 1
-      for r in server.feed(f) {
-        to_client.push(r)
-      }
-    } else if ci < to_client.length() {
-      let f = to_client[ci]
-      ci = ci + 1
-      for r in client.feed(f) {
-        to_server.push(r)
-      }
-    } else {
-      break
-    }
-  }
-}
+// The client engine fed hand-built server frames: compressed replies, split header
+// blocks and DATA, flow control, GOAWAY, RST_STREAM and the HTTP status mapping.
+// Round trips against the real server engine are in the root package.
 
 ///|
 test "client: a gzip-encoded response message is inflated for the caller" {
@@ -78,7 +32,7 @@ test "client: a gzip-encoded response message is inflated for the caller" {
   let _ = client.feed(
     Data(
       stream_id=id,
-      data=encode_message(gz, compressed=true),
+      data=@wire.encode_message(gz, compressed=true),
       end_stream=false,
       padding=0,
     ),
@@ -151,7 +105,7 @@ test "client: a response header block split across HEADERS + CONTINUATION is rea
   let reply = client.reply(id)
   assert_eq(reply.status == b"200", true)
   assert_eq(reply.grpc_status, 0)
-  assert_eq(header_present(reply.headers, b"x-custom", b"hello"), true)
+  assert_true(reply.headers.contains({ name: b"x-custom", value: b"hello", }))
 }
 
 ///|
@@ -180,7 +134,7 @@ test "client: a compressed reply under an unsupported encoding fails INTERNAL, n
   let _ = client.feed(
     Data(
       stream_id=id,
-      data=encode_message(b"rawbytes", compressed=true),
+      data=@wire.encode_message(b"rawbytes", compressed=true),
       end_stream=false,
       padding=0,
     ),
@@ -199,113 +153,8 @@ test "client: a compressed reply under an unsupported encoding fails INTERNAL, n
   let reply = client.reply(id)
   // The RPC fails INTERNAL — the trailer's grpc-status 0 does not override it — and
   // the undecodable bytes are not surfaced as a message.
-  assert_eq(reply.grpc_status, Status::code(Internal))
+  assert_eq(reply.grpc_status, @wire.Status::code(Internal))
   assert_eq(reply.messages.length(), 0)
-}
-
-///|
-test "client+server: a unary call round-trips over the two pure engines" {
-  let server = H2Server::new()
-  server.register("/echo.Echo/Say", req => cat(b"echo:", req))
-  let client = H2Client::new()
-  let (id, frames) = client.unary("/echo.Echo/Say", b"world")
-  drive_pair(server, client, id, frames)
-  let reply = client.reply(id)
-  assert_eq(reply.status == b"200", true)
-  assert_eq(reply.grpc_status, 0)
-  assert_eq(reply.messages.length(), 1)
-  assert_eq(reply.messages[0] == b"echo:world", true)
-}
-
-///|
-test "client+server: a server-streaming call reassembles every framed reply in order" {
-  let server = H2Server::new()
-  server.register_server_streaming("/count.C/Up", (_ctx, req) => {
-    [cat(req, b"-1"), cat(req, b"-2"), cat(req, b"-3")]
-  })
-  let client = H2Client::new()
-  let id = client.open("/count.C/Up")
-  let frames = client.send(id, b"n", end=true)
-  drive_pair(server, client, id, frames)
-  let reply = client.reply(id)
-  assert_eq(reply.grpc_status, 0)
-  assert_eq(reply.messages.length(), 3)
-  assert_eq(reply.messages[0] == b"n-1", true)
-  assert_eq(reply.messages[1] == b"n-2", true)
-  assert_eq(reply.messages[2] == b"n-3", true)
-}
-
-///|
-test "client+server: a client-streaming call sends many messages for one reply" {
-  let server = H2Server::new()
-  server.register_client_streaming("/sum.S/Add", (_ctx, msgs) => {
-    let buf = Buffer()
-    buf.write_bytes(b"got")
-    for m in msgs {
-      buf.write_byte(b'/')
-      buf.write_bytes(m)
-    }
-    buf.to_bytes()
-  })
-  let client = H2Client::new()
-  let id = client.open("/sum.S/Add")
-  let all : Array[@http2.Frame] = []
-  for f in client.send(id, b"a") {
-    all.push(f)
-  }
-  for f in client.send(id, b"b") {
-    all.push(f)
-  }
-  for f in client.send(id, b"c") {
-    all.push(f)
-  }
-  for f in client.close_send(id) {
-    all.push(f)
-  }
-  drive_pair(server, client, id, all)
-  let reply = client.reply(id)
-  assert_eq(reply.grpc_status, 0)
-  assert_eq(reply.messages.length(), 1)
-  assert_eq(reply.messages[0] == b"got/a/b/c", true)
-}
-
-///|
-test "client+server: request metadata reaches the handler; response metadata reaches the client" {
-  let server = H2Server::new()
-  server.register_unary("/meta.M/Do", (ctx, _req) => {
-    let token = match ctx.metadata_get(b"x-token") {
-      Some(v) => v
-      None => b"none"
-    }
-    ctx.add_header(b"x-server", b"on")
-    ctx.add_trailer(b"x-count", b"1")
-    cat(b"token:", token)
-  })
-  let client = H2Client::new()
-  let id = client.open("/meta.M/Do", metadata=[
-    { name: b"x-token", value: b"abc", },
-  ])
-  let frames = client.send(id, b"", end=true)
-  drive_pair(server, client, id, frames)
-  let reply = client.reply(id)
-  assert_eq(reply.messages[0] == b"token:abc", true)
-  assert_eq(header_present(reply.headers, b"x-server", b"on"), true)
-  assert_eq(header_present(reply.trailers, b"x-count", b"1"), true)
-}
-
-///|
-/// Whether `headers` contains an exact `(name, value)` pair.
-fn header_present(
-  headers : Array[@header.Header],
-  name : Bytes,
-  value : Bytes,
-) -> Bool {
-  for h in headers {
-    if h.name == name && h.value == value {
-      return true
-    }
-  }
-  false
 }
 
 ///|
@@ -373,7 +222,7 @@ test "client: a reply split across two DATA frames is reassembled into one messa
     ),
   )
   // one length-prefixed message "hello" split mid-way across two DATA frames.
-  let framed = encode_message(b"hello")
+  let framed = @wire.encode_message(b"hello")
   let _ = client.feed(
     Data(stream_id=id, data=framed[0:3].to_owned(), end_stream=false, padding=0),
   )
@@ -463,12 +312,12 @@ test "an oversized request header block is split into CONTINUATION frames" {
     match f {
       Headers(end_headers~, fragment~, ..) => {
         headers = headers + 1
-        assert_eq(fragment.length() <= default_max_frame_size, true)
+        assert_eq(fragment.length() <= @wire.default_max_frame_size, true)
         last_end_headers = end_headers
       }
       Continuation(fragment~, end_headers~, ..) => {
         continuations = continuations + 1
-        assert_eq(fragment.length() <= default_max_frame_size, true)
+        assert_eq(fragment.length() <= @wire.default_max_frame_size, true)
         last_end_headers = end_headers
       }
       _ => ()
@@ -507,12 +356,12 @@ test "client: a RST_STREAM ends the call with the status its code maps to" {
   // the mapping every reset reads as `-1` and a caller cannot tell a stream the server
   // refused (retry elsewhere) from one it dropped mid-flight.
   let cases = [
-    (@http2.error_refused_stream, Unavailable),
-    (@http2.error_enhance_your_calm, ResourceExhausted),
-    (@http2.error_inadequate_security, PermissionDenied),
-    (@http2.error_cancel, Cancelled),
-    (@http2.error_protocol_error, Internal),
-    (@http2.error_stream_closed, Internal),
+    (@http2.error_refused_stream, @wire.Unavailable),
+    (@http2.error_enhance_your_calm, @wire.ResourceExhausted),
+    (@http2.error_inadequate_security, @wire.PermissionDenied),
+    (@http2.error_cancel, @wire.Cancelled),
+    (@http2.error_protocol_error, @wire.Internal),
+    (@http2.error_stream_closed, @wire.Internal),
   ]
   for pair in cases {
     let (code, want) = pair
@@ -520,7 +369,7 @@ test "client: a RST_STREAM ends the call with the status its code maps to" {
     let (id, _req) = client.unary("/echo.Echo/Say", b"qwq")
     assert_eq(client.feed(RstStream(stream_id=id, error_code=code)).length(), 0)
     assert_eq(client.is_done(id), true)
-    assert_eq(client.reply(id).grpc_status, Status::code(want))
+    assert_eq(client.reply(id).grpc_status, @wire.Status::code(want))
   }
 }
 
@@ -535,7 +384,7 @@ test "client: a grpc-status already received outranks a later RST_STREAM code" {
   // The server named NOT_FOUND itself; a reset code is a transport-level guess and
   // must not overwrite it.
   let _ = client.feed(RstStream(stream_id=id, error_code=@http2.error_cancel))
-  assert_eq(client.reply(id).grpc_status, Status::code(NotFound))
+  assert_eq(client.reply(id).grpc_status, @wire.Status::code(NotFound))
 }
 
 ///|
@@ -543,15 +392,15 @@ test "client: a non-200 :status with no grpc-status maps per the HTTP mapping" {
   // gRPC http-grpc-status-mapping: a proxy or a plain HTTP server answering on the
   // gRPC port sends an HTTP status and no gRPC trailers at all.
   let cases = [
-    (b"400", Internal),
-    (b"401", Unauthenticated),
-    (b"403", PermissionDenied),
-    (b"404", Unimplemented),
-    (b"429", Unavailable),
-    (b"502", Unavailable),
-    (b"503", Unavailable),
-    (b"504", Unavailable),
-    (b"418", Unknown),
+    (b"400", @wire.Internal),
+    (b"401", @wire.Unauthenticated),
+    (b"403", @wire.PermissionDenied),
+    (b"404", @wire.Unimplemented),
+    (b"429", @wire.Unavailable),
+    (b"502", @wire.Unavailable),
+    (b"503", @wire.Unavailable),
+    (b"504", @wire.Unavailable),
+    (b"418", @wire.Unknown),
   ]
   for pair in cases {
     let (http, want) = pair
@@ -559,7 +408,7 @@ test "client: a non-200 :status with no grpc-status maps per the HTTP mapping" {
     let (id, _req) = client.unary("/echo.Echo/Say", b"hhh")
     respond(client, id, [{ name: b":status", value: http, }])
     assert_eq(client.is_done(id), true)
-    assert_eq(client.reply(id).grpc_status, Status::code(want))
+    assert_eq(client.reply(id).grpc_status, @wire.Status::code(want))
   }
 }
 

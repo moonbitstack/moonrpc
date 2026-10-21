@@ -1,0 +1,6 @@
+// What the client and server engines share and nobody else should depend on:
+// the RFC 9113 fault type, window arithmetic and the header-block rules.
+import {
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonhttp/http2",
+}

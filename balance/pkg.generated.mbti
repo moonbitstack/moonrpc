@@ -1,0 +1,115 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/balance"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn dns_decode_response(Bytes) -> DnsResponse
+
+pub fn dns_encode_query(Int32, String, Int32) -> Bytes
+
+pub let dns_type_a : Int32
+
+pub let dns_type_aaaa : Int32
+
+// Errors
+
+// Types and methods
+pub struct ConnectionPool {
+  order : Array[String]
+  subconns : Map[String, SubConn]
+  policy : LbPolicy
+  mut cursor : Int32
+}
+pub fn ConnectionPool::new(Array[String], policy? : LbPolicy) -> Self
+pub fn ConnectionPool::pick(Self) -> String?
+pub fn ConnectionPool::ready_addresses(Self) -> Array[String]
+pub fn ConnectionPool::subconn(Self, String) -> SubConn?
+
+pub(all) enum ConnectivityState {
+  Idle
+  Connecting
+  Ready
+  TransientFailure
+  Shutdown
+} derive(Eq, @debug.Debug)
+pub fn ConnectivityState::equal(Self, Self) -> Bool
+pub fn ConnectivityState::not_equal(Self, Self) -> Bool
+pub fn ConnectivityState::to_repr(Self) -> @debug.Repr
+
+pub(all) struct DnsRecord {
+  name : String
+  rtype : Int32
+  ttl : Int32
+  address : String
+} derive(Eq, @debug.Debug)
+pub fn DnsRecord::equal(Self, Self) -> Bool
+pub fn DnsRecord::not_equal(Self, Self) -> Bool
+pub fn DnsRecord::to_repr(Self) -> @debug.Repr
+
+pub(all) struct DnsResponse {
+  id : Int32
+  rcode : Int32
+  answers : Array[DnsRecord]
+} derive(Eq, @debug.Debug)
+pub fn DnsResponse::addresses(Self) -> Array[String]
+pub fn DnsResponse::equal(Self, Self) -> Bool
+pub fn DnsResponse::not_equal(Self, Self) -> Bool
+pub fn DnsResponse::to_repr(Self) -> @debug.Repr
+
+pub(all) struct HedgingPolicy {
+  max_attempts : Int32
+  hedging_delay_millis : Int32
+  non_fatal : Array[Int32]
+}
+pub fn HedgingPolicy::attempt_cap(Self) -> Int32
+pub fn HedgingPolicy::can_start_another(Self, Int32) -> Bool
+pub fn HedgingPolicy::default() -> Self
+pub fn HedgingPolicy::delay_millis(Self) -> Int32
+pub fn HedgingPolicy::should_commit(Self, Int32) -> Bool
+
+pub(all) enum LbPolicy {
+  PickFirst
+  RoundRobin
+} derive(Eq, @debug.Debug)
+pub fn LbPolicy::equal(Self, Self) -> Bool
+pub fn LbPolicy::not_equal(Self, Self) -> Bool
+pub fn LbPolicy::to_repr(Self) -> @debug.Repr
+
+pub struct LoadBalancer {
+  addresses : Array[String]
+  policy : LbPolicy
+  mut cursor : Int32
+}
+pub fn LoadBalancer::new(Array[String], policy? : LbPolicy) -> Self
+pub fn LoadBalancer::pick(Self) -> String?
+pub fn LoadBalancer::size(Self) -> Int32
+
+pub(all) struct RetryPolicy {
+  max_attempts : Int32
+  initial_backoff_millis : Int32
+  max_backoff_millis : Int32
+  backoff_multiplier : Double
+  retryable : Array[Int32]
+}
+pub fn RetryPolicy::backoff_millis(Self, Int32) -> Int32
+pub fn RetryPolicy::default() -> Self
+pub fn RetryPolicy::should_retry(Self, Int32, Int32) -> Bool
+
+pub struct SubConn {
+  address : String
+  mut state : ConnectivityState
+}
+pub fn SubConn::connect(Self) -> Unit
+pub fn SubConn::is_ready(Self) -> Bool
+pub fn SubConn::new(String) -> Self
+pub fn SubConn::on_connected(Self) -> Unit
+pub fn SubConn::on_failure(Self) -> Unit
+pub fn SubConn::on_idle(Self) -> Unit
+pub fn SubConn::shutdown(Self) -> Unit
+
+// Type aliases
+
+// Traits

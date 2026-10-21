@@ -20,11 +20,11 @@ test "hedging: OK and fatal errors commit; a non-fatal error keeps hedging" {
   // OK commits — take the success.
   assert_eq(policy.should_commit(0), true)
   // UNAVAILABLE is non-fatal by default: don't commit, keep hedging.
-  assert_eq(policy.should_commit(Status::code(Unavailable)), false)
+  assert_eq(policy.should_commit(@wire.Status::code(Unavailable)), false)
   // INVALID_ARGUMENT is fatal: commit at once, retrying won't help.
-  assert_eq(policy.should_commit(Status::code(InvalidArgument)), true)
+  assert_eq(policy.should_commit(@wire.Status::code(InvalidArgument)), true)
   // DEADLINE_EXCEEDED is fatal too under the default (not listed non-fatal).
-  assert_eq(policy.should_commit(Status::code(DeadlineExceeded)), true)
+  assert_eq(policy.should_commit(@wire.Status::code(DeadlineExceeded)), true)
 }
 
 ///|

@@ -3,7 +3,7 @@
 /// insert-only, so a long-lived connection would hold one full request and response
 /// per RPC it ever made, and every settings or window frame would walk that history.
 test "client engine releases a finished call" {
-  let e = H2Client::new()
+  let e = @client.H2Client::new()
   let (id, _) = e.unary("/echo.E/Say", b"hello", metadata=[])
   assert_eq(e.is_done(id), false)
   e.release(id)
@@ -40,10 +40,15 @@ test "server engine drops a finished stream's buffers but keeps its state" {
     ),
   )
   let _ = e.feed(
-    Data(stream_id=1, data=encode_message(b"hi"), end_stream=true, padding=0),
+    Data(
+      stream_id=1,
+      data=@wire.encode_message(b"hi"),
+      end_stream=true,
+      padding=0,
+    ),
   )
   // The response is complete, so the stream reads as Closed and holds nothing.
-  assert_eq(e.stream_state(1), StreamState::Closed)
+  assert_eq(e.stream_state(1), @stream.StreamState::Closed)
   guard e.streams.get(1) is Some(s) else {
     fail("the finished stream was dropped")
   }
