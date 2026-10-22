@@ -418,7 +418,7 @@ fn encode_status_details(
 fn percent_encode(msg : String) -> Bytes {
   // RFC 3986's unreserved set plus the rest of printable ASCII, which is what
   // gRPC keeps and no URI component does.
-  @utf8.encode(@url.escape_text(msg, spare=grpc_safe))
+  @utf8.encode(@moonurl.escape_text(msg, spare=grpc_safe))
 }
 
 ///|

@@ -7,7 +7,7 @@ import {
   "moonbitstack/moonrpc/proto",
   "moonbitstack/moonrpc/stream",
   "moonbitstack/moonhttp/hpack",
-  "moonbitstack/moonhttp/url",
+  "moonbitstack/moonurl",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
