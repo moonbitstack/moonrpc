@@ -23,6 +23,8 @@ pub(all) struct CallReply {
   headers : Array[@header.Header]
   messages : Array[Bytes]
   trailers : Array[@header.Header]
+  committed : Bool
+  unprocessed : Bool
 }
 
 pub(all) struct ClientCall {
@@ -52,7 +54,8 @@ pub(all) struct ClientCall {
   mut in_headers : Bool
   mut pending_end_stream : Bool
   mut decode_failed : Bool
-  mut retryable : Bool
+  mut unprocessed : Bool
+  mut committed : Bool
   mut done : Bool
 }
 
@@ -75,7 +78,6 @@ pub fn H2Client::goaway_last_stream_id(Self) -> Int32
 pub fn H2Client::goaway_received(Self) -> Bool
 pub fn H2Client::has_messages(Self, Int32) -> Bool
 pub fn H2Client::is_done(Self, Int32) -> Bool
-pub fn H2Client::is_retryable(Self, Int32) -> Bool
 pub fn H2Client::new() -> Self
 pub fn H2Client::open(Self, String, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> Int32
 pub fn H2Client::preface(Self) -> Array[@http2.Frame]
@@ -84,6 +86,7 @@ pub fn H2Client::reply(Self, Int32) -> CallReply
 pub fn H2Client::send(Self, Int32, Bytes, end? : Bool) -> Array[@http2.Frame]
 pub fn H2Client::take_messages(Self, Int32) -> Array[Bytes]
 pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> (Int32, Array[@http2.Frame])
+pub fn H2Client::unprocessed(Self, Int32) -> Bool
 
 // Type aliases
 

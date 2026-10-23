@@ -12,20 +12,36 @@
 pub struct Channel {
   conn : @socket.Tcp
   engine : @moonrpc.H2Client
+  throttle : @moonrpc.Throttle?
+  roll : () -> Double
 }
 
 ///|
-/// Open a channel to `host:port`: connect, send the 24-octet connection @http2.preface and
+/// Open a channel to `host:port`: connect, send the 24-octet connection preface and
 /// the client SETTINGS. The server's SETTINGS are read and acknowledged lazily on
 /// the first call.
-pub async fn Channel::connect(host : String, port : Int32) -> Channel {
+///
+/// `throttling` turns on A6 retry throttling for every call on the channel, which is
+/// one server name. `rand` draws the backoff jitter from `[0, 1)`; without it the
+/// channel draws from a system-seeded generator.
+pub async fn Channel::connect(
+  host : String,
+  port : Int32,
+  throttling? : @moonrpc.Throttling,
+  rand? : () -> Double,
+) -> Channel {
   let conn = @socket.Tcp::connect(
     @socket.Addr::parse(host + ":" + port.to_string()),
   )
   let engine = @moonrpc.H2Client::new()
   conn.write(@http2.preface)
   write_frames(conn, engine.preface())
-  { conn, engine, }
+  {
+    conn,
+    engine,
+    throttle: throttling.map(@moonrpc.Throttle::new),
+    roll: rand.unwrap_or(system_roll()),
+  }
 }
 
 ///|
@@ -76,14 +92,7 @@ async fn Channel::drive(
           ]) catch {
             _ => ()
           }
-          {
-            status: b"",
-            grpc_status: @moonrpc.Status::code(DeadlineExceeded),
-            grpc_message: "deadline exceeded",
-            headers: [],
-            messages: [],
-            trailers: [],
-          }
+          deadline_reply()
         }
       }
   }
@@ -109,72 +118,73 @@ async fn Channel::unary_once(
 }
 
 ///|
+/// Run a call's attempts on this channel under `retry`, transparently retrying a
+/// stream the server refused even without one.
+async fn Channel::call(
+  self : Channel,
+  metadata : Array[@header.Header],
+  timeout_millis : Int32?,
+  retry : @moonrpc.Retry?,
+  once : async (Array[@header.Header], Int32?) -> @moonrpc.CallReply,
+) -> @moonrpc.CallReply {
+  let attempts = @moonrpc.Attempts::new(retry?, throttle?=self.throttle)
+  attempting(attempts, self.roll, metadata, timeout_millis, once)
+}
+
+///|
 /// Make a unary call: one request message, one reply. `timeout_millis`, when set, is
-/// sent as `grpc-timeout` and enforced locally. With a `retry` policy the call is
-/// re-issued on a new stream after a backoff sleep while its status is retryable and
-/// attempts remain, with the whole retry sequence bounded by the one deadline. A call
-/// is retried only while uncommitted — here, while no reply message has arrived;
-/// committing on received initial metadata as well (gRPC A6) is a refinement, and
-/// matters only for the rare retryable failure that follows a non-trailers-only
-/// response.
+/// sent as `grpc-timeout` and enforced locally across every attempt.
+///
+/// With a `retry` policy a failed call goes out again on a new stream as gRPC A6
+/// says: while it is uncommitted, its status retryable, attempts left and the
+/// channel not throttled, after the backoff or the server's pushback. Each retry
+/// carries `grpc-previous-rpc-attempts`.
 pub async fn Channel::unary(
   self : Channel,
   path : String,
   request : Bytes,
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
-  retry? : @moonrpc.RetryPolicy,
+  retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  match retry {
-    None => self.unary_once(path, request, metadata, timeout_millis)
-    Some(policy) => {
-      // Run every attempt plus its backoff under one budget: the gRPC deadline is
-      // absolute for the whole call, so the retries share the original timeout rather
-      // than each getting a fresh one (which would let the wall-clock reach N*timeout).
-      let run = () => {
-        let mut attempt = 1
-        let mut reply = self.unary_once(path, request, metadata, timeout_millis)
-        while reply.messages.length() == 0 &&
-              policy.should_retry(reply.grpc_status, attempt) {
-          @async.sleep(policy.backoff_millis(attempt))
-          reply = self.unary_once(path, request, metadata, timeout_millis)
-          attempt = attempt + 1
-        }
-        reply
-      }
-      match timeout_millis {
-        None => run()
-        Some(ms) =>
-          match (@async.with_timeout_opt(ms, run) : @moonrpc.CallReply?) {
-            Some(r) => r
-            None =>
-              {
-                status: b"",
-                grpc_status: @moonrpc.Status::code(DeadlineExceeded),
-                grpc_message: "deadline exceeded",
-                headers: [],
-                messages: [],
-                trailers: [],
-              }
-          }
-      }
-    }
+  self.call(metadata, timeout_millis, retry, (md, ms) => {
+    self.unary_once(path, request, md, ms)
+  })
+}
+
+///|
+/// Send `requests` on a new stream, half-close, and drive it to its reply.
+async fn Channel::stream_once(
+  self : Channel,
+  path : String,
+  requests : Array[Bytes],
+  metadata : Array[@header.Header],
+  timeout_millis : Int32?,
+) -> @moonrpc.CallReply {
+  let id = self.engine.open(path, metadata~, timeout_millis?)
+  for m in requests {
+    write_frames(self.conn, self.engine.send(id, m))
   }
+  write_frames(self.conn, self.engine.close_send(id))
+  self.drive(id, timeout_millis)
 }
 
 ///|
 /// Make a server-streaming call: one request message, then read the ordered run of
 /// reply messages (in `CallReply::messages`) until the server closes the stream.
+/// `retry` works as for [`Channel::unary`]; a stream whose response headers arrived
+/// is committed and never retried.
 pub async fn Channel::server_streaming(
   self : Channel,
   path : String,
   request : Bytes,
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis?)
-  write_frames(self.conn, self.engine.send(id, request, end=true))
-  self.drive(id, timeout_millis)
+  self.call(metadata, timeout_millis, retry, (md, ms) => {
+    self.stream_once(path, [request], md, ms)
+  })
 }
 
 ///|
@@ -209,20 +219,19 @@ pub async fn Channel::stream_take(
 
 ///|
 /// Make a client-streaming call: send every message in `requests`, half-close, then
-/// read the single reply.
+/// read the single reply. The whole request stream is in hand, so `retry` works as
+/// for [`Channel::unary`].
 pub async fn Channel::client_streaming(
   self : Channel,
   path : String,
   requests : Array[Bytes],
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis?)
-  for m in requests {
-    write_frames(self.conn, self.engine.send(id, m))
-  }
-  write_frames(self.conn, self.engine.close_send(id))
-  self.drive(id, timeout_millis)
+  self.call(metadata, timeout_millis, retry, (md, ms) => {
+    self.stream_once(path, requests, md, ms)
+  })
 }
 
 ///|
@@ -233,19 +242,18 @@ pub async fn Channel::client_streaming(
 /// the eager server `BidiHandler`. A truly interactive exchange (sending while
 /// receiving) or several concurrent calls multiplexed on one channel need the shared
 /// read-demux loop on the roadmap; until then a `Channel` drives one call at a time.
+/// Because every request is in hand, `retry` works as for [`Channel::unary`].
 pub async fn Channel::bidi(
   self : Channel,
   path : String,
   requests : Array[Bytes],
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis?)
-  for m in requests {
-    write_frames(self.conn, self.engine.send(id, m))
-  }
-  write_frames(self.conn, self.engine.close_send(id))
-  self.drive(id, timeout_millis)
+  self.call(metadata, timeout_millis, retry, (md, ms) => {
+    self.stream_once(path, requests, md, ms)
+  })
 }
 
 ///|

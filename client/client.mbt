@@ -48,10 +48,11 @@ pub(all) struct ClientCall {
   // encoding). The call fails INTERNAL and a later trailer `grpc-status` must not
   // overwrite that back to OK.
   mut decode_failed : Bool
-  // Left set when a GOAWAY names a last-processed stream id below this call's: the
-  // server never saw this stream, so re-issuing the RPC is safe (gRPC transport
-  // GOAWAY, RFC 7540 §6.8).
-  mut retryable : Bool
+  // The server library refused this stream, or a GOAWAY names a last-processed id
+  // below it: the application never saw the call (A6's third failure case).
+  mut unprocessed : Bool
+  // Response-Headers arrived ahead of the trailers (A6's committed call).
+  mut committed : Bool
   mut done : Bool
 }
 
@@ -91,7 +92,8 @@ fn ClientCall::new(
     in_headers: false,
     pending_end_stream: false,
     decode_failed: false,
-    retryable: false,
+    unprocessed: false,
+    committed: false,
     done: false,
   }
 }
@@ -99,7 +101,13 @@ fn ClientCall::new(
 ///|
 /// The completed result of a call: the HTTP `:status`, the numeric `grpc-status`
 /// (`-1` if the peer never sent one), the response initial metadata, the reply
-/// messages in order, and the trailing metadata.
+/// messages in order, and the trailing metadata. A Trailers-Only response has no
+/// initial metadata: what it carries is trailers.
+///
+/// `committed` says Response-Headers arrived before the trailers, so the server had
+/// started answering and A6 never retries the call. `unprocessed` says the server
+/// refused the stream or a GOAWAY showed it was never handled, so it is safe to send
+/// again.
 pub(all) struct CallReply {
   status : Bytes
   grpc_status : Int32
@@ -107,6 +115,8 @@ pub(all) struct CallReply {
   headers : Array[@header.Header]
   messages : Array[Bytes]
   trailers : Array[@header.Header]
+  committed : Bool
+  unprocessed : Bool
 }
 
 ///|
@@ -473,6 +483,9 @@ pub fn H2Client::feed(
           if c.grpc_status is None {
             c.grpc_status = Some(@wire.Status::from_h2_error(error_code).code())
           }
+          if error_code == @http2.error_refused_stream {
+            c.unprocessed = true
+          }
         }
         None => ()
       }
@@ -480,13 +493,13 @@ pub fn H2Client::feed(
     }
     GoAway(last_stream_id~, ..) => {
       // The peer is draining (RFC 7540 §6.8): remember it so `open` refuses new
-      // streams, and mark every in-flight call above its last processed id retryable —
-      // those were never seen by the server, so re-issuing them is safe (gRPC A6).
+      // streams, and mark every in-flight call above its last processed id unprocessed:
+      // the server never saw those, so sending them again is safe (gRPC A6).
       self.goaway_received = true
       self.goaway_last_stream_id = last_stream_id
       for _, c in self.calls {
         if c.id > last_stream_id {
-          c.retryable = true
+          c.unprocessed = true
         }
       }
       []
@@ -529,6 +542,10 @@ fn H2Client::drain_orphan_block(
 /// END_STREAM the initiating HEADERS carried.
 fn H2Client::deliver_headers(self : H2Client, c : ClientCall) -> Unit raise {
   let headers = self.decoder.decode(c.header_block.to_bytes())
+  let initial = !c.headers_seen && !c.pending_end_stream
+  if initial {
+    c.committed = true
+  }
   for h in headers {
     if h.name == b":status" {
       c.status = h.value
@@ -538,7 +555,7 @@ fn H2Client::deliver_headers(self : H2Client, c : ClientCall) -> Unit raise {
       c.grpc_message = percent_decode(h.value)
     } else if h.name == b"grpc-encoding" {
       c.resp_encoding = h.value
-    } else if !c.headers_seen {
+    } else if initial {
       // A `-bin` metadata value arrives base64-encoded; surface raw bytes.
       if !@h2.is_reserved_header(h.name) {
         c.resp_headers.push({
@@ -661,13 +678,13 @@ pub fn H2Client::goaway_last_stream_id(self : H2Client) -> Int32 {
 }
 
 ///|
-/// Whether call `id` was left retryable by a GOAWAY: its stream id is above the peer's
-/// last processed id, so the server never saw it and re-issuing the RPC on a fresh
-/// connection is safe (gRPC transport GOAWAY / RFC 7540 §6.8). False for a call at or
-/// below that id — it may have been processed — and when no GOAWAY arrived.
-pub fn H2Client::is_retryable(self : H2Client, id : Int32) -> Bool {
+/// Whether call `id` never reached the server's application: its stream was refused,
+/// or its id is above the last one a GOAWAY says was processed (gRPC A6, RFC 9113
+/// §6.8). Such a call is safe to send again. False for a call that may have been
+/// processed.
+pub fn H2Client::unprocessed(self : H2Client, id : Int32) -> Bool {
   match self.calls.get(id) {
-    Some(c) => c.retryable
+    Some(c) => c.unprocessed
     None => false
   }
 }
@@ -702,6 +719,8 @@ pub fn H2Client::reply(self : H2Client, id : Int32) -> CallReply {
         headers: c.resp_headers,
         messages: c.messages,
         trailers: c.resp_trailers,
+        committed: c.committed,
+        unprocessed: c.unprocessed,
       }
     }
     None =>
@@ -712,6 +731,8 @@ pub fn H2Client::reply(self : H2Client, id : Int32) -> CallReply {
         headers: [],
         messages: [],
         trailers: [],
+        committed: false,
+        unprocessed: false,
       }
   }
 }

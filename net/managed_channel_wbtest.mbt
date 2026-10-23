@@ -48,12 +48,11 @@ async test "managed channel: hedging commits on the first OK and cancels the pen
     let chan = ManagedChannel::connect([("127.0.0.1", 18107)])
     // Three permitted attempts, but a long hedging delay: the first attempt's OK commits
     // before any hedge is due, so only one request reaches the backend.
-    let policy = {
-      ..@moonrpc.HedgingPolicy::default(),
-      max_attempts: 3,
-      hedging_delay_millis: 1000,
-    }
-    let r = chan.unary_hedged("/echo.E/Say", b"x", policy)
+    let policy = @moonrpc.Hedging::new(
+      attempts=3,
+      delay=@moondate.Span::new(millis=1000L),
+    )
+    let r = chan.unary_hedged("/echo.E/Say", b"x", hedging=policy)
     assert_eq(r.grpc_status, 0)
     assert_eq(r.messages[0] == b"A:x", true)
     assert_eq(count[0], 1)

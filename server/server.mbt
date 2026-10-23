@@ -1211,6 +1211,15 @@ fn H2Server::produce(
           ),
         })
       }
+      // Trailers-Only is the trailers, custom metadata included (gRPC
+      // PROTOCOL-HTTP2): a pushback or an error code the application set must not
+      // vanish because the call failed before answering.
+      for h in s.ctx.resp_trailers {
+        tr.push({
+          name: h.name,
+          value: @wire.metadata_value_to_wire(h.name, h.value),
+        })
+      }
       let block = self.encoder.encode(tr)
       for f in emit_header_frames(s.id, block, true, self.remote_max_frame) {
         frames.push(f)

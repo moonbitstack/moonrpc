@@ -4,7 +4,8 @@
 import {
   "moonbitstack/moonrpc/wire",
   "moonbitstack/moondate",
-  "moonbitstack/moonpool",
+  "moonbitstack/moonward",
+  "moonbitstack/moonhttp/header",
   "moonbitstack/moonvar/fixed",
   "moonbitlang/core/encoding/utf8",
 }

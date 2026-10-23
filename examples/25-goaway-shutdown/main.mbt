@@ -1,7 +1,7 @@
 // Graceful shutdown with GOAWAY (RFC 7540 §6.8): a draining peer announces the highest
 // stream id it will still process, so no new stream races the shutdown, and streams above
 // that id were never seen and are safe to re-issue. This completes one call, then has the
-// server send GOAWAY(last=1); the client marks the higher, unprocessed stream retryable and
+// server send GOAWAY(last=1); the client marks the higher stream unprocessed and
 // refuses to open new ones. It also feeds a GOAWAY into the server to flip its drain flag.
 //
 //     moon run examples/25-goaway-shutdown
@@ -71,10 +71,10 @@ fn run() -> Unit raise {
   println("client saw GOAWAY: \{client.goaway_received()}")
   println("  last processed stream id: \{client.goaway_last_stream_id()}")
   println(
-    "  stream \{id1} retryable: \{client.is_retryable(id1)} (at or below last -> maybe processed)",
+    "  stream \{id1} unprocessed: \{client.unprocessed(id1)} (at or below last -> maybe processed)",
   )
   println(
-    "  stream \{id2} retryable: \{client.is_retryable(id2)} (above last -> never seen, safe to re-issue)",
+    "  stream \{id2} unprocessed: \{client.unprocessed(id2)} (above last -> never seen, safe to re-issue)",
   )
 
   // A draining client refuses to open new streams: `open` returns the reserved id 0.

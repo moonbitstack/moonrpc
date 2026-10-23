@@ -86,7 +86,7 @@ pub(all) enum Status {
   Unavailable
   DataLoss
   Unauthenticated
-} derive(Eq)
+} derive(Eq, Debug)
 
 ///|
 /// The numeric `grpc-status` code.
@@ -186,3 +186,6 @@ pub fn Method::path(self : Method) -> String {
 
 ///|
 pub extend Status with Eq::{not_equal, equal}
+
+///|
+pub extend Status with Debug::{to_repr}

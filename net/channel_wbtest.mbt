@@ -131,6 +131,41 @@ async fn drive_slow(
 }
 
 ///|
+/// A policy retrying `UNAVAILABLE` up to `attempts` times, every wait `ms` long:
+/// the cap equals the base and the roll sits mid-spread.
+fn quick(attempts : Int32, ms : Int64) -> @moonrpc.Retry {
+  @moonrpc.Retry::new(
+    attempts~,
+    base=@moondate.Span::new(millis=ms),
+    cap=@moondate.Span::new(millis=ms),
+  )
+}
+
+///|
+/// Answer every unary call to `path` with `UNAVAILABLE`, recording the
+/// `grpc-previous-rpc-attempts` each attempt carried, and the pushback in `pushback`.
+fn failing(
+  server : GrpcServer,
+  path : String,
+  seen : Array[String],
+  pushback~ : Bytes = b"",
+) -> Unit {
+  server.register_unary(path, (ctx, _req) => {
+    seen.push(
+      match ctx.metadata_get(b"grpc-previous-rpc-attempts") {
+        Some(v) => @utf8.decode_lossy(v[:])
+        None => "-"
+      },
+    )
+    if pushback.length() > 0 {
+      ctx.add_trailer(b"grpc-retry-pushback-ms", pushback)
+    }
+    ctx.fail(@moonrpc.Status::code(Unavailable), "down")
+    b""
+  })
+}
+
+///|
 async test "channel: a unary call retries a retryable failure and then succeeds" {
   @async.with_task_group(g => {
     // The handler fails the first attempt with UNAVAILABLE, then succeeds — so a
@@ -149,13 +184,7 @@ async test "channel: a unary call retries a retryable failure and then succeeds"
     let task = g.spawn(() => server.serve(port=18088))
     @async.sleep(300)
     let chan = Channel::connect("127.0.0.1", 18088)
-    let policy = @moonrpc.RetryPolicy::{
-      max_attempts: 3,
-      initial_backoff_millis: 10,
-      max_backoff_millis: 50,
-      backoff_multiplier: 2.0,
-      retryable: [@moonrpc.Status::code(Unavailable)],
-    }
+    let policy = quick(3, 10L)
     let reply = chan.unary("/retry.R/Do", b"x", retry=policy)
     assert_eq(reply.grpc_status, 0)
     assert_eq(reply.messages[0] == b"ok", true)
@@ -181,13 +210,7 @@ async test "channel: retries are exhausted and the last retryable status is retu
     let task = g.spawn(() => server.serve(port=18089))
     @async.sleep(300)
     let chan = Channel::connect("127.0.0.1", 18089)
-    let policy = @moonrpc.RetryPolicy::{
-      max_attempts: 2,
-      initial_backoff_millis: 10,
-      max_backoff_millis: 50,
-      backoff_multiplier: 2.0,
-      retryable: [@moonrpc.Status::code(Unavailable)],
-    }
+    let policy = quick(2, 10L)
     let reply = chan.unary("/retry.R/Never", b"x", retry=policy)
     assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
     assert_eq(attempts.val, 2)
@@ -210,13 +233,7 @@ async test "channel: retries stop at the absolute deadline, not once per attempt
     let task = g.spawn(() => server.serve(port=18090))
     @async.sleep(300)
     let chan = Channel::connect("127.0.0.1", 18090)
-    let policy = @moonrpc.RetryPolicy::{
-      max_attempts: 5,
-      initial_backoff_millis: 200,
-      max_backoff_millis: 200,
-      backoff_multiplier: 1.0,
-      retryable: [@moonrpc.Status::code(Unavailable)],
-    }
+    let policy = quick(5, 200L)
     let reply = chan.unary("/r.R/Down", b"x", timeout_millis=120, retry=policy)
     // The deadline fires during the first backoff; the call ends DEADLINE_EXCEEDED
     // rather than grinding through all five attempts.
@@ -350,6 +367,121 @@ async test "channel stream_take: collects streamed replies inline without a pump
     assert_eq(got.length() >= 2, true)
     assert_eq(got[0] == b"n-1", true)
     assert_eq(got[1] == b"n-2", true)
+    chan.close()
+    task.cancel()
+  })
+}
+
+///|
+async test "channel: each retry says how many attempts went before it" {
+  @async.with_task_group(g => {
+    let seen : Array[String] = []
+    let server = GrpcServer::new()
+    failing(server, "/retry.R/Count", seen)
+    let task = g.spawn(() => server.serve(port=18091))
+    @async.sleep(300)
+    let chan = Channel::connect("127.0.0.1", 18091, rand=() => 0.5)
+    let reply = chan.unary("/retry.R/Count", b"x", retry=quick(4, 5L))
+    assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
+    assert_eq(seen, ["-", "1", "2", "3"])
+    chan.close()
+    task.cancel()
+  })
+}
+
+///|
+async test "channel: a pushback to stop ends the call after one attempt" {
+  @async.with_task_group(g => {
+    let seen : Array[String] = []
+    let server = GrpcServer::new()
+    failing(server, "/retry.R/Stop", seen, pushback=b"-1")
+    let task = g.spawn(() => server.serve(port=18092))
+    @async.sleep(300)
+    let chan = Channel::connect("127.0.0.1", 18092)
+    let reply = chan.unary("/retry.R/Stop", b"x", retry=quick(4, 5L))
+    assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
+    assert_eq(seen.length(), 1)
+    chan.close()
+    task.cancel()
+  })
+}
+
+///|
+async test "channel: a throttled channel does not retry" {
+  @async.with_task_group(g => {
+    let seen : Array[String] = []
+    let server = GrpcServer::new()
+    failing(server, "/retry.R/Throttled", seen)
+    let task = g.spawn(() => server.serve(port=18093))
+    @async.sleep(300)
+    // Two tokens: the first failure leaves one, which is not over the half.
+    let chan = Channel::connect(
+      "127.0.0.1",
+      18093,
+      throttling=@moonrpc.Throttling::new(tokens=2, ratio=1.0),
+    )
+    let _ = chan.unary("/retry.R/Throttled", b"x", retry=quick(4, 5L))
+    assert_eq(seen.length(), 1)
+    chan.close()
+    task.cancel()
+  })
+}
+
+///|
+/// Serve `engine` on `conn`, but refuse the first stream when its request body
+/// arrives, the way a server at its stream limit does.
+async fn drive_refusing(conn : @socket.Tcp, engine : @moonrpc.H2Server) -> Unit {
+  guard @http2.has_preface(conn.read_exactly(@http2.preface.length())) else {
+    return
+  }
+  write_frames(conn, engine.preface())
+  let mut refused = false
+  for ;; {
+    let frame = read_frame(conn)
+    match frame {
+      Data(stream_id=1, ..) if !refused => {
+        refused = true
+        write_frames(conn, [
+          @http2.Frame::RstStream(
+            stream_id=1,
+            error_code=@http2.error_refused_stream,
+          ),
+        ])
+      }
+      _ => write_frames(conn, engine.feed(frame))
+    }
+    if engine.goaway_received() {
+      break
+    }
+  }
+}
+
+///|
+async test "channel: a refused stream is sent again at once, with no policy" {
+  @async.with_task_group(g => {
+    let served = Ref(0)
+    let server = @socket.TcpServer::TcpServer(
+      @socket.Addr::parse("127.0.0.1:18094"),
+      reuse_addr=true,
+    )
+    let task = g.spawn(() => {
+      server.run_forever((conn, _addr) => {
+        let engine = @moonrpc.H2Server::new()
+        engine.register("/r.R/Once", req => {
+          served.val = served.val + 1
+          b"ok:" + req
+        })
+        drive_refusing(conn, engine) catch {
+          _ => ()
+        }
+      })
+    })
+    @async.sleep(300)
+    let chan = Channel::connect("127.0.0.1", 18094)
+    let reply = chan.unary("/r.R/Once", b"x")
+    assert_eq(reply.grpc_status, 0)
+    assert_eq(reply.messages[0] == b"ok:x", true)
+    assert_eq(served.val, 1)
     chan.close()
     task.cancel()
   })

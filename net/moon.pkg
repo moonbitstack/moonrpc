@@ -9,5 +9,11 @@ import {
   "moonbitlang/async/socket",
   "moonbitlang/async/aqueue",
   "moonbitlang/core/buffer",
+  "moonbitlang/core/random",
   "moonbitstack/moonrpc",
 }
+
+import {
+  "moonbitstack/moondate",
+  "moonbitlang/core/encoding/utf8",
+} for "wbtest"

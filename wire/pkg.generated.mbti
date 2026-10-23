@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "moonbitstack/moonrpc/wire"
 
+import {
+  "moonbitlang/core/debug",
+}
+
 // Values
 pub fn decode_message(Bytes) -> (Bool, Bytes)?
 
@@ -65,13 +69,14 @@ pub(all) enum Status {
   Unavailable
   DataLoss
   Unauthenticated
-} derive(Eq)
+} derive(Eq, @debug.Debug)
 pub fn Status::code(Self) -> Int32
 pub fn Status::equal(Self, Self) -> Bool
 pub fn Status::from_h2_error(Int32) -> Self
 pub fn Status::from_http(Int32) -> Self
 pub fn Status::name(Self) -> String
 pub fn Status::not_equal(Self, Self) -> Bool
+pub fn Status::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

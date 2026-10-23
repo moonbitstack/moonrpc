@@ -22,8 +22,9 @@ SECTIONS = [
      "(Unary / ServerStreaming / ClientStreaming / Bidi) and the per-call RpcContext: "
      "request metadata, the grpc-timeout deadline, and response metadata."),
     ("balance", "balance", "balance: call policy and load balancing",
-     "What a client does around a call: retry with backoff, hedged attempts, the "
-     "connectivity state machine, the balancers, DNS resolution and the channel pool."),
+     "What a client does around a call: gRPC A6 retries, throttling, pushback and "
+     "hedging, the connectivity state machine, the balancers, DNS resolution and the "
+     "channel pool."),
     ("client", "client", "client: the client engine",
      "H2Client allocates stream ids, builds request HEADERS and length-prefixed DATA "
      "within the send windows, and turns response frames back into a CallReply. Pure; "

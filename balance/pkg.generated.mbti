@@ -3,6 +3,10 @@ package "moonbitstack/moonrpc/balance"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitstack/moondate",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonward",
 }
 
 // Values
@@ -14,9 +18,22 @@ pub let dns_type_a : Int32
 
 pub let dns_type_aaaa : Int32
 
+pub let hedging : Hedging
+
+pub let limit : Int32
+
+pub let retry : Retry
+
 // Errors
 
 // Types and methods
+pub struct Attempts {
+  // private fields
+}
+pub fn Attempts::made(Self) -> Int32
+pub fn Attempts::new(retry? : Retry, throttle? : Throttle, limit? : Int32) -> Self
+pub fn Attempts::next(Self, Int32, ArrayView[@header.Header], committed? : Bool, unprocessed? : Bool, roll? : Double) -> @moondate.Span?
+
 pub struct ConnectionPool {
   order : Array[String]
   subconns : Map[String, SubConn]
@@ -59,16 +76,17 @@ pub fn DnsResponse::equal(Self, Self) -> Bool
 pub fn DnsResponse::not_equal(Self, Self) -> Bool
 pub fn DnsResponse::to_repr(Self) -> @debug.Repr
 
-pub(all) struct HedgingPolicy {
-  max_attempts : Int32
-  hedging_delay_millis : Int32
-  non_fatal : Array[Int32]
-}
-pub fn HedgingPolicy::attempt_cap(Self) -> Int32
-pub fn HedgingPolicy::can_start_another(Self, Int32) -> Bool
-pub fn HedgingPolicy::default() -> Self
-pub fn HedgingPolicy::delay_millis(Self) -> Int32
-pub fn HedgingPolicy::should_commit(Self, Int32) -> Bool
+pub(all) struct Hedging {
+  attempts : Int32
+  delay : @moondate.Span
+  codes : Array[@wire.Status]
+} derive(Eq, @debug.Debug)
+pub fn Hedging::commits(Self, Int32) -> Bool
+pub fn Hedging::equal(Self, Self) -> Bool
+pub fn Hedging::more(Self, Int32, limit? : Int32) -> Bool
+pub fn Hedging::new(attempts? : Int32, delay? : @moondate.Span, codes? : Array[@wire.Status]) -> Self
+pub fn Hedging::not_equal(Self, Self) -> Bool
+pub fn Hedging::to_repr(Self) -> @debug.Repr
 
 pub(all) enum LbPolicy {
   PickFirst
@@ -87,16 +105,24 @@ pub fn LoadBalancer::new(Array[String], policy? : LbPolicy) -> Self
 pub fn LoadBalancer::pick(Self) -> String?
 pub fn LoadBalancer::size(Self) -> Int32
 
-pub(all) struct RetryPolicy {
-  max_attempts : Int32
-  initial_backoff_millis : Int32
-  max_backoff_millis : Int32
-  backoff_multiplier : Double
-  retryable : Array[Int32]
-}
-pub fn RetryPolicy::backoff_millis(Self, Int32) -> Int32
-pub fn RetryPolicy::default() -> Self
-pub fn RetryPolicy::should_retry(Self, Int32, Int32) -> Bool
+pub(all) enum Pushback {
+  Absent
+  After(@moondate.Span)
+  Stop
+} derive(Eq, @debug.Debug)
+pub fn Pushback::equal(Self, Self) -> Bool
+pub fn Pushback::not_equal(Self, Self) -> Bool
+pub fn Pushback::read(ArrayView[@header.Header]) -> Self
+pub fn Pushback::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Retry {
+  backoff : @moonward.Backoff
+  codes : Array[@wire.Status]
+} derive(Eq, @debug.Debug)
+pub fn Retry::equal(Self, Self) -> Bool
+pub fn Retry::new(attempts? : Int32, base? : @moondate.Span, cap? : @moondate.Span, factor? : Double, codes? : Array[@wire.Status]) -> Self
+pub fn Retry::not_equal(Self, Self) -> Bool
+pub fn Retry::to_repr(Self) -> @debug.Repr
 
 pub struct SubConn {
   address : String
@@ -109,6 +135,24 @@ pub fn SubConn::on_connected(Self) -> Unit
 pub fn SubConn::on_failure(Self) -> Unit
 pub fn SubConn::on_idle(Self) -> Unit
 pub fn SubConn::shutdown(Self) -> Unit
+
+pub struct Throttle {
+  // private fields
+}
+pub fn Throttle::allows(Self) -> Bool
+pub fn Throttle::fail(Self) -> Unit
+pub fn Throttle::new(Throttling) -> Self
+pub fn Throttle::pass(Self) -> Unit
+pub fn Throttle::tokens(Self) -> Double
+
+pub(all) struct Throttling {
+  tokens : Int32
+  ratio : Double
+} derive(Eq, @debug.Debug)
+pub fn Throttling::equal(Self, Self) -> Bool
+pub fn Throttling::new(tokens~ : Int32, ratio~ : Double) -> Self
+pub fn Throttling::not_equal(Self, Self) -> Bool
+pub fn Throttling::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

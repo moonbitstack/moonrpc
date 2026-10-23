@@ -1,5 +1,7 @@
 import {
   "moonbitstack/moonrpc",
+  "moonbitstack/moondate",
+  "moonbitstack/moonhttp/header",
 }
 
 pkgtype(kind: "executable")

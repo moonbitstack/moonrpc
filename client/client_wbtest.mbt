@@ -284,9 +284,9 @@ test "client: a GOAWAY drains the connection — refuses new streams, marks unpr
 
   // Only the call above the last-processed id is safe to retry; the one exactly at it
   // (the server may have handled it) and the one below are not.
-  assert_eq(client.is_retryable(above), true)
-  assert_eq(client.is_retryable(at), false)
-  assert_eq(client.is_retryable(below), false)
+  assert_eq(client.unprocessed(above), true)
+  assert_eq(client.unprocessed(at), false)
+  assert_eq(client.unprocessed(below), false)
 
   // No new RPC starts on a draining connection: open is refused with the reserved id 0
   // and no stream id is consumed.

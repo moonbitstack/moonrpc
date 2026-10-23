@@ -48,7 +48,7 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 | `moonrpc/wire` | message framing, `Status`, `Method`, metadata rules, keepalive, HTTP/2 defaults | moonhttp, moonvar, moonbase |
 | `moonrpc/proto` | `PbWriter`／`PbReader`, the descriptor model and its codec | moonvar |
 | `moonrpc/stream` | the stream state machine, `RpcContext`, the four handler kinds | moonhttp |
-| `moonrpc/balance` | retry, hedging, connectivity states, balancers, DNS, the channel pool | `wire`, moondate, moonpool, moonvar |
+| `moonrpc/balance` | retry, hedging and throttling after gRPC A6, connectivity states, balancers, DNS, the channel pool | `wire`, moonhttp, moonward, moondate, moonvar |
 | `moonrpc/client` | `H2Client`, `CallReply` | `wire`, moonhttp, moonzip |
 | `moonrpc/server` | `H2Server`, interceptors | `wire`, `proto`, `stream`, moonhttp, moonzip, moonbase |
 | `moonrpc/service` | health checking and server reflection | `server`, `stream`, `proto`, moonvar |
@@ -154,14 +154,46 @@ let m : @moonrpc.Method = { service: "greet.Greeter", name: "SayHello" }
 m.path()                                 // "/greet.Greeter/SayHello"
 ```
 
+## Retries and hedging
+
+Retries follow gRPC proposal A6, checked against grpc-go and grpc-java. Every call kind takes `retry`; a channel takes `throttling` once, for the server name it reaches.
+
+```moonbit
+let chan = @net.Channel::connect(
+  "127.0.0.1",
+  @net.port,
+  throttling=@moonrpc.Throttling::new(tokens=10, ratio=0.1),
+)
+let reply = chan.unary(
+  "/greet.Greeter/SayHello",
+  b"Ada",
+  timeout_millis=2000,
+  retry=@moonrpc.retry,
+)
+```
+
+| Rule | What happens |
+|:--:|:--|
+| Backoff | `min(base × factor^(n−1), cap)` times `random(0.8, 1.2)`; the preset is A6's example, four attempts from 100 ms doubling to 1 s |
+| Status | only a status in `codes` is retried; OK and anything else go back to the caller |
+| Committed | once response headers arrive, the call is never retried |
+| Pushback | `grpc-retry-pushback-ms` sets the next wait exactly and restarts the backoff; a negative or unreadable value stops |
+| Throttle | a retryable failure takes a token, a success gives back `ratio`; at half the tokens or fewer nothing is retried or hedged |
+| Transparent | a stream the server refused, or one a GOAWAY shows it never handled, goes again at once, without a policy and without counting |
+| Limit | at most five attempts whatever a policy asks, the client-side limit A6 sets |
+| Metadata | each retry carries `grpc-previous-rpc-attempts` |
+| Deadline | one deadline for the whole call; each attempt's `grpc-timeout` is what is left of it |
+
+`ManagedChannel` picks a backend for every attempt, so a retry can land elsewhere, and `unary_hedged` takes `hedging`: the next attempt every `delay` or at once after a non-fatal status, the pushback and the throttle applying as for retries.
+
 ## Not yet
 
 - TLS. `moonbitlang/async`'s TLS exposes no ALPN, so HTTP/2 runs as h2c until moontls carries it over TCP.
 - Response and request compression; incoming gzip is decompressed, outgoing messages are not compressed.
 - Concurrent dispatch on one connection: a slow handler holds up the other streams, which is also why health `Watch` sends once and server-side deadlines are not preemptive.
-- The rest of A6 retries (jitter, throttling, pushback, transparent retry), connection backoff, client interceptors, channelz and service config.
+- Connection backoff, client interceptors, channelz and service config.
 - Descriptor fidelity for enums, nested types, imports and options, and transitive dependencies in reflection.
 
-## License
+## Licence
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE).

@@ -54,7 +54,11 @@ pub let health_check_path : String
 
 pub let health_watch_path : String
 
+pub let hedging : @balance.Hedging
+
 pub fn is_binary_metadata(Bytes) -> Bool
+
+pub let limit : Int32
 
 pub let max_header_list_size : Int32
 
@@ -74,6 +78,8 @@ pub let reflection_v1_path : String
 
 pub let reflection_v1alpha_path : String
 
+pub let retry : @balance.Retry
+
 pub fn split_messages(Bytes) -> Array[Bytes]
 
 pub fn stream_id_valid_for_initiator(Int32, by_client~ : Bool) -> Bool
@@ -87,6 +93,8 @@ pub fn stream_is_server_initiated(Int32) -> Bool
 // Types and methods
 
 // Type aliases
+pub using @balance {type Attempts}
+
 pub using @stream {type BidiHandler}
 
 pub using @client {type CallReply}
@@ -117,7 +125,7 @@ pub using @stream {type Handler}
 
 pub using @service {type HealthService}
 
-pub using @balance {type HedgingPolicy}
+pub using @balance {type Hedging}
 
 pub using @wire {type Keepalive}
 
@@ -137,13 +145,15 @@ pub using @proto {type PbReader}
 
 pub using @proto {type PbWriter}
 
+pub using @balance {type Pushback}
+
 pub using @service {type ReflectionRequest}
 
 pub using @service {type ReflectionResponse}
 
 pub using @service {type ReflectionService}
 
-pub using @balance {type RetryPolicy}
+pub using @balance {type Retry}
 
 pub using @stream {type RpcContext}
 
@@ -166,6 +176,10 @@ pub type StreamInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, By
 pub using @stream {type StreamState}
 
 pub using @balance {type SubConn}
+
+pub using @balance {type Throttle}
+
+pub using @balance {type Throttling}
 
 pub type UnaryInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes
 

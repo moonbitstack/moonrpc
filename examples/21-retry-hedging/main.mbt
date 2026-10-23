@@ -1,69 +1,69 @@
-// The client resilience policies, as pure decision logic: retry re-issues a failed call
-// after an exponential backoff; hedging fires parallel attempts on a delay and commits on
-// the first fatal status. This walks a retry policy's should-retry decisions and backoff
-// schedule, then a hedging policy's start / commit decisions — the whole surface the async
-// Channel drives (it does the sleeping and the socket work; these say whether and when).
+// gRPC A6 retries and hedging as the pure decisions a channel asks after each
+// attempt: whether to go again and how long to wait, what a server's pushback does,
+// and how the throttle shared by one server's calls cuts retries off. The channel
+// does the sending and the sleeping.
 //
 //     moon run examples/21-retry-hedging
 
 ///|
-fn status_label(code : Int32) -> String {
-  match code {
-    0 => "OK"
-    4 => "DEADLINE_EXCEEDED"
-    14 => "UNAVAILABLE"
-    _ => "code \{code}"
+fn wait(span : @moondate.Span?) -> String {
+  match span {
+    Some(s) => "again after \{s.nanos / 1_000_000L} ms"
+    None => "hand the reply back"
   }
 }
 
 ///|
 fn run() -> Unit {
-  // Retry: the conventional default retries only UNAVAILABLE, up to 3 attempts.
-  let retry = @moonrpc.RetryPolicy::default()
   let unavailable = @moonrpc.Status::code(Unavailable)
-  let deadline = @moonrpc.Status::code(DeadlineExceeded)
-  println("retry policy (default):")
-  println(
-    "  UNAVAILABLE after attempt 1: \{retry.should_retry(unavailable, 1)}",
-  )
-  println(
-    "  UNAVAILABLE after attempt 3: \{retry.should_retry(unavailable, 3)} (attempts exhausted)",
-  )
-  println(
-    "  DEADLINE_EXCEEDED after 1:   \{retry.should_retry(deadline, 1)} (not a retryable code)",
-  )
-  println("  OK after attempt 1:          \{retry.should_retry(0, 1)}")
+  let not_found = @moonrpc.Status::code(NotFound)
 
-  // A policy with a longer schedule shows the exponential backoff (the deterministic cap
-  // the jitter is drawn under).
-  let long : @moonrpc.RetryPolicy = {
-    max_attempts: 5,
-    initial_backoff_millis: 100,
-    max_backoff_millis: 1000,
-    backoff_multiplier: 2.0,
-    retryable: [unavailable],
+  // A6's example policy: four attempts, 100 ms doubling to 1 s, a fifth either way.
+  // A roll of 0.5 sits mid-spread, so the waits are the schedule itself.
+  println("retry, UNAVAILABLE every time:")
+  let call = @moonrpc.Attempts::new(retry=@moonrpc.retry)
+  for _ in 0..<4 {
+    println("  attempt \{call.made()}: \{wait(call.next(unavailable, []))}")
   }
-  println("backoff schedule (100ms, x2, cap 1000ms):")
-  for i = 1; i <= 5; i = i + 1 {
-    println("  before retry \{i}: \{long.backoff_millis(i)} ms")
+  let other = @moonrpc.Attempts::new(retry=@moonrpc.retry)
+  println("retry, NOT_FOUND: \{wait(other.next(not_found, []))}")
+
+  // The server can name the wait, or refuse any more.
+  let after : Array[@header.Header] = [
+    @header.Header::of("grpc-retry-pushback-ms", "750"),
+  ]
+  let stop : Array[@header.Header] = [
+    @header.Header::of("grpc-retry-pushback-ms", "-1"),
+  ]
+  let pushed = @moonrpc.Attempts::new(retry=@moonrpc.retry)
+  println("pushback 750: \{wait(pushed.next(unavailable, after))}")
+  println("then plain:   \{wait(pushed.next(unavailable, []))}")
+  let refused = @moonrpc.Attempts::new(retry=@moonrpc.retry)
+  println("pushback -1:  \{wait(refused.next(unavailable, stop))}")
+
+  // A stream the server refused goes again at once, policy or not, uncounted.
+  let bare = @moonrpc.Attempts::new()
+  println(
+    "refused stream: \{wait(bare.next(unavailable, [], unprocessed=true))}",
+  )
+
+  // Ten tokens, a tenth back per success: at five or fewer, nobody retries.
+  let throttle = @moonrpc.Throttle::new(
+    @moonrpc.Throttling::new(tokens=10, ratio=0.1),
+  )
+  for i in 0..<6 {
+    let c = @moonrpc.Attempts::new(retry=@moonrpc.retry, throttle~)
+    let next = wait(c.next(unavailable, []))
+    println("call \{i + 1} fails, \{throttle.tokens()} tokens left: \{next}")
   }
 
-  // Hedging: parallel attempts every delay, committing on the first fatal status.
-  let hedge = @moonrpc.HedgingPolicy::default()
-  println("hedging policy (default):")
-  println("  attempt cap: \{hedge.attempt_cap()}")
-  println("  delay between attempts: \{hedge.delay_millis()} ms")
-  println("  can start a 3rd attempt: \{hedge.can_start_another(2)}")
-  println(
-    "  can start a 4th attempt: \{hedge.can_start_another(3)} (cap reached)",
-  )
-  println(
-    "  commit on \{status_label(unavailable)}: \{hedge.should_commit(unavailable)} (non-fatal, keep hedging)",
-  )
-  println(
-    "  commit on \{status_label(deadline)}: \{hedge.should_commit(deadline)} (fatal, stop)",
-  )
-  println("  commit on OK: \{hedge.should_commit(0)}")
+  // Hedging: the next attempt starts every 500 ms, or at once after a non-fatal
+  // status; anything else settles the call.
+  let hedge = @moonrpc.hedging
+  println("hedging, four attempts:")
+  println("  a fifth may start: \{hedge.more(4)}")
+  println("  UNAVAILABLE settles the call: \{hedge.commits(unavailable)}")
+  println("  NOT_FOUND settles the call:   \{hedge.commits(not_found)}")
 }
 
 ///|

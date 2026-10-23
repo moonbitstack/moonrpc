@@ -1,83 +1,56 @@
-// gRPC hedging policy (the `hedgingPolicy` of a service config's method config): unlike
-// retry, hedging fires attempts *in parallel* — an attempt every `hedging_delay_millis`
-// without waiting for the previous to fail — and commits the call on the first attempt
-// whose status is fatal (OK, or an error outside `non_fatal`). A non-fatal failure lets
-// hedging keep going. This is pure decision logic — all-backend and total — that the async
-// `Channel` drives: it decides *whether another attempt may start* and *whether a finished
-// attempt commits the call*; the socket layer originates the parallel attempts, waits the
-// delay, and cancels the losers.
+// gRPC hedging, as proposal A6 defines it: attempts sent in parallel, a new one every
+// `delay` until one of them answers with a status that settles the call. Pure; the
+// managed channel launches, waits and cancels.
 
 ///|
-/// A method's hedging policy. `max_attempts` counts every parallel attempt (gRPC caps it at
-/// 5); a new attempt originates every `hedging_delay_millis` while attempts remain. A
-/// finished attempt commits the whole call unless its status is one of `non_fatal`, in which
-/// case hedging continues.
-pub(all) struct HedgingPolicy {
-  max_attempts : Int32
-  hedging_delay_millis : Int32
-  non_fatal : Array[Int32]
+/// A method's hedging policy (A6 `hedgingPolicy`): `attempts` is `maxAttempts`,
+/// `delay` is `hedgingDelay`, `codes` is `nonFatalStatusCodes`.
+pub(all) struct Hedging {
+  attempts : Int32
+  delay : @moondate.Span
+  codes : Array[@wire.Status]
+} derive(Eq, Debug)
+
+///|
+pub extend Hedging with Eq::{equal, not_equal}
+
+///|
+pub extend Hedging with Debug::{to_repr}
+
+///|
+/// A6's example policy: four attempts half a second apart, `UNAVAILABLE`, `INTERNAL`
+/// and `ABORTED` letting the others carry on.
+pub let hedging : Hedging = {
+  attempts: 4,
+  delay: @moondate.Span::new(millis=500L),
+  codes: [Unavailable, Internal, Aborted],
 }
 
 ///|
-/// A conventional default: up to 3 parallel attempts, a fresh one every 500 ms, treating
-/// only `UNAVAILABLE` as non-fatal — so a transient transport failure keeps hedging while a
-/// real application error commits at once.
-pub fn HedgingPolicy::default() -> HedgingPolicy {
-  {
-    max_attempts: 3,
-    hedging_delay_millis: 500,
-    non_fatal: [@wire.Status::code(Unavailable)],
-  }
+/// A policy by A6's field names.
+pub fn Hedging::new(
+  attempts~ : Int32 = hedging.attempts,
+  delay~ : @moondate.Span = hedging.delay,
+  codes~ : Array[@wire.Status] = hedging.codes,
+) -> Hedging {
+  { attempts, delay, codes, }
 }
 
 ///|
-/// The effective attempt cap: the configured `max_attempts`, but never above gRPC's ceiling
-/// of 5.
-pub fn HedgingPolicy::attempt_cap(self : HedgingPolicy) -> Int32 {
-  if self.max_attempts > 5 {
-    5
-  } else {
-    self.max_attempts
-  }
-}
-
-///|
-/// Whether another hedged attempt may originate given `attempts_started` (the number already
-/// launched): only while attempts remain under the cap.
-pub fn HedgingPolicy::can_start_another(
-  self : HedgingPolicy,
-  attempts_started : Int32,
+/// Whether another attempt may start when `started` have, under the policy and the
+/// client's `limit`.
+pub fn Hedging::more(
+  self : Hedging,
+  started : Int32,
+  limit~ : Int32 = limit,
 ) -> Bool {
-  attempts_started < self.attempt_cap()
+  started < (if self.attempts < limit { self.attempts } else { limit })
 }
 
 ///|
-/// Whether a finished attempt with `status_code` commits the whole call — stopping hedging
-/// and returning this result. OK commits (success), and so does any error *not* listed as
-/// non-fatal (a real failure retrying won't fix). A non-fatal error does not commit; hedging
-/// continues.
-pub fn HedgingPolicy::should_commit(
-  self : HedgingPolicy,
-  status_code : Int32,
-) -> Bool {
-  if status_code == 0 {
-    return true
-  }
-  for code in self.non_fatal {
-    if code == status_code {
-      return false
-    }
-  }
-  true
-}
-
-///|
-/// The delay between originating hedged attempts. The async driver waits this long before
-/// launching the next parallel attempt; `0` fires them all at once.
-pub fn HedgingPolicy::delay_millis(self : HedgingPolicy) -> Int32 {
-  if self.hedging_delay_millis < 0 {
-    0
-  } else {
-    self.hedging_delay_millis
-  }
+/// Whether an attempt ending with `status` settles the call: OK does, and so does any
+/// status outside `codes`. A non-fatal one sends the next attempt at once instead.
+pub fn Hedging::commits(self : Hedging, status : Int32) -> Bool {
+  status == @wire.Status::code(Ok) ||
+  !self.codes.iter().any(c => c.code() == status)
 }
