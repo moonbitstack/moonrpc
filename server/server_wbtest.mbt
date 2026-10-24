@@ -632,7 +632,7 @@ test "engine: a CONTINUATION with no field block open is a connection error" {
   let _ = engine.feed(Settings(params=[], ack=false))
   // §6.10: nothing left END_HEADERS clear, so there is no block to continue.
   let out = engine.feed(
-    Continuation(stream_id=1, fragment=b"", end_headers=true),
+    Continuation(stream_id=1, fragment=b"\x82", end_headers=true),
   )
   assert_eq(out.length(), 1)
   match out[0] {
@@ -677,7 +677,7 @@ test "engine: a field block that will not decode is a COMPRESSION_ERROR" {
   let out = engine.feed(
     Headers(
       stream_id=1,
-      fragment=b"",
+      fragment=b"\x80",
       end_stream=true,
       end_headers=true,
       priority=None,
