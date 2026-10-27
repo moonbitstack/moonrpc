@@ -22,3 +22,5 @@ import {
   "moonbitstack/moondate@0.1.0",
   "moonbitstack/moonward@0.2.0",
 }
+
+source = "src"

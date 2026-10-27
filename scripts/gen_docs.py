@@ -249,7 +249,7 @@ def main():
     for sid, rel, title, desc in SECTIONS:
         body.append('<section class="pkg" id="%s"><h2><span class="at">§</span>%s</h2>'
                     '<p class="pdesc">%s</p>' % (sid, title, esc(desc)))
-        files = sorted(f for f in (ROOT / rel).glob("*.mbt")
+        files = sorted(f for f in (ROOT / "src" / rel).glob("*.mbt")
                        if not f.stem.endswith(("_test", "_wbtest")))
         for kind, sig, doc in [it for f in files for it in parse(f)]:
             total += 1
