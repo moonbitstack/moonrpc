@@ -10,7 +10,7 @@ license = "Apache-2.0"
 
 keywords = [ "grpc", "rpc", "protobuf", "http2", "moonbit" ]
 
-description = "Real gRPC for MoonBit over HTTP/2: all four call kinds, metadata, deadlines, rich errors, health checking, server reflection, retries, hedging and load balancing, with pure client and server engines that run on every backend."
+description = "gRPC for MoonBit."
 
 import {
   "moonbitlang/async@0.22.5",
