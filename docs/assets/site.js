@@ -54,4 +54,28 @@
     }, { rootMargin: "-12% 0px -82% 0px" });
     document.querySelectorAll("section.pkg").forEach(function (s) { io.observe(s); });
   }
+
+  // --- engineering title block: one shared block, injected into every footer ---
+  // Drawing-sheet metadata, the same on every page but for the sheet number. Kept
+  // in one place so the generated API page and the hand-written pages never drift.
+  (function titleBlock() {
+    var foot = document.querySelector("footer .wrap");
+    if (!foot || foot.querySelector(".titleblock")) return;
+    var page = (location.pathname.split("/").pop() || "index.html").replace(/\.html?$/, "");
+    var sheets = { index: "01", guide: "02", api: "03", showcase: "04" };
+    var sheet = sheets[page] || "00";
+    function cell(k, v) {
+      return '<div class="cell"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
+    }
+    var el = document.createElement("div");
+    el.className = "titleblock";
+    el.innerHTML =
+      cell("drawing", "moonrpc") +
+      cell("title", "A pure gRPC engine for MoonBit") +
+      cell("org", "moonbitstack") +
+      cell("sheet", sheet + " / 04") +
+      cell("scale", "1:1") +
+      cell("status", "current");
+    foot.insertBefore(el, foot.firstChild);
+  })();
 })();

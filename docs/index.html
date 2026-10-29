@@ -42,7 +42,7 @@
 </nav>
 
 <header class="section wrap hero">
-  <div class="eyebrow">MoonBit gRPC · v0.21.1</div>
+  <div class="eyebrow">MoonBit · gRPC library</div>
   <h1>An interface is not a convention;<br>it is a compiler-enforced contract.</h1>
   <p class="tag">moonrpc is a gRPC library for MoonBit. It runs the gRPC over HTTP/2 protocol itself — frames, flow control, HPACK — and splits the work into two <b>pure</b> engines that exchange frames in memory, with a native socket layer only where a socket is unavoidable.</p>
   <div class="install">
@@ -159,7 +159,7 @@
   <div class="eyebrow">what it carries</div>
   <h2 class="h">A complete gRPC stack</h2>
   <p class="lede">Everything here is implemented in the library, not deferred to a sidecar or proxy.</p>
-  <div class="cards">
+  <div class="cards three">
     <div class="card"><span class="ix">①</span><h3>Real gRPC</h3><p>Wire-compatible gRPC over HTTP/2 — no proxy, no envoy, no translation layer.</p></div>
     <div class="card"><span class="ix">②</span><h3>Self-built HTTP/2</h3><p>RFC 9113 frames, streams and flow control implemented in MoonBit.</p></div>
     <div class="card"><span class="ix">③</span><h3>HPACK</h3><p>RFC 7541 header compression, dynamic table included.</p></div>
