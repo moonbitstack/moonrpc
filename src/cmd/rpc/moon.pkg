@@ -1,0 +1,19 @@
+// The generator behind `#rpc.message`, `#rpc.service` and `#rpc.method`: the
+// protobuf codec of each message, the registration of each service, and the
+// file descriptor reflection serves. moonx runs it as a dev_build rule; see the
+// README.
+supported_targets = "+native+wasm"
+
+pkgtype(kind: "executable")
+
+import {
+  "moonbitstack/moonast/quote",
+  "moonbitstack/moonast/attr",
+  "moonbitstack/moonast/gen",
+  "moonbitstack/moonast/cli",
+  "moonbitlang/parser/attribute",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/list",
+  "moonbitlang/core/string",
+}

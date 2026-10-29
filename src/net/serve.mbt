@@ -96,6 +96,25 @@ pub fn GrpcServer::new() -> GrpcServer {
 }
 
 ///|
+/// Register `handler` at `path`, whichever of the four call shapes it is.
+pub fn GrpcServer::register_handler(
+  self : GrpcServer,
+  path : String,
+  handler : @moonrpc.Handler,
+) -> Unit {
+  self.handlers[path] = handler
+}
+
+///|
+pub impl @moonrpc.Registrar for GrpcServer with fn register_handler(
+  self,
+  path,
+  handler,
+) {
+  self.handlers[path] = handler
+}
+
+///|
 /// Register a unary handler `(request) -> reply` (messages without their gRPC
 /// length prefix) for a fully-qualified path `/pkg.Service/Method`.
 pub fn GrpcServer::register(

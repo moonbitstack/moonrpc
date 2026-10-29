@@ -29,6 +29,12 @@ pub fn metadata_value_to_wire(Bytes, Bytes) -> Bytes
 pub fn split_messages(Bytes) -> Array[Bytes]
 
 // Errors
+pub(all) suberror StatusError {
+  StatusError(Status, String)
+}
+pub fn StatusError::output(Self, &Logger) -> Unit
+pub fn StatusError::to_string(Self) -> String
+pub impl Show for StatusError
 
 // Types and methods
 pub struct Keepalive {

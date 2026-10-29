@@ -4,5 +4,6 @@ import {
   "moonbitstack/moonrpc/proto",
   "moonbitstack/moonrpc/stream",
   "moonbitstack/moonrpc/server",
+  "moonbitstack/moonrpc/wire",
   "moonbitstack/moonvar/leb128",
 }

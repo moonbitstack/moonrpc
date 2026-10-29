@@ -92,3 +92,6 @@ pub impl Show for StreamState
 // Type aliases
 
 // Traits
+pub(open) trait Registrar {
+  fn register_handler(Self, String, Handler) -> Unit
+}

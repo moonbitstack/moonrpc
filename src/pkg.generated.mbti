@@ -12,6 +12,8 @@ import {
 }
 
 // Values
+pub fn[I : @proto.Message, O : @proto.Message] client_streaming((@stream.RpcContext, Array[I]) -> O raise) -> @stream.Handler
+
 pub fn decode_file_descriptor_set(Bytes) -> Array[@proto.FileDescriptor] raise @proto.PbError
 
 pub fn decode_health_request(Bytes) -> Bytes
@@ -80,6 +82,8 @@ pub let reflection_v1alpha_path : String
 
 pub let retry : @balance.Retry
 
+pub fn[I : @proto.Message, O : @proto.Message] server_streaming((@stream.RpcContext, I) -> Array[O] raise) -> @stream.Handler
+
 pub fn split_messages(Bytes) -> Array[Bytes]
 
 pub fn stream_id_valid_for_initiator(Int32, by_client~ : Bool) -> Bool
@@ -87,6 +91,8 @@ pub fn stream_id_valid_for_initiator(Int32, by_client~ : Bool) -> Bool
 pub fn stream_is_client_initiated(Int32) -> Bool
 
 pub fn stream_is_server_initiated(Int32) -> Bool
+
+pub fn[I : @proto.Message, O : @proto.Message] unary((@stream.RpcContext, I) -> O raise) -> @stream.Handler
 
 // Errors
 
@@ -165,6 +171,8 @@ pub using @server {type SrvStream}
 
 pub using @wire {type Status}
 
+pub using @wire {type StatusError}
+
 pub using @stream {type Stream}
 
 pub using @stream {type StreamError}
@@ -184,5 +192,9 @@ pub using @balance {type Throttling}
 pub type UnaryInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes
 
 pub using @proto {type WireType}
+
+pub using @proto {trait Message}
+
+pub using @stream {trait Registrar}
 
 // Traits

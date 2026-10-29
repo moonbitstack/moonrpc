@@ -46,12 +46,13 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 |  Package  | What it holds | Depends on |
 |:--:|:--|:--|
 | `moonrpc/wire` | message framing, `Status`, `Method`, metadata rules, keepalive, HTTP/2 defaults | moonhttp, moonvar, moonbase |
-| `moonrpc/proto` | `PbWriter`／`PbReader`, the descriptor model and its codec | moonvar |
-| `moonrpc/stream` | the stream state machine, `RpcContext`, the four handler kinds | moonhttp |
+| `moonrpc/proto` | `PbWriter`／`PbReader`, `Message`, the descriptor model and its codec | moonvar |
+| `moonrpc/stream` | the stream state machine, `RpcContext`, the four handler kinds, `Registrar` | moonhttp |
 | `moonrpc/balance` | retry, hedging and throttling after gRPC A6, connectivity states, balancers, DNS, the channel pool | `wire`, moonhttp, moonward, moondate, moonvar |
 | `moonrpc/client` | `H2Client`, `CallReply` | `wire`, moonhttp, moonzip |
 | `moonrpc/server` | `H2Server`, interceptors | `wire`, `proto`, `stream`, moonhttp, moonzip, moonbase |
-| `moonrpc/service` | health checking and server reflection | `server`, `stream`, `proto`, moonvar |
+| `moonrpc/service` | health checking, server reflection, and `unary`／`server_streaming`／`client_streaming` over message types | `server`, `stream`, `proto`, `wire`, moonvar |
+| `moonrpc/cmd/rpc` | the generator behind the `#rpc` annotations | moonast |
 | `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP (native) | the root, moonbitlang/async |
 
 A client links nothing of the server and a server nothing of the client; protobuf alone is `proto`.
@@ -186,13 +187,77 @@ let reply = chan.unary(
 
 `ManagedChannel` picks a backend for every attempt, so a retry can land elsewhere, and `unary_hedged` takes `hedging`: the next attempt every `delay` or at once after a non-fatal status, the pushback and the throttle applying as for retries.
 
+## Annotations
+
+`#rpc` annotations write the protobuf codec of each message, the registration of
+each service, and the file descriptor reflection serves:
+
+```moonbit
+#rpc.message
+pub struct HelloRequest {
+  name : String               // 1
+  #rpc.field(number="4")
+  tags : Array[String]        // 4
+  nickname : String?          // 5, proto3 optional
+}
+
+#rpc.service(name="greet.Greeter")
+pub struct Greeter { greeting : String }
+
+#rpc.method
+fn Greeter::say_hello(self : Greeter, req : HelloRequest) -> HelloReply raise { ... }
+
+#rpc.method
+fn Greeter::count_to(self : Greeter, req : Upto) -> Array[Number] { ... }
+```
+
+```moonbit
+Greeter::{ greeting: "hello" }.register(server)   // an H2Server or a GrpcServer
+reflection.add_file(descriptor())
+```
+
+Fields are numbered in declaration order from 1; `number=` sets one, written as a
+string because the attribute grammar has no integers, and the count carries on
+from it. `#rpc.skip` leaves a field out. A method's name is the function's in
+PascalCase, `name=` overriding it; returning an array streams the replies, taking
+one receives a client stream, and a parameter of type `RpcContext` receives the
+call's context. A `StatusError` raised by a method answers with its status, any
+other error with `UNKNOWN`, and a request that does not decode with `INTERNAL`,
+as grpc-go does.
+
+| MoonBit | protobuf |
+|:--:|:--:|
+| `String`, `Bytes`, `Bool` | `string`, `bytes`, `bool` |
+| `Int`, `Int64`, `UInt`, `UInt64` | `int32`, `int64`, `uint32`, `uint64` |
+| `Double`, `Float` | `double`, `float` |
+| a `#rpc.message` | that message |
+| `Array[T]` | `repeated T`, packed for the integers and `bool` |
+| `T?` | `optional T` |
+
+[`21-annotations`](src/examples/21-annotations/) checks the generated codec,
+service and descriptor against the same ones written by hand, byte for byte.
+
+Wire the generator into the build once. In `moon.mod`:
+
+```
+rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.1 -C \"$mod_dir\" \"$input\" -o \"$output\"")
+```
+
+and in the `moon.pkg` of the package holding the declarations:
+
+```
+dev_build(rule: "rpc", input: "service.mbt", output: "service.g.mbt")
+formatter(ignore: [ "service.g.mbt" ])
+```
+
 ## Not yet
 
 - TLS. `moonbitlang/async`'s TLS exposes no ALPN, so HTTP/2 runs as h2c until moontls carries it over TCP.
 - Response and request compression; incoming gzip is decompressed, outgoing messages are not compressed.
 - Concurrent dispatch on one connection: a slow handler holds up the other streams, which is also why health `Watch` sends once and server-side deadlines are not preemptive.
 - Connection backoff, client interceptors, channelz and service config.
-- Descriptor fidelity for enums, nested types, imports and options, and transitive dependencies in reflection.
+- Descriptor fidelity for enums, nested types, imports and options, and transitive dependencies in reflection; `#rpc` waits on the same for enums and maps.
+- Bidirectional streaming and client stubs from `#rpc`.
 
 ## Licence
 

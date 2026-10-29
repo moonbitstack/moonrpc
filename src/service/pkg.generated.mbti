@@ -8,6 +8,8 @@ import {
 }
 
 // Values
+pub fn[I : @proto.Message, O : @proto.Message] client_streaming((@stream.RpcContext, Array[I]) -> O raise) -> @stream.Handler
+
 pub fn decode_health_request(Bytes) -> Bytes
 
 pub fn decode_health_response(Bytes) -> ServingStatus
@@ -29,6 +31,10 @@ pub let health_watch_path : String
 pub let reflection_v1_path : String
 
 pub let reflection_v1alpha_path : String
+
+pub fn[I : @proto.Message, O : @proto.Message] server_streaming((@stream.RpcContext, I) -> Array[O] raise) -> @stream.Handler
+
+pub fn[I : @proto.Message, O : @proto.Message] unary((@stream.RpcContext, I) -> O raise) -> @stream.Handler
 
 // Errors
 

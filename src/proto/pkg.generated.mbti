@@ -115,8 +115,10 @@ pub fn PbReader::eof(Self) -> Bool
 pub fn PbReader::new(Bytes) -> Self
 pub fn PbReader::read_bool(Self) -> Bool raise PbError
 pub fn PbReader::read_bytes(Self) -> Bytes raise PbError
+pub fn PbReader::read_double(Self) -> Double raise PbError
 pub fn PbReader::read_fixed32(Self) -> UInt32 raise PbError
 pub fn PbReader::read_fixed64(Self) -> UInt64 raise PbError
+pub fn PbReader::read_float(Self) -> Float raise PbError
 pub fn PbReader::read_int32(Self) -> Int32 raise PbError
 pub fn PbReader::read_int64(Self) -> Int64 raise PbError
 pub fn PbReader::read_len_delim(Self) -> Bytes raise PbError
@@ -136,9 +138,11 @@ pub struct PbWriter {
 }
 pub fn PbWriter::bool_(Self, Int32, Bool) -> Unit
 pub fn PbWriter::bytes_(Self, Int32, Bytes) -> Unit
+pub fn PbWriter::double_(Self, Int32, Double) -> Unit
 pub fn PbWriter::enum_(Self, Int32, Int32) -> Unit
 pub fn PbWriter::fixed32(Self, Int32, UInt32) -> Unit
 pub fn PbWriter::fixed64(Self, Int32, UInt64) -> Unit
+pub fn PbWriter::float_(Self, Int32, Float) -> Unit
 pub fn PbWriter::int32(Self, Int32, Int32) -> Unit
 pub fn PbWriter::int64(Self, Int32, Int64) -> Unit
 pub fn PbWriter::map_string_string(Self, Int32, String, String) -> Unit
@@ -183,3 +187,7 @@ pub impl Show for WireType
 // Type aliases
 
 // Traits
+pub(open) trait Message {
+  fn encode(Self) -> Bytes
+  fn decode(Bytes) -> Self raise PbError
+}

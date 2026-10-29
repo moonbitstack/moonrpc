@@ -1373,3 +1373,12 @@ pub fn H2Server::stream_state(
     None => Idle
   }
 }
+
+///|
+pub impl @stream.Registrar for H2Server with fn register_handler(
+  self,
+  path,
+  handler,
+) {
+  self.handlers[path] = handler
+}

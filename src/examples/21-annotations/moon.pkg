@@ -1,0 +1,12 @@
+// A gRPC service written as `#rpc` annotations, checked against the same codec
+// and service written by hand. `greeter.g.mbt` comes from `cmd/rpc`; a project
+// wires it as a dev_build rule.
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonhttp/http2",
+}
+
+pkgtype(kind: "executable")
+
+formatter(ignore: [ "greeter.g.mbt" ])

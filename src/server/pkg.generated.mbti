@@ -54,6 +54,7 @@ pub fn H2Server::set_clock(Self, () -> Int64) -> Unit
 pub fn H2Server::set_max_streams(Self, Int32) -> Unit
 pub fn H2Server::stream_state(Self, Int32) -> @stream.StreamState
 pub fn H2Server::tick(Self) -> Array[@http2.Frame]
+pub impl @stream.Registrar for H2Server
 
 pub(all) struct SrvStream {
   id : Int32

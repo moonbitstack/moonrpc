@@ -211,6 +211,18 @@ pub fn PbWriter::fixed64(self : PbWriter, field : Int32, v : UInt64) -> Unit {
 }
 
 ///|
+/// Write a `double` field: its IEEE 754 bits as a `fixed64`.
+pub fn PbWriter::double_(self : PbWriter, field : Int32, v : Double) -> Unit {
+  self.fixed64(field, v.reinterpret_as_uint64())
+}
+
+///|
+/// Write a `float` field: its IEEE 754 bits as a `fixed32`.
+pub fn PbWriter::float_(self : PbWriter, field : Int32, v : Float) -> Unit {
+  self.fixed32(field, v.reinterpret_as_uint())
+}
+
+///|
 /// Write a `bytes` field.
 pub fn PbWriter::bytes_(self : PbWriter, field : Int32, v : Bytes) -> Unit {
   self.write_tag(field, LengthDelim)
@@ -298,6 +310,18 @@ pub fn PbReader::read_fixed64(self : PbReader) -> UInt64 raise PbError {
   }
   self.pos = self.pos + 8
   v
+}
+
+///|
+/// Read a `double`: a `fixed64` holding its IEEE 754 bits.
+pub fn PbReader::read_double(self : PbReader) -> Double raise PbError {
+  self.read_fixed64().reinterpret_as_double()
+}
+
+///|
+/// Read a `float`: a `fixed32` holding its IEEE 754 bits.
+pub fn PbReader::read_float(self : PbReader) -> Float raise PbError {
+  Float::reinterpret_from_uint(self.read_fixed32())
 }
 
 ///|

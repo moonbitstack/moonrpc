@@ -10,6 +10,7 @@
 ///|
 pub using @wire {
   type Keepalive,
+  type StatusError,
   type Method,
   type Status,
   decode_message,
@@ -27,6 +28,7 @@ pub using @wire {
 
 ///|
 pub using @proto {
+  trait Message,
   type FieldDescriptor,
   type FieldLabel,
   type FieldType,
@@ -44,6 +46,7 @@ pub using @proto {
 
 ///|
 pub using @stream {
+  trait Registrar,
   type BidiHandler,
   type Handler,
   type RpcContext,
@@ -117,4 +120,7 @@ pub using @service {
   health_watch_path,
   reflection_v1_path,
   reflection_v1alpha_path,
+  unary,
+  server_streaming,
+  client_streaming,
 }

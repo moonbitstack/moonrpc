@@ -1,0 +1,48 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/examples/21-annotations"
+
+import {
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+}
+
+// Values
+pub fn descriptor() -> @proto.FileDescriptor
+
+// Errors
+
+// Types and methods
+pub struct Greeter {
+  greeting : String
+}
+pub fn[R : @stream.Registrar] Greeter::register(Self, R) -> Unit
+
+pub struct HelloReply {
+  message : String
+  calls : Int64
+  scores : Array[Int32]
+  ratio : Double
+  cached : Bool
+}
+pub impl @proto.Message for HelloReply
+
+pub struct HelloRequest {
+  name : String
+  tags : Array[String]
+  nickname : String?
+}
+pub impl @proto.Message for HelloRequest
+
+pub struct Number {
+  value : Int32
+}
+pub impl @proto.Message for Number
+
+pub struct Upto {
+  n : Int32
+}
+pub impl @proto.Message for Upto
+
+// Type aliases
+
+// Traits

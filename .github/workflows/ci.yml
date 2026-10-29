@@ -54,6 +54,9 @@ jobs:
             fi
           done
 
+      - name: generated annotations are fresh
+        run: moon run src/cmd/rpc --target native -- -C . src/examples/21-annotations/greeter.mbt -o src/examples/21-annotations/greeter.g.mbt --check
+
       - name: lint (fmt is clean)
         run: |
           moon fmt && git diff --exit-code
