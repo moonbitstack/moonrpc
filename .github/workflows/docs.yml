@@ -1,0 +1,94 @@
+name: Docs
+
+# Keeps the documentation site in sync with the library source. The interactive
+# showcase needs a JS-compiled copy of the real library (docs/engine/moonrpc.js),
+# and the API reference (docs/api.html) is generated from the public signatures.
+# Both are rebuilt here and `git diff --exit-code` fails the build if the committed
+# copies have drifted from the source — so a stale doc is a red CI, not a surprise.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      # The showcase page calls the real, shipped library compiled to JS. The demo
+      # package is JS-only (`supported_targets = "js"`), so it never drags native
+      # sockets into the browser bundle.
+      - name: build the showcase glue (JS)
+        run: |
+          moon build --target js ./src/examples/browser/moonrpc-demo
+          cp _build/js/debug/build/examples/browser/moonrpc-demo/moonrpc-demo.js docs/engine/moonrpc.js
+
+      - name: regenerate the API reference
+        run: python3 scripts/gen_docs.py
+
+      - name: docs are up to date
+        run: git diff --exit-code
+
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - name: build the showcase glue (JS)
+        run: |
+          moon build --target js ./src/examples/browser/moonrpc-demo
+          cp _build/js/debug/build/examples/browser/moonrpc-demo/moonrpc-demo.js docs/engine/moonrpc.js
+
+      - name: regenerate the API reference
+        run: python3 scripts/gen_docs.py
+
+      - name: setup pages
+        uses: actions/configure-pages@v6
+
+      - name: upload pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          # Upload the docs/ folder contents directly so index.html sits at the
+          # site root and assets/ + engine/ resolve as relative paths.
+          path: docs
+
+      - name: deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

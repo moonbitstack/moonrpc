@@ -1,51 +1,58 @@
 #!/usr/bin/env python3
-"""Generate a self-contained, styled API-reference site (docs/index.html) for
-gh-pages from the package sources' `///` doc comments. Reproducible: reads the
-.mbt files, so the docs never drift from the code."""
+"""Generate the moonrpc API-reference page (docs/api.html) from the package
+sources' `///` doc comments. Reproducible: reads the .mbt files, so the docs
+never drift from the code. The output reuses docs/assets/site.css, the shared
+top navigation and the section spy, so it stays one design with the rest of the
+site. Run in CI and assert `git diff --exit-code` to guarantee it is current."""
 import re, html, pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# One section per package, in layer order; each lists every source file in it.
+# One section per package, in layer order; each lists every public item in it.
 SECTIONS = [
-    ("wire", "wire", "wire: framing, status, metadata",
+    ("wire", "wire", "wire — framing, status, metadata",
      "gRPC length-prefixed message framing, the 17-code Status and its mapping from "
      "HTTP/2 and HTTP errors, the /Service/Method path, the metadata rules that decide "
      "which keys travel base64 encoded, keepalive pings, and the HTTP/2 defaults both "
      "engines start from."),
-    ("proto", "proto", "proto: protobuf and descriptors",
+    ("proto", "proto", "proto — protobuf and descriptors",
      "The protobuf binary wire codec (PbWriter / PbReader over the four proto3 wire "
      "types, zigzag, tag packing, unknown-field skipping, rejection of truncation and "
      "overflow) and the descriptor model with its codec to FileDescriptorProto and "
      "FileDescriptorSet bytes."),
-    ("stream", "stream", "stream: stream lifecycle and handlers",
+    ("stream", "stream", "stream — stream lifecycle and handlers",
      "The RFC 9113 §5.1 stream state machine and identifier parity, the four call kinds "
      "(Unary / ServerStreaming / ClientStreaming / Bidi) and the per-call RpcContext: "
      "request metadata, the grpc-timeout deadline, and response metadata."),
-    ("balance", "balance", "balance: call policy and load balancing",
+    ("balance", "balance", "balance — call policy and load balancing",
      "What a client does around a call: gRPC A6 retries, throttling, pushback and "
      "hedging, the connectivity state machine, the balancers, DNS resolution and the "
      "channel pool."),
-    ("client", "client", "client: the client engine",
+    ("client", "client", "client — the client engine",
      "H2Client allocates stream ids, builds request HEADERS and length-prefixed DATA "
      "within the send windows, and turns response frames back into a CallReply. Pure; "
      "runs in memory on every backend."),
-    ("server", "server", "server: the server engine",
+    ("server", "server", "server — the server engine",
      "H2Server::feed turns decoded frames into the frames to send back: stream state, "
      "HPACK, connection and stream flow control, routing to a handler of any call kind, "
      "grpc-status trailers, and the interceptor chains around handlers. Pure; runs in "
      "memory on every backend."),
-    ("service", "service", "service: health and reflection",
+    ("service", "service", "service — health and reflection",
      "grpc.health.v1.Health (Check and Watch) and grpc.reflection.v1 ServerReflection "
      "(and its v1alpha alias), so grpcurl can list and describe a service."),
-    ("net", "net", "net: sockets (native)",
+    ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "
      "only: moonbitlang/async has no JS or Wasm sockets."),
 ]
-KIND = {"struct": "struct", "enum": "enum", "fn": "fn", "type": "type", "let": "let"}
+KIND = {"struct": "struct", "enum": "enum", "fn": "fn", "type": "type", "let": "let", "trait": "trait", "impl": "impl"}
 
 
 def parse(path):
+    """Return every `pub` declaration in *path* with its preceding `///` doc.
+
+    A declaration is collected until its body opens (`{`) or it is a single-line
+    `= value` form, so multi-line signatures (including `[T]` type parameters) are
+    captured whole and never spill into the body."""
     items, doc = [], []
     lines = path.read_text(encoding="utf-8").splitlines()
     i = 0
@@ -57,11 +64,14 @@ def parse(path):
             doc.append(s[3:].strip())
         elif s.startswith("pub"):
             buf = s
-            is_alias = re.match(r"pub\s+(type|let)\b", buf) is not None
-            while (not is_alias and "{" not in buf and i + 1 < len(lines)):
+            is_alias = re.match(r"pub\s+(type|let|trait|impl)\b", buf) is not None
+            while (not is_alias and "{" not in buf and "=" not in buf
+                   and i + 1 < len(lines) and lines[i + 1].strip() != ""
+                   and not lines[i + 1].strip().startswith("pub")):
                 i += 1
                 buf += " " + lines[i].strip()
-            core = re.sub(r"\s*\{.*$", "", buf)
+            core = re.sub(r"\s*\{.*$", "", buf)          # drop body
+            core = re.sub(r"\s*=\s*\S.*$", "", core)     # drop `= value`
             core = re.sub(r"^pub(?:\(all\))?\s+", "", core).strip()
             core = re.sub(r"\s+", " ", core).rstrip(",").rstrip()
             core = re.sub(r",\s*\)", ")", core)
@@ -78,7 +88,7 @@ def parse(path):
 
 def tint(sig):
     s = html.escape(sig)
-    s = re.sub(r"\b(fn|struct|enum|type|let|async)\b", r'<span class="k">\1</span>', s)
+    s = re.sub(r"\b(fn|struct|enum|type|let|trait|impl|async)\b", r'<span class="k">\1</span>', s)
     s = re.sub(r"\b([A-Z][A-Za-z0-9_]*)\b", r'<span class="ty">\1</span>', s)
     s = s.replace("-&gt;", '<span class="op">-&gt;</span>').replace("?", '<span class="op">?</span>')
     return s
@@ -89,180 +99,95 @@ def prose(t):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
 
 
-CSS = r"""
-:root{
-  --bg:#fbfbfd; --panel:#ffffff; --panel-2:#f6f7fb; --ink:#14181f;
-  --muted:#5b6675; --line:#e8ebf1; --accent:#6d5efc; --accent-soft:#efecff; --out:#0ca678;
-  --code-bg:#f4f5f9; --shadow:0 1px 2px rgba(20,24,31,.04),0 8px 24px -12px rgba(20,24,31,.10);
-}
-@media (prefers-color-scheme:dark){:root{
-  --bg:#0b0e14; --panel:#131722; --panel-2:#0f131c; --ink:#e9edf6; --muted:#96a1b5;
-  --line:#212736; --accent:#9d8bff; --accent-soft:#1c1b3a; --out:#2dd4a7;
-  --code-bg:#161b26; --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -14px rgba(0,0,0,.5);
-}}
-:root[data-theme=light]{--bg:#fbfbfd;--panel:#fff;--panel-2:#f6f7fb;--ink:#14181f;--muted:#5b6675;--line:#e8ebf1;--accent:#6d5efc;--accent-soft:#efecff;--out:#0ca678;--code-bg:#f4f5f9;--shadow:0 1px 2px rgba(20,24,31,.04),0 8px 24px -12px rgba(20,24,31,.10)}
-:root[data-theme=dark]{--bg:#0b0e14;--panel:#131722;--panel-2:#0f131c;--ink:#e9edf6;--muted:#96a1b5;--line:#212736;--accent:#9d8bff;--accent-soft:#1c1b3a;--out:#2dd4a7;--code-bg:#161b26;--shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px -14px rgba(0,0,0,.5)}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
-body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-  font-size:15.5px;line-height:1.6;-webkit-font-smoothing:antialiased}
-code,pre,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-a{color:var(--accent);text-decoration:none}
-a:hover{text-decoration:underline}
-.layout{display:grid;grid-template-columns:264px minmax(0,1fr);max-width:1180px;margin:0 auto}
-.sidebar{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
-  border-right:1px solid var(--line);padding:1.6rem 1.1rem 2rem;background:var(--panel-2)}
-.brand{display:flex;align-items:center;gap:.55rem;font-family:"IBM Plex Mono";font-weight:600;
-  font-size:1.35rem;letter-spacing:-.01em;color:var(--ink);margin-bottom:.15rem}
-.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
-.brand-sub{color:var(--muted);font-size:.8rem;margin:0 0 1.3rem;padding-left:.15rem}
-.side-nav{display:flex;flex-direction:column;gap:.1rem}
-.side-nav a{color:var(--muted);font-size:.9rem;padding:.32rem .6rem;border-radius:8px;
-  font-family:"IBM Plex Mono";display:flex;align-items:center;gap:.4rem;border-left:2px solid transparent}
-.side-nav a .at{color:var(--accent);opacity:.6}
-.side-nav a:hover{background:var(--accent-soft);color:var(--ink);text-decoration:none}
-.side-nav a.active{color:var(--ink);background:var(--accent-soft);border-left-color:var(--accent);font-weight:500}
-.side-nav a.active .at{opacity:1}
-.side-foot{margin-top:1.6rem;padding-top:1.1rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.4rem}
-.side-foot img{height:20px;display:block}
-.theme-btn{margin-top:1rem;background:none;border:1px solid var(--line);color:var(--muted);
-  border-radius:8px;padding:.35rem .6rem;font:inherit;font-size:.82rem;cursor:pointer;width:100%}
-.theme-btn:hover{border-color:var(--accent);color:var(--ink)}
-main{padding:2.6rem 2.4rem 5rem;min-width:0}
-.hero h1{font-family:"IBM Plex Mono";font-weight:600;font-size:2.9rem;letter-spacing:-.02em;margin:0}
-.hero .tag{color:var(--muted);font-size:1.12rem;max-width:62ch;margin:.5rem 0 1.1rem;text-wrap:balance}
-.badges{display:flex;flex-wrap:wrap;gap:.45rem;margin:0 0 1.4rem}
-.badges img{height:21px;display:block}
-.install{display:flex;align-items:center;gap:.6rem;background:var(--panel);border:1px solid var(--line);
-  border-radius:12px;padding:.65rem 1rem;box-shadow:var(--shadow);max-width:420px}
-.install .prompt{color:var(--out);user-select:none;font-weight:600}
-.install code{flex:1;font-size:.95rem}
-.copy{background:none;border:1px solid var(--line);border-radius:7px;color:var(--muted);
-  cursor:pointer;font:inherit;font-size:.72rem;padding:.2rem .5rem}
-.copy:hover{border-color:var(--accent);color:var(--accent)}
-.copy.ok{color:var(--out);border-color:var(--out)}
-.contract{margin:2.1rem 0 .5rem;background:
-   radial-gradient(120% 130% at 100% 0%, var(--accent-soft) 0%, transparent 55%), var(--panel);
-  border:1px solid var(--line);border-radius:16px;padding:1.2rem 1.4rem;box-shadow:var(--shadow)}
-.contract h2{margin:0 0 .6rem;font-size:1.06rem;display:flex;align-items:center;gap:.5rem}
-.contract h2 .spark{color:var(--accent)}
-.contract pre{margin:0;overflow-x:auto;font-size:.92rem;line-height:1.7}
-.contract .k{color:#8b5cf6;font-weight:500}.contract .ty{color:var(--accent)}.contract .op{color:var(--muted)}
-section.pkg{scroll-margin-top:1.2rem;padding-top:2.4rem;margin-top:2rem;border-top:1px solid var(--line)}
-section.pkg > h2{font-family:"IBM Plex Mono";font-size:1.55rem;margin:0 0 .15rem;letter-spacing:-.01em}
-section.pkg > h2 .at{color:var(--accent)}
-.pdesc{color:var(--muted);margin:.15rem 0 1.2rem;max-width:72ch}
-.item{background:var(--panel);border:1px solid var(--line);border-radius:13px;
-  padding:1rem 1.2rem;margin:.85rem 0;box-shadow:var(--shadow);transition:border-color .15s,transform .15s}
-.item:hover{border-color:color-mix(in oklab,var(--accent) 40%,var(--line))}
-.kind{display:inline-block;font-size:.66rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
-  border-radius:6px;padding:.1rem .45rem;margin-bottom:.55rem;
-  color:var(--accent);background:var(--accent-soft);border:1px solid color-mix(in oklab,var(--accent) 26%,transparent)}
-.item[data-k=struct] .kind{--c:#8b5cf6}.item[data-k=fn] .kind{--c:#0ca678}.item[data-k=let] .kind{--c:#2563eb}
-.item[data-k=enum] .kind{--c:#d6336c}.item[data-k=type] .kind{--c:#0891b2}
-.item .kind{color:var(--c,var(--accent));background:color-mix(in oklab,var(--c,var(--accent)) 13%,transparent);
-  border-color:color-mix(in oklab,var(--c,var(--accent)) 30%,transparent)}
-.sig{font-size:.98rem;margin:0 0 .55rem;overflow-x:auto;white-space:pre;color:var(--ink);padding-bottom:.15rem}
-.sig .k{color:#8b5cf6;font-weight:500}.sig .ty{color:var(--accent)}.sig .op{color:var(--muted)}
-@media (prefers-color-scheme:dark){.sig .k,.contract .k{color:#b794ff}}
-.doc{margin:0;color:var(--ink);max-width:76ch}
-.doc code{background:var(--code-bg);padding:.06rem .35rem;border-radius:5px;font-size:.9em;color:var(--accent)}
-footer{margin-top:3rem;padding-top:1.3rem;border-top:1px solid var(--line);color:var(--muted);font-size:.9rem}
-@media (max-width:820px){
-  .layout{grid-template-columns:1fr}
-  .sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}
-  .side-nav{flex-flow:row wrap}.side-nav a{border-left:none}.side-nav a.active{border-left:none}
-  main{padding:1.8rem 1.2rem 4rem}.hero h1{font-size:2.2rem}
-}
-"""
-
-JS = r"""
-document.addEventListener("DOMContentLoaded",()=>{
-  document.querySelectorAll("[data-copy]").forEach(btn=>btn.addEventListener("click",()=>{
-    navigator.clipboard.writeText(btn.getAttribute("data-copy")).then(()=>{
-      const t=btn.textContent;btn.textContent="copied";btn.classList.add("ok");
-      setTimeout(()=>{btn.textContent=t;btn.classList.remove("ok");},1100);});}));
-  const links=[...document.querySelectorAll(".side-nav a")];
-  const map=Object.fromEntries(links.map(a=>[a.getAttribute("href").slice(1),a]));
-  const spy=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
-    links.forEach(a=>a.classList.remove("active"));const a=map[e.target.id];if(a)a.classList.add("active");}});},
-    {rootMargin:"-10% 0px -80% 0px"});
-  document.querySelectorAll("section.pkg").forEach(s=>spy.observe(s));
-  const tb=document.getElementById("theme");if(tb)tb.addEventListener("click",()=>{
-    const cur=document.documentElement.getAttribute("data-theme")
-      ||(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
-    document.documentElement.setAttribute("data-theme",cur==="dark"?"light":"dark");});
-});
-"""
-
-CONTRACT = """let server = @net.GrpcServer::new()
-server.register("/greet.Greeter/SayHello", req => handle(req))   // (Bytes) -> Bytes
-server.serve()                    // listens on 12000
-
-// below serve: a pure engine, frames in and frames out, on every backend
-let engine = @moonrpc.H2Server::new()
-let out = engine.feed(frame)      // HEADERS + DATA + grpc-status trailers"""
-
-
-def esc(t):
-    return html.escape(t)
+NAV = (
+    '<nav class="topnav">'
+    '<a class="brand" href="index.html">'
+    '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true">'
+    '<rect x="3.5" y="3.5" width="25" height="25" style="stroke:var(--struct)" stroke-width="1.5"/>'
+    '<line x1="3.5" y1="3.5" x2="28.5" y2="28.5" style="stroke:var(--struct)" stroke-width="0.75" stroke-dasharray="2 2"/>'
+    '<line x1="28.5" y1="3.5" x2="3.5" y2="28.5" style="stroke:var(--struct)" stroke-width="0.75" stroke-dasharray="2 2"/>'
+    '<circle cx="16" cy="16" r="4" style="fill:var(--op)"/>'
+    '<circle cx="16" cy="16" r="7.5" style="stroke:var(--struct)" stroke-width="0.75"/>'
+    '<circle cx="8" cy="8" r="1.6" style="fill:var(--struct)"/>'
+    '<circle cx="24" cy="24" r="1.6" style="fill:var(--struct)"/>'
+    '<circle cx="24" cy="8" r="1.6" style="fill:var(--struct)"/>'
+    '<circle cx="8" cy="24" r="1.6" style="fill:var(--struct)"/>'
+    '</svg>moonrpc</a>'
+    '<div class="navlinks">'
+    '<a href="index.html">Home</a>'
+    '<a href="guide.html">Guide</a>'
+    '<a href="api.html" class="active">API</a>'
+    '<a href="showcase.html">Showcase</a>'
+    '<button class="nav-theme" data-theme-toggle aria-label="toggle theme">◐ theme</button>'
+    '<a class="gh" href="https://github.com/moonbitstack/moonrpc" rel="noopener">'
+    '<svg viewBox="0 0 16 16" aria-hidden="true" style="fill:currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
+    'GitHub</a>'
+    '</div></nav>'
+)
 
 
 def main():
-    HEAD = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<title>moonrpc — MoonBit gRPC API</title>'
+    HEAD = ('<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<title>moonrpc — API reference</title>'
+            '<meta name="description" content="The complete moonrpc API, generated from source: '
+            'wire, proto, stream, balance, client, server, service and the native net layer.">'
+            '<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">'
             '<link rel="preconnect" href="https://fonts.googleapis.com">'
             '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
             '<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&'
-            'family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">'
-            '<style>' + CSS + '</style></head><body>')
+            'family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Caveat:wght@500;600&display=swap" rel="stylesheet">'
+            '<link rel="stylesheet" href="assets/site.css">'
+            '<script>try{var t=localStorage.getItem("moonrpc-theme");document.documentElement'
+            '.setAttribute("data-theme",(t==="dark"?"dark":"light"));}catch(e){document'
+            '.documentElement.setAttribute("data-theme","light");}</script>'
+            '</head><body class="api-page">')
 
-    side = ['<aside class="sidebar"><div class="brand"><span class="dot"></span>moonrpc</div>'
-            '<p class="brand-sub">MoonBit gRPC — API reference</p><nav class="side-nav">']
+    side = [NAV, '<div class="layout"><aside class="sidebar">'
+            '<div class="brand">moonrpc</div>'
+            '<p class="brand-sub">MoonBit gRPC — API reference</p>'
+            '<nav class="side-nav" id="section-spy">']
     side += ['<a href="#%s"><span class="at">§</span>%s</a>' % (sid, title)
              for sid, _, title, _ in SECTIONS]
     side += ['</nav>'
-             '<button class="theme-btn" id="theme">◐ toggle theme</button>'
              '<div class="side-foot">'
-             '<a href="https://github.com/moonbitstack/moonrpc/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/moonbitstack/moonrpc/ci.yml?branch=master&label=CI&logo=github"></a>'
-             '<a href="https://mooncakes.io/docs/moonbitstack/moonrpc"><img alt="mooncakes" src="https://img.shields.io/badge/mooncakes-moonbitstack%2Fmoonrpc-1f6feb"></a>'
-             '</div></aside>']
+             '<a href="https://github.com/moonbitstack/moonrpc" rel="noopener">'
+             '<svg viewBox="0 0 16 16" aria-hidden="true" style="fill:currentColor;width:18px;height:18px"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
+             '</a></div></aside>']
 
-    hero = ('<main><header class="hero"><h1>moonrpc</h1>'
-            '<p class="tag">Real gRPC for MoonBit, not gRPC-Web: all four call kinds over HTTP/2 '
-            '(RFC 9113) with HPACK (RFC 7541). The protocol engines are pure and run on every '
-            'backend; the socket driver is native.</p>'
-            '<div class="badges">'
-            '<a href="https://github.com/moonbitstack/moonrpc/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/moonbitstack/moonrpc/ci.yml?branch=master&label=CI&logo=github"></a>'
-            '<a href="https://github.com/moonbitstack/moonrpc"><img alt="GitHub" src="https://img.shields.io/badge/GitHub-source-24292f?logo=github"></a>'
-            '<img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-6d5efc"></div>'
-            '<div class="install"><span class="prompt">$</span><code>moon add moonbitstack/moonrpc</code>'
+    hero = ('<main><header class="hero">'
+            '<div class="eyebrow">API reference</div>'
+            '<h1>Every public item, in layer order.</h1>'
+            '<p class="tag">Generated from the source `///` doc-comments — it cannot drift '
+            'from the code. The protocol engines are pure; the socket driver is native.</p>'
+            '<div class="install"><span class="prompt">$</span>'
+            '<code>moon add moonbitstack/moonrpc</code>'
             '<button class="copy" data-copy="moon add moonbitstack/moonrpc">copy</button></div>'
-            '<div class="contract"><h2><span class="spark">&#10038;</span> The contract at a glance</h2>'
-            '<pre>' + tint(CONTRACT) + '</pre></div></header>')
+            '</header>')
 
-    body = [HEAD, '<div class="layout">'] + side + [hero]
+    body = [HEAD] + side + [hero]
     total = 0
     for sid, rel, title, desc in SECTIONS:
         body.append('<section class="pkg" id="%s"><h2><span class="at">§</span>%s</h2>'
-                    '<p class="pdesc">%s</p>' % (sid, title, esc(desc)))
+                    '<p class="pdesc">%s</p>' % (sid, title, html.escape(desc)))
         files = sorted(f for f in (ROOT / "src" / rel).glob("*.mbt")
                        if not f.stem.endswith(("_test", "_wbtest")))
         for kind, sig, doc in [it for f in files for it in parse(f)]:
             total += 1
             body.append('<div class="item" data-k="%s"><span class="kind">%s</span>'
                         '<pre class="sig">%s</pre>%s</div>'
-                        % (kind, kind, tint(sig), ('<p class="doc">%s</p>' % prose(doc)) if doc else ''))
+                        % (kind, kind, tint(sig),
+                           ('<p class="doc">%s</p>' % prose(doc)) if doc else ''))
         body.append('</section>')
-    body.append('<footer>Generated from source <code>///</code> doc-comments · '
-                '<a href="https://mooncakes.io/docs/moonbitstack/moonrpc">mooncakes</a> · '
-                '<a href="https://github.com/moonbitstack/moonrpc">GitHub</a> · Apache-2.0 &#169; Leo Cheng</footer>')
-    body.append('</main></div><script>' + JS + '</script></body></html>')
+    body.append('<footer><div class="wrap">'
+                '<p><b>moonrpc</b> · MoonBit gRPC library · '
+                '<a href="https://github.com/moonbitstack/moonrpc" rel="noopener">'
+                'github.com/moonbitstack/moonrpc</a></p>'
+                '<p class="note">Generated from source — not hand-written, so it stays honest.</p>'
+                '</div></footer>')
+    body.append('</main></div><script src="assets/site.js"></script></body></html>')
 
-    out = ROOT / "docs" / "index.html"
+    out = ROOT / "docs" / "api.html"
     out.parent.mkdir(exist_ok=True)
     out.write_text("\n".join(body), encoding="utf-8")
     print("wrote %s (%d public items across %d sections)" % (out, total, len(SECTIONS)))

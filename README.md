@@ -39,6 +39,38 @@ server.serve()             // listens on 12000
 
 The handler sees the call's `RpcContext`: the request metadata, the `grpc-timeout` deadline in milliseconds, and slots for response initial and trailing metadata.
 
+**Documentation:** the [five-piece doc site](docs/index.html) — a home page, a [guide](docs/guide.html), the full [API reference](docs/api.html), and a [live in-browser showcase](docs/showcase.html) that runs the real engine.
+
+## The four call kinds
+
+gRPC defines four shapes of a call. moonrpc implements all of them as the same frame machinery — only how many messages each side sends differs. Register the one that matches your handler, or let `#rpc` infer it from the method's type.
+
+| Call kind | How to register | Handler shape | Typed wrapper |
+|:--|:--|:--|:--|
+| Unary | `server.register(path, (Bytes) -> Bytes)` | one request, one reply | `@moonrpc.unary` |
+| Server streaming | `server.register_server_streaming(path, (ctx, req) -> Array[Bytes])` | one request, many replies | `@moonrpc.server_streaming` |
+| Client streaming | `server.register_client_streaming(path, (ctx, msgs) -> Bytes)` | many requests, one reply | `@moonrpc.client_streaming` |
+| Bidi streaming | `server.register_bidi(path, ctx => BidiHandler::{ on_message: m => [...], on_end: () => [...] })` | many both ways | `BidiHandler` |
+
+```moonbit
+// unary: one request, one reply.
+server.register("/greet.Greeter/SayHello", req => handle(req))
+
+// server-streaming: one request, an ordered run of replies.
+server.register_server_streaming("/count.C/Up", (ctx, req) => [
+  first(req), second(req), third(req),
+])
+
+// client-streaming: many requests collected, one reply.
+server.register_client_streaming("/sum.S/Add", (ctx, msgs) => fold(msgs))
+
+// bidi: each request answered as it arrives, a farewell at half-close.
+server.register_bidi("/chat.C/Echo", ctx => @moonrpc.BidiHandler::{
+  on_message: m => [reply_to(m)],
+  on_end: () => [b"bye"],
+})
+```
+
 ## Packages
 
 Each layer is its own subpackage, so a program links the layers it uses and no others. The root re-exports all of them, so `@moonrpc.H2Server` and `@moonrpc.encode_message` work as they always did.

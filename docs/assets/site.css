@@ -1,0 +1,254 @@
+/* moonrpc documentation — a breathing engineering blueprint.
+   Light "晒图纸" (blueprint paper) and dark "夜图纸" (night blueprint) are the
+   same design language under two lights: the semantic colour map, the tokens and
+   the 0-radius grid never change; only the ground and the line brightness do. */
+
+:root{
+  --paper:#F4F1E8; --paper-2:#FBF9F2; --panel:#FFFFFF; --panel-2:#F1EDE2;
+  --ink:#1B2430; --ink-2:#33414F; --muted:#5B6675; --faint:#8A93A1;
+  --line:rgba(27,58,92,.16); --line-strong:rgba(27,58,92,.32);
+  --grid:rgba(27,58,92,.05);
+  --struct:#1B3A5C;          /* structure / contract — ink blue */
+  --op:#E8541E;              /* operation / pointer — engineering orange */
+  --ok:#0F8C7E;              /* communication health · OK — teal */
+  --warn:#C9761A;            /* communication health · high latency */
+  --bad:#C8324E;             /* communication health · breaker */
+  --violet:#6B5BD6; --cyan:#2A8FA0; --amber:#B8860B; --slate:#5B6675;
+  --code-bg:#F1EDE2; --shadow:0 1px 2px rgba(27,36,48,.05),0 10px 30px -16px rgba(27,36,48,.18);
+  --maxw:1180px;
+}
+[data-theme="dark"]{
+  --paper:#0A0E1A; --paper-2:#0E1424; --panel:#101725; --panel-2:#0C1120;
+  --ink:#E8EDF5; --ink-2:#C2CDDD; --muted:#93A0B5; --faint:#6B7689;
+  --line:rgba(169,196,224,.16); --line-strong:rgba(169,196,224,.30);
+  --grid:rgba(169,196,224,.05);
+  --struct:#A9C4E0;
+  --op:#FF7A3D;
+  --ok:#3BE8D4;
+  --warn:#FF9A3C;
+  --bad:#FF4D6D;
+  --violet:#9D8BFF; --cyan:#5CC8D8; --amber:#E0A93C; --slate:#8A93A1;
+  --code-bg:#0C1220; --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px -18px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth; background:var(--paper);
+  /* faint blueprint grid, light or dark */
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:50px 50px,50px 50px;
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{margin:0;color:var(--ink);
+  font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:15px;line-height:1.62;-webkit-font-smoothing:antialiased;
+  font-variant-ligatures:no-contextual;}
+h1,h2,h3,h4{font-family:"Newsreader",Georgia,"Times New Roman",serif;
+  font-weight:600;line-height:1.18;letter-spacing:-.01em;color:var(--ink)}
+p{color:var(--ink-2)}
+a{color:var(--struct);text-decoration:none}
+a:hover{text-decoration:underline}
+code,pre,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-ligatures:no-contextual;}
+code{background:var(--code-bg);padding:.08em .38em;border:1px solid var(--line);border-radius:0;font-size:.9em}
+pre{background:var(--code-bg);border:1px solid var(--line);border-radius:0;padding:1rem 1.1rem;
+  overflow-x:auto;font-size:.86rem;line-height:1.55;margin:0}
+pre code{background:none;border:none;padding:0;font-size:inherit}
+.annotation{font-family:"Caveat",cursive;color:var(--op);font-size:1.15rem}
+
+/* ---- top navigation (present on every page) ---- */
+.topnav{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:1.2rem;
+  padding:.7rem clamp(1rem,4vw,2.2rem);background:color-mix(in srgb,var(--paper) 88%,transparent);
+  border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
+.brand{display:flex;align-items:center;gap:.55rem;font-weight:600;font-size:1.15rem;color:var(--ink);letter-spacing:-.01em}
+.brand svg{width:22px;height:22px;flex:none}
+.navlinks{margin-left:auto;display:flex;align-items:center;gap:.2rem;flex-wrap:wrap}
+.navlinks a{padding:.4rem .7rem;color:var(--muted);font-size:.85rem;border-radius:0;
+  border-bottom:2px solid transparent}
+.navlinks a:hover{color:var(--ink);text-decoration:none}
+.navlinks a.active{color:var(--op);border-bottom-color:var(--op)}
+.navlinks a.gh{display:inline-flex;align-items:center;gap:.35rem;color:var(--muted)}
+.navlinks a.gh svg{width:17px;height:17px}
+.navlinks .nav-theme{margin-left:.5rem;background:none;border:1px solid var(--line);color:var(--muted);
+  border-radius:0;padding:.4rem .6rem;font:inherit;font-size:.78rem;cursor:pointer}
+.navlinks .nav-theme:hover{border-color:var(--op);color:var(--ink)}
+
+/* ---- generic layout ---- */
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(1rem,4vw,2.2rem)}
+.section{padding:3rem 0;border-top:1px solid var(--line)}
+.section:first-of-type{border-top:none}
+.lede{color:var(--muted);max-width:68ch;font-size:1.02rem}
+h2.h{font-size:1.9rem;margin:.2rem 0 .4rem}
+.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.16em;color:var(--op);font-weight:600}
+
+/* ---- grid of feature cards (0 radius, hairline) ---- */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(0,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);margin-top:1.4rem}
+.card{background:var(--panel);padding:1.2rem 1.25rem;min-width:0}
+.card h3{margin:.1rem 0 .5rem;font-size:1.15rem}
+.card p{margin:0;color:var(--muted);font-size:.9rem}
+.card .ix{font-family:"Newsreader",serif;font-size:1.6rem;color:var(--struct);display:block;margin-bottom:.3rem}
+.card .lead{color:var(--op);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase}
+
+/* ---- layered architecture diagram (SVG, blueprint) ---- */
+.diagram{margin:1.4rem 0;border:1px solid var(--line);background:var(--panel);padding:1.4rem}
+.diagram svg{width:100%;height:auto;display:block}
+
+/* ---- frame ledger (homepage + showcase) ---- */
+.frames{border:1px solid var(--line);background:var(--panel);margin-top:1rem;font-size:.84rem}
+.frame-row{display:grid;grid-template-columns:64px 120px minmax(0,1fr) auto;gap:.6rem;align-items:center;
+  padding:.5rem .8rem;border-bottom:1px solid var(--line)}
+.frame-row:last-child{border-bottom:none}
+.frame-row .dir{font-weight:600;color:var(--muted)}
+.frame-row .dir.cs{color:var(--struct)}
+.frame-row .dir.sc{color:var(--ok)}
+.dot{display:inline-block;width:9px;height:9px;margin-right:.5rem;flex:none;background:var(--slate)}
+.dot.headers{background:var(--struct)} .dot.data{background:var(--ok)} .dot.settings{background:var(--slate)}
+.dot.priority{background:var(--violet)} .dot.rst{background:var(--bad)} .dot.ping{background:var(--amber)}
+.dot.window{background:var(--cyan)} .dot.goaway{background:var(--bad)} .dot.continuation{background:var(--struct)}
+.dot.push{background:var(--violet)}
+.ftype{font-weight:600;color:var(--ink)}
+.frame-row .hex{color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem}
+.frame-row .es{color:var(--op);font-size:.7rem;letter-spacing:.06em}
+.frame-row.trailers{background:color-mix(in srgb,var(--op) 8%,transparent)}
+.frame-summary{display:flex;flex-wrap:wrap;gap:1.2rem;margin-top:1rem;font-size:.9rem}
+.frame-summary b{color:var(--ink)}
+.kv{color:var(--muted)}
+.kv b{color:var(--struct)}
+
+/* ---- architecture blueprint (homepage) ---- */
+.arch{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)}
+.arch-layer{display:grid;gap:1px;background:var(--line)}
+.arch-layer.engines{grid-template-columns:1fr 1fr}
+.arch-box{background:var(--panel);padding:1.1rem 1.2rem;min-height:64px;display:flex;flex-direction:column;justify-content:center;gap:.2rem;position:relative}
+.arch-box .t{font-family:"Newsreader",serif;font-size:1.15rem;color:var(--ink)}
+.arch-box small{color:var(--muted);font-size:.78rem}
+.arch-box .tag{position:absolute;top:.5rem;right:.6rem;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase}
+.arch-box.struct{border-left:3px solid var(--struct)}
+.arch-box.pure{border-left:3px solid var(--ok)}
+.arch-box.native{border-left:3px solid var(--op)}
+.arch-box .tag.struct{color:var(--struct)} .arch-box .tag.pure{color:var(--ok)} .arch-box .tag.native{color:var(--op)}
+.arch-arrow{margin:.25rem 0 .25rem 2px;color:var(--muted);font-size:.78rem;display:flex;align-items:center;gap:.5rem}
+.arch-arrow .line{flex:1;height:1px;background:repeating-linear-gradient(90deg,var(--line-strong) 0 6px,transparent 6px 12px)}
+.fdesc{color:var(--muted);font-size:.78rem;margin-top:.18rem;line-height:1.45}
+.flow{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.9rem}
+.flow .chip{font-size:.74rem;color:var(--muted);border:1px solid var(--line);padding:.2rem .55rem}
+.flow .chip b{color:var(--struct)}
+
+/* ---- showcase controls ---- */
+.panel{border:1px solid var(--line);background:var(--panel);padding:1.3rem;margin-top:1rem}
+.panel h3{margin:.1rem 0 1rem;font-family:"IBM Plex Mono";font-size:1rem;color:var(--struct)}
+.field{display:grid;grid-template-columns:120px minmax(0,1fr);gap:.6rem;align-items:center;margin-bottom:.7rem}
+.field label{color:var(--muted);font-size:.85rem}
+input,select,textarea{font:inherit;font-size:.9rem;color:var(--ink);background:var(--code-bg);
+  border:1px solid var(--line);border-radius:0;padding:.45rem .6rem;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--op)}
+.btn{font:inherit;font-size:.85rem;cursor:pointer;background:var(--struct);color:#fff;border:1px solid var(--struct);
+  border-radius:0;padding:.5rem 1rem;letter-spacing:.02em}
+.btn:hover{background:var(--op);border-color:var(--op)}
+.btn.ghost{background:none;color:var(--struct);border-color:var(--line)}
+.seg{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line)}
+.seg button{font:inherit;font-size:.82rem;cursor:pointer;background:var(--panel);color:var(--muted);
+  border:none;padding:.5rem .9rem;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--op);color:#fff}
+.hexout{font-size:.9rem;word-break:break-all;color:var(--struct);background:var(--code-bg);
+  border:1px solid var(--line);padding:.8rem;margin-top:.8rem;line-height:1.7}
+.fieldtbl{width:100%;border-collapse:collapse;margin-top:.8rem;font-size:.84rem}
+.fieldtbl th,.fieldtbl td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
+.fieldtbl th{background:var(--panel-2);color:var(--muted);font-weight:600}
+.fieldtbl td.mono{color:var(--struct)}
+.note{font-size:.78rem;color:var(--faint);margin-top:.6rem;display:flex;align-items:center;gap:.4rem}
+.note .src{width:7px;height:7px;background:var(--ok);flex:none}
+
+/* ---- showcase layout ---- */
+.show-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;margin-top:1.4rem;align-items:start}
+@media (max-width:860px){.show-grid{grid-template-columns:1fr}}
+.statusline{display:flex;flex-wrap:wrap;gap:1.1rem;margin-top:1rem;font-size:.9rem;align-items:center}
+.statusline .badge{font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;padding:.2rem .55rem;border:1px solid var(--line)}
+.statusline .badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.statusline .badge.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.statusline .badge.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+.reply{font-size:.84rem;margin-top:.5rem}
+.reply .rh{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:.3rem}
+.reply code{display:block;word-break:break-all;margin-bottom:.4rem}
+.engine-warn{display:none;margin-top:1rem;padding:.8rem 1rem;border:1px solid var(--bad);color:var(--bad);font-size:.85rem}
+.engine-warn.show{display:block}
+
+/* ---- API reference (generated) ---- */
+body.api-page .sidebar{top:54px;height:calc(100vh - 54px)}
+.layout{display:grid;grid-template-columns:248px minmax(0,1fr);max-width:var(--maxw);margin:0 auto}
+.sidebar{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+  border-right:1px solid var(--line);padding:1.6rem 1.1rem 2rem;background:var(--panel-2)}
+.sidebar .brand{font-size:1.2rem;margin-bottom:.2rem}
+.sidebar .brand-sub{color:var(--muted);font-size:.78rem;margin:0 0 1.1rem}
+.side-nav{display:flex;flex-direction:column;gap:.05rem}
+.side-nav a{color:var(--muted);font-size:.86rem;padding:.3rem .55rem;border-left:2px solid transparent}
+.side-nav a:hover{background:color-mix(in srgb,var(--struct) 10%,transparent);color:var(--ink);text-decoration:none}
+.side-nav a.active{color:var(--op);border-left-color:var(--op);font-weight:500}
+.side-foot{margin-top:1.4rem;padding-top:1rem;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:.4rem}
+.side-foot img{height:20px}
+.theme-btn{margin-top:.9rem;background:none;border:1px solid var(--line);color:var(--muted);
+  border-radius:0;padding:.35rem .6rem;font:inherit;font-size:.8rem;cursor:pointer;width:100%}
+.theme-btn:hover{border-color:var(--op);color:var(--ink)}
+main{padding:2.4rem clamp(1rem,3vw,2.2rem) 5rem;min-width:0}
+.hero h1{font-size:2.6rem;margin:0}
+.hero .tag{color:var(--muted);font-size:1.05rem;max-width:62ch;margin:.5rem 0 1rem}
+.install{display:flex;align-items:center;gap:.6rem;background:var(--panel);border:1px solid var(--line);
+  padding:.6rem 1rem;max-width:420px;margin-bottom:1.4rem}
+.install .prompt{color:var(--ok);font-weight:600}
+.install code{flex:1;border:none;background:none;padding:0}
+.copy{background:none;border:1px solid var(--line);color:var(--muted);cursor:pointer;font:inherit;
+  font-size:.72rem;padding:.2rem .5rem}
+.copy:hover{border-color:var(--op);color:var(--op)}
+.copy.ok{color:var(--ok);border-color:var(--ok)}
+section.pkg{scroll-margin-top:1rem;padding-top:2rem;margin-top:1.6rem;border-top:1px solid var(--line)}
+section.pkg>h2{font-family:"IBM Plex Mono";font-size:1.5rem;margin:0 0 .1rem}
+.pdesc{color:var(--muted);margin:.1rem 0 1rem;max-width:72ch}
+.item{background:var(--panel);border:1px solid var(--line);padding:1rem 1.15rem;margin:.8rem 0}
+.kind{display:inline-block;font-size:.64rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;
+  padding:.1rem .45rem;margin-bottom:.5rem;color:var(--struct);
+  background:color-mix(in srgb,var(--struct) 12%,transparent);border:1px solid color-mix(in srgb,var(--struct) 28%,transparent)}
+.item[data-k=struct] .kind{color:var(--violet);background:color-mix(in srgb,var(--violet) 12%,transparent);border-color:color-mix(in srgb,var(--violet) 28%,transparent)}
+.item[data-k=fn] .kind{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent);border-color:color-mix(in srgb,var(--ok) 28%,transparent)}
+.item[data-k=let] .kind{color:var(--cyan);background:color-mix(in srgb,var(--cyan) 12%,transparent);border-color:color-mix(in srgb,var(--cyan) 28%,transparent)}
+.item[data-k=enum] .kind{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent);border-color:color-mix(in srgb,var(--bad) 28%,transparent)}
+.sig{font-size:.92rem;margin:0 0 .5rem;overflow-x:auto;white-space:pre;color:var(--ink);padding-bottom:.1rem;
+  font-family:"IBM Plex Mono",ui-monospace,monospace}
+.sig .k{color:var(--violet);font-weight:500}.sig .ty{color:var(--struct)}.sig .op{color:var(--muted)}
+.doc{margin:0;color:var(--ink-2);max-width:76ch}
+.doc code{background:var(--code-bg)}
+
+/* ---- footer ---- */
+footer{border-top:1px solid var(--line);margin-top:2rem;padding:1.6rem 0;color:var(--muted);font-size:.85rem}
+footer a{color:var(--struct)}
+
+/* ---- custom scrollbars: hidden thumb at top, visible on scroll (docs.md) ---- */
+@supports selector(::-webkit-scrollbar){
+  html::-webkit-scrollbar{width:10px;height:10px}
+  html::-webkit-scrollbar-track{background:transparent}
+  html::-webkit-scrollbar-thumb{border-radius:99px;border:3px solid transparent;background-clip:content-box;
+    background-color:color-mix(in srgb,var(--ink) 24%,transparent)}
+  html.at-top::-webkit-scrollbar-thumb{background-color:transparent}
+  .sidebar::-webkit-scrollbar{width:8px;height:8px}
+  .sidebar::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink) 22%,transparent)}
+  pre::-webkit-scrollbar{height:8px;width:8px}
+  pre::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink) 24%,transparent);border-radius:99px}
+}
+@supports not selector(::-webkit-scrollbar){
+  html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 26%,transparent) transparent}
+  html.at-top{scrollbar-color:transparent transparent}
+}
+
+/* ---- responsive: no horizontal scroll at 390px ---- */
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}
+  .side-nav{flex-flow:row wrap}.side-nav a{border-left:none}
+  main{padding:1.6rem 1.1rem 4rem}
+  .hero h1{font-size:2rem}
+  .frame-row{grid-template-columns:48px 96px minmax(0,1fr);}
+  .frame-row .es{grid-column:1/-1}
+  .field{grid-template-columns:1fr}
+}

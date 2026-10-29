@@ -1,0 +1,13 @@
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonhttp/http2",
+}
+
+pkgtype(kind: "executable")
+
+// JS-only: the package uses `extern "js"` to expose its demo functions to the
+// documentation page, so it must not be built for the native/wasm backends.
+
+supported_targets = "js"

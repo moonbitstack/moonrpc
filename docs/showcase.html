@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moonrpc — Showcase</title>
+<meta name="description" content="Run the real moonrpc engine in your browser: encode protobuf messages and trace every HTTP/2 frame of each gRPC call kind.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Caveat:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
+<script>try{var t=localStorage.getItem("moonrpc-theme");document.documentElement.setAttribute("data-theme",(t==="dark"?"dark":"light"));}catch(e){document.documentElement.setAttribute("data-theme","light");}</script>
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="index.html">
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="25" height="25" style="stroke:var(--struct)" stroke-width="1.5"/>
+      <line x1="3.5" y1="3.5" x2="28.5" y2="28.5" style="stroke:var(--struct)" stroke-width="0.75" stroke-dasharray="2 2"/>
+      <line x1="28.5" y1="3.5" x2="3.5" y2="28.5" style="stroke:var(--struct)" stroke-width="0.75" stroke-dasharray="2 2"/>
+      <circle cx="16" cy="16" r="4" style="fill:var(--op)"/>
+      <circle cx="16" cy="16" r="7.5" style="stroke:var(--struct)" stroke-width="0.75"/>
+      <circle cx="8" cy="8" r="1.6" style="fill:var(--struct)"/>
+      <circle cx="24" cy="24" r="1.6" style="fill:var(--struct)"/>
+      <circle cx="24" cy="8" r="1.6" style="fill:var(--struct)"/>
+      <circle cx="8" cy="24" r="1.6" style="fill:var(--struct)"/>
+    </svg>
+    moonrpc
+  </a>
+  <div class="navlinks">
+    <a href="index.html">Home</a>
+    <a href="guide.html">Guide</a>
+    <a href="api.html">API</a>
+    <a href="showcase.html" class="active">Showcase</a>
+    <button class="nav-theme" data-theme-toggle aria-label="toggle theme">◐ theme</button>
+    <a class="gh" href="https://github.com/moonbitstack/moonrpc" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true" style="fill:currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<header class="section wrap hero">
+  <div class="eyebrow">live showcase</div>
+  <h1>The engine, in your browser tab</h1>
+  <p class="tag">This page loads the real moonrpc library, compiled to JavaScript — the same <code>H2Client</code> and <code>H2Server</code> from the homepage, running in memory, no server. Encode a message, pick a call kind, and read back every frame the two engines trade.</p>
+  <div class="engine-warn" id="engineWarn">The compiled engine (docs/engine/moonrpc.js) did not load. Build it with <code>moon build --target js ./src/examples/browser/moonrpc-demo</code> and refresh.</div>
+</header>
+
+<div class="wrap">
+  <div class="show-grid">
+
+    <!-- encode panel -->
+    <div class="panel">
+      <h3>① Encode a message</h3>
+      <p class="lede" style="color:var(--muted);font-size:.85rem;margin:.2rem 0 1rem">Fill the fields of a <code>Greet</code> message. The library packs it with its protobuf codec and shows the bytes, per field.</p>
+      <div class="field"><label for="f-name">name</label><input id="f-name" value="alice"></div>
+      <div class="field"><label for="f-count">count</label><input id="f-count" value="3" inputmode="numeric"></div>
+      <div class="field"><label for="f-blob">blob (hex)</label><input id="f-blob" value="deadbeef" placeholder="e.g. deadbeef"></div>
+      <div class="field"><label for="f-tags">tags (csv)</label><input id="f-tags" value="a,b" placeholder="comma separated"></div>
+      <button class="btn" id="encodeBtn">Encode → protobuf</button>
+      <div class="hexout" id="encHex" style="display:none"></div>
+      <table class="fieldtbl" id="encTbl" style="display:none">
+        <thead><tr><th>#</th><th>wire type</th><th>tag</th><th>name</th><th>value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- run panel -->
+    <div class="panel">
+      <h3>② Run a call</h3>
+      <p class="lede" style="color:var(--muted);font-size:.85rem;margin:.2rem 0 1rem">Drive the in-memory client and server engines. Every frame, in time order.</p>
+      <div class="seg" id="kindSeg">
+        <button data-kind="unary" class="on">unary</button>
+        <button data-kind="server">server</button>
+        <button data-kind="client">client</button>
+        <button data-kind="bidi">bidi</button>
+        <button data-kind="error">error</button>
+      </div>
+      <button class="btn" id="runBtn" style="margin-top:1rem">Run call</button>
+      <div class="statusline" id="statusLine" style="display:none"></div>
+      <div class="frames" id="frameList" style="display:none;margin-top:1rem"></div>
+      <div class="reply" id="replyBox" style="display:none"></div>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><b>moonrpc</b> · MoonBit gRPC library · <a href="https://github.com/moonbitstack/moonrpc" rel="noopener">github.com/moonbitstack/moonrpc</a></p>
+    <p class="note">All output on this page is produced by the real engine compiled to JS, not a scripted mock.</p>
+  </div>
+</footer>
+
+<script src="engine/moonrpc.js"></script>
+<script>
+(function(){
+  "use strict";
+  var hasEngine = (typeof globalThis.moonrpcRun === "function" && typeof globalThis.moonrpcEncodeMessage === "function");
+  if(!hasEngine){ document.getElementById("engineWarn").classList.add("show"); return; }
+
+  var FRAME = {
+    0:["DATA","data"], 1:["HEADERS","headers"], 2:["PRIORITY","priority"], 3:["RST_STREAM","rst"],
+    4:["SETTINGS","settings"], 5:["PING","ping"], 6:["GOAWAY","goaway"], 7:["WINDOW_UPDATE","window"],
+    8:["CONTINUATION","continuation"], 9:["PUSH_PROMISE","push"]
+  };
+
+  // ---- encode ----
+  function doEncode(){
+    var arg = [document.getElementById("f-name").value,
+              document.getElementById("f-count").value,
+              document.getElementById("f-blob").value,
+              document.getElementById("f-tags").value].join("|");
+    var out;
+    try { out = JSON.parse(globalThis.moonrpcEncodeMessage(arg)); }
+    catch(e){ alert("encode failed: " + e); return; }
+    var hex = document.getElementById("encHex");
+    hex.style.display = "block";
+    hex.textContent = out.hex;
+    var tb = document.getElementById("encTbl");
+    var tbody = tb.querySelector("tbody");
+    tbody.innerHTML = "";
+    out.fields.forEach(function(f){
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td class='mono'>"+f.f+"</td><td>"+f.wire+"</td><td class='mono'>0x"+f.tag.toString(16)+"</td><td class='mono'>"+escapeHtml(f.name)+"</td><td class='mono'>"+escapeHtml(String(f.value))+"</td>";
+      tbody.appendChild(tr);
+    });
+    tb.style.display = "table";
+  }
+  document.getElementById("encodeBtn").addEventListener("click", doEncode);
+
+  // ---- run ----
+  var currentKind = "unary";
+  var seg = document.getElementById("kindSeg");
+  seg.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-kind]"); if(!b) return;
+    currentKind = b.getAttribute("data-kind");
+    Array.prototype.forEach.call(seg.children, function(c){ c.classList.toggle("on", c === b); });
+  });
+
+  function doRun(){
+    var out;
+    try { out = JSON.parse(globalThis.moonrpcRun(currentKind)); }
+    catch(e){ alert("run failed: " + e); return; }
+    renderRun(out);
+  }
+  document.getElementById("runBtn").addEventListener("click", doRun);
+
+  function renderRun(out){
+    var list = document.getElementById("frameList");
+    list.style.display = "block";
+    list.innerHTML = "";
+    (out.frames || []).forEach(function(fr){
+      var meta = FRAME[fr.c] || ["FRAME_"+fr.c, "settings"];
+      var dirCls = fr.d === "C" ? "cs" : "sc";
+      var dirTxt = fr.d === "C" ? "C → S" : "S → C";
+      var isTrailer = (fr.c === 1 && fr.es === true);
+      var row = document.createElement("div");
+      row.className = "frame-row" + (isTrailer ? " trailers" : "");
+      var es = fr.es ? "END_STREAM" : ("stream " + fr.s);
+      row.innerHTML =
+        "<div class='dir "+dirCls+"'>"+dirTxt+"</div>"+
+        "<div><span class='dot "+meta[1]+"'></span><span class='ftype'>"+meta[0]+"</span></div>"+
+        "<div><div class='hex'>"+escapeHtml(fr.h)+"</div></div>"+
+        "<div class='es'>"+es+"</div>";
+      list.appendChild(row);
+    });
+
+    var sl = document.getElementById("statusLine");
+    sl.style.display = "flex";
+    sl.innerHTML = "";
+    var st = out.grpc_status;
+    var cls = (st === 0) ? "ok" : (st === 5 ? "warn" : "bad");
+    sl.appendChild(badge("grpc-status: " + st, cls));
+    if(out.grpc_message){ sl.appendChild(badge("msg: " + out.grpc_message, cls)); }
+    sl.appendChild(badge(out.frames.length + " frames", ""));
+
+    var rb = document.getElementById("replyBox");
+    rb.style.display = (out.replies && out.replies.length) ? "block" : "none";
+    if(out.replies && out.replies.length){
+      var html = "<div class='rh'>replies (" + out.replies.length + ")</div>";
+      out.replies.forEach(function(r, i){
+        html += "<code>#" + (i+1) + "  " + bytesToHex(r) + "</code>";
+      });
+      rb.innerHTML = html;
+    }
+  }
+
+  function badge(text, cls){
+    var b = document.createElement("span");
+    b.className = "badge " + cls;
+    b.textContent = text;
+    return b;
+  }
+  function bytesToHex(str){
+    var s = "";
+    for(var i=0;i<str.length;i++){ s += ("0"+str.charCodeAt(i).toString(16)).slice(-2); }
+    return s;
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];
+    });
+  }
+
+  // auto-run from hash (#unary, #server, #client, #bidi, #error)
+  var h = (location.hash || "").replace("#","");
+  if(h && FRAME && ["unary","server","client","bidi","error"].indexOf(h) >= 0){
+    currentKind = h;
+    Array.prototype.forEach.call(seg.children, function(c){
+      c.classList.toggle("on", c.getAttribute("data-kind") === h);
+    });
+  }
+  doRun();
+})();
+</script>
+<script src="assets/site.js"></script>
+</body>
+</html>

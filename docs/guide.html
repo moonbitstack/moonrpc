@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moonrpc — Guide</title>
+<meta name="description" content="A progressive guide to moonrpc: define messages, handle the four gRPC call kinds, and run the pure client/server engines in memory or over a real socket.">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Caveat:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css">
+<script>try{var t=localStorage.getItem("moonrpc-theme");document.documentElement.setAttribute("data-theme",(t==="dark"?"dark":"light"));}catch(e){document.documentElement.setAttribute("data-theme","light");}</script>
+</head>
+<body>
+<nav class="topnav">
+  <a class="brand" href="index.html">
+    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="25" height="25" style="stroke:var(--struct)" stroke-width="1.5"/>
+      <line x1="3.5" y1="3.5" x2="28.5" y2="28.5" style="stroke:var(--struct)" stroke-width="0.75" stroke-dasharray="2 2"/>
+      <line x1="28.5" y1="3.5" x2="3.5" y2="28.5" style="stroke:var(--struct)" stroke-width="0.75" stroke-dasharray="2 2"/>
+      <circle cx="16" cy="16" r="4" style="fill:var(--op)"/>
+      <circle cx="16" cy="16" r="7.5" style="stroke:var(--struct)" stroke-width="0.75"/>
+      <circle cx="8" cy="8" r="1.6" style="fill:var(--struct)"/>
+      <circle cx="24" cy="24" r="1.6" style="fill:var(--struct)"/>
+      <circle cx="24" cy="8" r="1.6" style="fill:var(--struct)"/>
+      <circle cx="8" cy="24" r="1.6" style="fill:var(--struct)"/>
+    </svg>
+    moonrpc
+  </a>
+  <div class="navlinks">
+    <a href="index.html">Home</a>
+    <a href="guide.html" class="active">Guide</a>
+    <a href="api.html">API</a>
+    <a href="showcase.html">Showcase</a>
+    <button class="nav-theme" data-theme-toggle aria-label="toggle theme">◐ theme</button>
+    <a class="gh" href="https://github.com/moonbitstack/moonrpc" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true" style="fill:currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<header class="section wrap hero">
+  <div class="eyebrow">guide</div>
+  <h1>From a message to a stream</h1>
+  <p class="tag">A walk through moonrpc: define a message, handle a call, run the two pure engines in memory, then put a real socket in front of them. Every snippet uses the API as it ships.</p>
+  <p>
+    <a class="btn" href="showcase.html">Try it live</a>
+    <a class="btn ghost" href="api.html">Full API</a>
+  </p>
+</header>
+
+<section class="section wrap">
+  <h2 class="h">1 · Install</h2>
+  <p class="lede">Add the package with the MoonBit toolchain. The root package re-exports the pure engines and every typed helper, so one import is enough.</p>
+  <pre><code>$ moon add moonbitstack/moonrpc
+
+  import "moonbitstack/moonrpc"          // @moonrpc
+  // sockets, when you need them:
+  import "moonbitstack/moonrpc/net"      // @net  (native only)</code></pre>
+  <p class="note"><span class="src"></span> <code>@net</code> is flagged <code>supported_targets="native"</code>; everything under <code>@moonrpc</code> compiles to JS, native and Wasm.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">2 · Two pure engines</h2>
+  <p class="lede">A gRPC call is two state machines trading HTTP/2 frames. <code>H2Client</code> and <code>H2Server</code> are <b>pure</b>: you hand each one a frame, it returns the frames to send back. No socket, no I/O — just data in, data out. That is why the same code runs in a server and in the <a href="showcase.html">browser showcase</a>.</p>
+  <pre><code>let server = @moonrpc.H2Server::new()
+let client = @moonrpc.H2Client::new()
+
+// client.unary opens a stream and returns the first frames to send
+let (id, frames) = client.unary("/greet.Greeter/SayHello", request_bytes)
+
+// shuttle frames between the engines until the call finishes
+while !client.is_done(id) {
+  for f in frames { for r in server.feed(f) { /* frames to client */ } }
+  // ... and back: client.feed(r) -> frames to server
+}</code></pre>
+  <p class="note"><span class="src"></span> See the whole loop in <code>src/examples/07-unary-call</code>. The homepage shows the nine frames a single unary call produces.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">3 · Define a message</h2>
+  <p class="lede">A message is just bytes on the wire, packed by the protobuf codec. You can do it by hand, or let <code>#rpc.message</code> derive the codec from the struct.</p>
+  <h3>By hand</h3>
+  <pre><code>fn encode_request(name : String) -> Bytes {
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, name)        // field 1, wire type LengthDelimited
+  w.to_bytes()
+}
+
+fn decode_name(msg : Bytes) -> String {
+  let r = @moonrpc.PbReader::new(msg)
+  let _ = r.read_tag()      // consume the tag for field 1
+  r.read_string()
+}</code></pre>
+  <h3>With <code>#rpc.message</code> (derives <code>@moonrpc.Message</code>)</h3>
+  <pre><code>#rpc.message
+pub struct HelloRequest {
+  #rpc.field(number=1)
+  name : String
+}
+
+#rpc.message
+pub struct HelloReply {
+  #rpc.field(number=1)
+  name : String
+}</code></pre>
+  <p class="note"><span class="src"></span> <code>#rpc.field(number=…)</code> pins the protobuf tag. Omitted fields get consecutive numbers; <code>#rpc.skip</code> leaves a field out of the wire form.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">4 · Handle a unary call</h2>
+  <p class="lede">Register a path and a function from request bytes to reply bytes. For typed messages, <code>@moonrpc.unary</code> decodes the input and encodes the output for you.</p>
+  <pre><code>let server = @moonrpc.H2Server::new()
+
+// hand-rolled: request bytes -> reply bytes
+server.register("/greet.Greeter/SayHello", req => {
+  let name = decode_name(req)
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, "hello, " + name)
+  w.to_bytes()
+})
+
+// typed: works once HelloRequest / HelloReply are #rpc.message
+server.register_handler(
+  "/greet.Greeter/SayHello",
+  @moonrpc.unary(fn (_ctx : @moonrpc.RpcContext, req : HelloRequest) -> HelloReply {
+    { name : "hello, " + req.name }
+  }),
+)</code></pre>
+  <p class="lede" style="margin-top:1.2rem">Or describe the whole service once and let <code>#rpc</code> wire it up:</p>
+  <pre><code>#rpc.service(name="greet.Greeter")
+pub struct Greeter {}
+
+#rpc.method
+pub fn Greeter::say_hello(
+  self : Greeter, _ctx : @moonrpc.RpcContext, req : HelloRequest,
+) -> HelloReply {
+  { name : "hello, " + req.name }
+}
+
+// later:
+let greeter = Greeter::new()
+greeter.register(server)   // generated by #rpc.service</code></pre>
+  <p class="note"><span class="src"></span> The method's type decides the call kind: a plain reply is unary, an <code>Array[…]</code> reply is server-streaming, an <code>Array[…]</code> request is client-streaming, and both is bidi.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">5 · Run it in memory</h2>
+  <p class="lede">Because the engines are pure, a full call needs no socket — only the frame shuttle. This is the exact shape the showcase runs in your browser.</p>
+  <pre><code>let server = @moonrpc.H2Server::new()
+server.register("/greet.Greeter/SayHello", req => /* … */)
+
+let client = @moonrpc.H2Client::new()
+let (id, to_server) = client.unary("/greet.Greeter/SayHello", encode_request("heke"))
+
+let mut to_client : Array[@http2.Frame] = []
+let mut steps = 0
+while !client.is_done(id) && steps < 100000 {
+  steps = steps + 1
+  for f in to_server { for r in server.feed(f) { to_client.push(r) } }
+  to_server = []
+  for r in to_client { for f in client.feed(r) { to_server.push(f) } }
+  to_client = []
+}
+
+let reply = client.reply(id)
+println("grpc-status \{reply.grpc_status}")
+println("reply: \{decode_name(reply.messages[0])}")</code></pre>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">6 · Serve it for real</h2>
+  <p class="lede">To actually accept TCP connections you add the native socket layer. <code>@net.GrpcServer</code> wraps an engine and listens on a port — native only, because MoonBit's async runtime has no JS/Wasm sockets.</p>
+  <pre><code>let greeter = Greeter::new()
+let server = @net.GrpcServer::new()
+greeter.register(server)     // the #rpc-generated registrar
+server.serve()              // listens on :12000 (native target)</code></pre>
+  <p class="note"><span class="src"></span> Build with <code>moon build --target native</code>. The engines you tested in memory are the same ones serving here.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">7 · The four call kinds</h2>
+  <p class="lede">All four are the same frame machinery; only the number of messages each side sends differs. Each has a typed wrapper under <code>@moonrpc</code>.</p>
+  <table class="fieldtbl">
+    <thead><tr><th>Kind</th><th>Request</th><th>Reply</th><th>Typed wrapper</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">Unary</td><td>one</td><td>one</td><td class="mono">@moonrpc.unary</td></tr>
+      <tr><td class="mono">Server streaming</td><td>one</td><td>many</td><td class="mono">@moonrpc.server_streaming</td></tr>
+      <tr><td class="mono">Client streaming</td><td>many</td><td>one</td><td class="mono">@moonrpc.client_streaming</td></tr>
+      <tr><td class="mono">Bidi streaming</td><td>many</td><td>many</td><td class="mono">register_bidi + BidiHandler</td></tr>
+    </tbody>
+  </table>
+  <pre><code>// server streaming: one request, a sequence back
+server.register_handler(
+  "/demo.Counter/Up",
+  @moonrpc.server_streaming(fn (_ctx, _req : UpRequest) -> Array[UpReply] {
+    [{ n : 1 }, { n : 2 }, { n : 3 }]
+  }),
+)</code></pre>
+  <p class="note"><span class="src"></span> Run all four live in the <a href="showcase.html">Showcase</a> — each shows the frames it produces.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">8 · Status and errors</h2>
+  <p class="lede">Raise a <code>StatusError</code> and the engine answers the call with that grpc-status and message in the trailers. Any other error becomes <code>UNKNOWN</code>.</p>
+  <pre><code>server.register_handler(
+  "/greet.Greeter/SayHello",
+  @moonrpc.unary(fn (_ctx, req : HelloRequest) -> HelloReply raise {
+    if req.name == "" {
+      raise @wire.StatusError(@wire.Status::InvalidArgument, "name required")
+    }
+    { name : "hello, " + req.name }
+  }),
+)
+
+// on the client:
+let reply = client.reply(id)
+// reply.grpc_status  -> Int32  (0 = OK)
+// reply.grpc_message -> String</code></pre>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">Where to next</h2>
+  <p class="lede">The <a href="api.html">API reference</a> lists every public item by package. The <a href="showcase.html">Showcase</a> runs the real engine in your browser. The repository's <code>src/examples/*</code> cover HTTP/2 frames, HPACK, flow control, health, reflection, deadlines, retries and more.</p>
+  <p><a class="btn" href="index.html">Back to home</a></p>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p><b>moonrpc</b> · MoonBit gRPC library · <a href="https://github.com/moonbitstack/moonrpc" rel="noopener">github.com/moonbitstack/moonrpc</a></p>
+    <p class="note">Snippets follow the shipped API; the engines they call are the same ones compiled into the showcase.</p>
+  </div>
+</footer>
+
+<script src="assets/site.js"></script>
+</body>
+</html>
