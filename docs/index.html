@@ -42,6 +42,7 @@
 </nav>
 
 <header class="section wrap hero">
+  <div class="stamp" aria-hidden="true"><span>moonbitstack</span><span class="s2">drawn from source</span><span>sheet 01</span></div>
   <div class="eyebrow">MoonBit · gRPC library</div>
   <h1>An interface is not a convention;<br>it is a compiler-enforced contract.</h1>
   <p class="tag">moonrpc is a gRPC library for MoonBit. It runs the gRPC over HTTP/2 protocol itself — frames, flow control, HPACK — and splits the work into two <b>pure</b> engines that exchange frames in memory, with a native socket layer only where a socket is unavoidable.</p>
@@ -93,10 +94,13 @@
         </div>
       </div>
     </div>
-    <div class="flow">
-      <span class="chip"><b>root pkg</b> imports only pure subpackages → compiles to JS</span>
-      <span class="chip"><b>src/net</b> flagged <code>supported_targets="native"</code></span>
-      <span class="chip">swap the socket layer, keep the engines</span>
+    <div class="notes">
+      <div class="notes-h">notes</div>
+      <ol>
+        <li>The root package imports only pure subpackages, so it compiles to JS.</li>
+        <li><code>src/net</code> is flagged <code>supported_targets="native"</code>.</li>
+        <li>Swap the socket layer; the engines are unchanged.</li>
+      </ol>
     </div>
   </div>
 </section>
@@ -106,6 +110,7 @@
   <h2 class="h">A unary call, in frames</h2>
   <p class="lede">One <code>SayHello</code> request, traced end to end. The client and server engines produced exactly these nine HTTP/2 frames. This is not a diagram of an idea — it is the output of the real engine, the same one that runs in the browser showcase below.</p>
 
+  <div class="dim"><span>time · frame order →</span></div>
   <div class="frames">
     <div class="frame-row"><div class="dir cs">C → S</div><div><span class="dot settings"></span><span class="ftype">SETTINGS</span></div><div><div class="fdesc">connection preface — initial SETTINGS, ACK=0</div><div class="hex">000006040000000000000200000000</div></div><div class="es">stream 0</div></div>
     <div class="frame-row"><div class="dir sc">S → C</div><div><span class="dot settings"></span><span class="ftype">SETTINGS</span></div><div><div class="fdesc">server SETTINGS, ACK=1</div><div class="hex">00000c040000000000000200000000000300000064</div></div><div class="es">stream 0</div></div>

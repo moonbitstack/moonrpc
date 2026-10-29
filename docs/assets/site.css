@@ -4,40 +4,46 @@
    the 0-radius grid never change; only the ground and the line brightness do. */
 
 :root{
-  --paper:#F4F1E8; --paper-2:#FBF9F2; --panel:#FFFFFF; --panel-2:#F1EDE2;
-  --ink:#1B2430; --ink-2:#33414F; --muted:#5B6675; --faint:#8A93A1;
-  --line:rgba(27,58,92,.16); --line-strong:rgba(27,58,92,.32);
-  --grid:rgba(27,58,92,.05);
-  --struct:#1B3A5C;          /* structure / contract — ink blue */
-  --op:#E8541E;              /* operation / pointer — engineering orange */
-  --ok:#0F8C7E;              /* communication health · OK — teal */
-  --warn:#C9761A;            /* communication health · high latency */
-  --bad:#C8324E;             /* communication health · breaker */
-  --violet:#6B5BD6; --cyan:#2A8FA0; --amber:#B8860B; --slate:#5B6675;
-  --code-bg:#F1EDE2; --shadow:0 1px 2px rgba(27,36,48,.05),0 10px 30px -16px rgba(27,36,48,.18);
+  /* Light "晒图纸": cool blueline paper, prussian ink, blue grid. */
+  --paper:#E7EFF9; --paper-2:#F2F7FC; --panel:#F8FBFF; --panel-2:#DFEAF6;
+  --ink:#0D2B4A; --ink-2:#24476B; --muted:#4A6280; --faint:#7C90A9;
+  --line:rgba(16,58,102,.16); --line-strong:rgba(16,58,102,.36);
+  --grid:rgba(24,88,152,.045); --grid-2:rgba(24,88,152,.09);
+  --struct:#0F3A66;          /* structure / contract — prussian blue */
+  --op:#D8481B;              /* operation / pointer — engineering orange */
+  --ok:#0B7C6C;              /* communication health · OK — teal */
+  --warn:#B06A12;            /* communication health · high latency */
+  --bad:#C0304B;             /* communication health · breaker */
+  --violet:#5B4FCF; --cyan:#1D7C90; --amber:#A9761A; --slate:#4A6280;
+  --code-bg:#E1EBF7; --shadow:0 1px 2px rgba(16,40,70,.06),0 10px 30px -16px rgba(16,40,70,.20);
+  --btn-bg:#0F3A66; --btn-fg:#F6FAFF; --on-fg:#FFFFFF;
   --maxw:1180px;
 }
 [data-theme="dark"]{
-  --paper:#0A0E1A; --paper-2:#0E1424; --panel:#101725; --panel-2:#0C1120;
-  --ink:#E8EDF5; --ink-2:#C2CDDD; --muted:#93A0B5; --faint:#6B7689;
-  --line:rgba(169,196,224,.16); --line-strong:rgba(169,196,224,.30);
-  --grid:rgba(169,196,224,.05);
-  --struct:#A9C4E0;
+  /* Dark "夜图纸": deep prussian ground, cyan linework, as a cyanotype at night. */
+  --paper:#08182B; --paper-2:#0B2036; --panel:#0D2439; --panel-2:#0A1B2E;
+  --ink:#DEEBF8; --ink-2:#B3C9DE; --muted:#8CA1B9; --faint:#63788F;
+  --line:rgba(150,200,240,.16); --line-strong:rgba(150,200,240,.32);
+  --grid:rgba(120,190,235,.05); --grid-2:rgba(120,190,235,.10);
+  --struct:#8FC3EA;
   --op:#FF7A3D;
-  --ok:#3BE8D4;
+  --ok:#3BE6D2;
   --warn:#FF9A3C;
-  --bad:#FF4D6D;
-  --violet:#9D8BFF; --cyan:#5CC8D8; --amber:#E0A93C; --slate:#8A93A1;
-  --code-bg:#0C1220; --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px -18px rgba(0,0,0,.7);
+  --bad:#FF5C7A;
+  --violet:#9D8BFF; --cyan:#63CFDF; --amber:#E0B255; --slate:#8CA1B9;
+  --code-bg:#0A1F34; --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 36px -18px rgba(0,0,0,.7);
+  --btn-bg:#2E5E90; --btn-fg:#EAF4FF; --on-fg:#170C06;
 }
 
 *{box-sizing:border-box}
 html{scroll-behavior:smooth; background:var(--paper);
-  /* faint blueprint grid, light or dark */
+  /* two-level blueprint grid: 10px minor + 50px major, light or dark */
   background-image:
     linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size:50px 50px,50px 50px;
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(var(--grid-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-2) 1px, transparent 1px);
+  background-size:10px 10px,10px 10px,50px 50px,50px 50px;
 }
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
 body{margin:0;color:var(--ink);
@@ -106,6 +112,45 @@ h2.h{font-size:1.9rem;margin:.2rem 0 .4rem}
   content:"";position:absolute;inset:5px;pointer-events:none;z-index:2;
   border:1px solid color-mix(in srgb,var(--line-strong) 48%,transparent)}
 
+/* ---- drafting furniture: corner crop marks, dimension line, notes, stamp ---- */
+.diagram::after,.frames::after,.panel::after{
+  content:"";position:absolute;inset:5px;pointer-events:none;z-index:3;
+  --c:color-mix(in srgb,var(--line-strong) 62%,transparent);
+  background:
+    linear-gradient(var(--c),var(--c)) left top/7px 1px no-repeat,
+    linear-gradient(var(--c),var(--c)) left top/1px 7px no-repeat,
+    linear-gradient(var(--c),var(--c)) right top/7px 1px no-repeat,
+    linear-gradient(var(--c),var(--c)) right top/1px 7px no-repeat,
+    linear-gradient(var(--c),var(--c)) left bottom/7px 1px no-repeat,
+    linear-gradient(var(--c),var(--c)) left bottom/1px 7px no-repeat,
+    linear-gradient(var(--c),var(--c)) right bottom/7px 1px no-repeat,
+    linear-gradient(var(--c),var(--c)) right bottom/1px 7px no-repeat;
+}
+/* a tick-ended dimension line, as on a measured drawing */
+.dim{position:relative;display:flex;justify-content:center;align-items:center;height:1.5rem;margin:.2rem 0 .1rem;
+  color:var(--faint);font-size:.63rem;letter-spacing:.18em;text-transform:uppercase}
+.dim::before{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--line-strong)}
+.dim::after{content:"";position:absolute;left:0;right:0;top:50%;height:9px;margin-top:-4.5px;
+  background:
+    linear-gradient(var(--line-strong),var(--line-strong)) left center/1px 9px no-repeat,
+    linear-gradient(var(--line-strong),var(--line-strong)) right center/1px 9px no-repeat}
+.dim span{position:relative;background:var(--paper);padding:0 .7rem}
+/* drawing notes: the numbered call-outs a real sheet carries in its margin */
+.notes{margin-top:1rem;border:1px solid var(--line);border-left:3px solid var(--struct);background:var(--panel);padding:.7rem .95rem}
+.notes-h{font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--op);margin-bottom:.4rem}
+.notes ol{margin:0;padding-left:1.35rem;color:var(--muted);font-size:.8rem;line-height:1.62}
+.notes li{margin:.12rem 0}
+.notes li::marker{color:var(--struct);font-weight:600}
+.notes code{font-size:.95em}
+/* a rotated review stamp, as a drawing gets before it ships */
+.stamp{position:absolute;top:.1rem;right:0;transform:rotate(-6deg);pointer-events:none;opacity:.9;
+  border:2px solid color-mix(in srgb,var(--op) 55%,transparent);padding:.34rem .7rem;text-align:center;
+  color:color-mix(in srgb,var(--op) 72%,var(--ink));font-size:.58rem;line-height:1.55;letter-spacing:.16em;text-transform:uppercase}
+.stamp::after{content:"";position:absolute;inset:3px;border:1px solid color-mix(in srgb,var(--op) 38%,transparent)}
+.stamp span{display:block}
+.stamp .s2{font-weight:600;letter-spacing:.08em;color:var(--op)}
+@media (max-width:1000px){.stamp{display:none}}
+
 /* ---- layered architecture diagram (SVG, blueprint) ---- */
 .diagram{margin:1.4rem 0;border:1px solid var(--line);background:var(--panel);padding:1.4rem}
 .diagram svg{width:100%;height:auto;display:block}
@@ -160,7 +205,8 @@ h2.h{font-size:1.9rem;margin:.2rem 0 .4rem}
 .arch-box .tag{position:absolute;top:.5rem;right:.6rem;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase}
 .arch-box.struct{border-left:3px solid var(--struct)}
 .arch-box.pure{border-left:3px solid var(--ok)}
-.arch-box.native{border-left:3px solid var(--op)}
+.arch-box.native{border-left:3px solid var(--op);
+  background-image:repeating-linear-gradient(45deg,color-mix(in srgb,var(--op) 15%,transparent) 0 1px,transparent 1px 7px)}
 .arch-box .tag.struct{color:var(--struct)} .arch-box .tag.pure{color:var(--ok)} .arch-box .tag.native{color:var(--op)}
 .arch-arrow{margin:.25rem 0 .25rem 2px;color:var(--muted);font-size:.78rem;display:flex;align-items:center;gap:.5rem}
 .arch-arrow .line{flex:1;height:1px;background-image:repeating-linear-gradient(90deg,var(--line-strong) 0 6px,transparent 6px 12px);
@@ -179,15 +225,15 @@ h2.h{font-size:1.9rem;margin:.2rem 0 .4rem}
 input,select,textarea{font:inherit;font-size:.9rem;color:var(--ink);background:var(--code-bg);
   border:1px solid var(--line);border-radius:0;padding:.45rem .6rem;width:100%}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--op)}
-.btn{font:inherit;font-size:.85rem;cursor:pointer;background:var(--struct);color:#fff;border:1px solid var(--struct);
+.btn{font:inherit;font-size:.85rem;cursor:pointer;background:var(--btn-bg);color:var(--btn-fg);border:1px solid var(--btn-bg);
   border-radius:0;padding:.5rem 1rem;letter-spacing:.02em}
-.btn:hover{background:var(--op);border-color:var(--op)}
+.btn:hover{background:var(--op);border-color:var(--op);color:var(--on-fg)}
 .btn.ghost{background:none;color:var(--struct);border-color:var(--line)}
 .seg{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);width:max-content;max-width:100%}
 .seg button{font:inherit;font-size:.82rem;cursor:pointer;background:var(--panel);color:var(--muted);
   border:none;padding:.5rem .9rem;border-right:1px solid var(--line)}
 .seg button:last-child{border-right:none}
-.seg button.on{background:var(--op);color:#fff}
+.seg button.on{background:var(--op);color:var(--on-fg)}
 .hexout{font-size:.9rem;word-break:break-all;color:var(--struct);background:var(--code-bg);
   border:1px solid var(--line);padding:.8rem;margin-top:.8rem;line-height:1.7}
 .fieldtbl{width:100%;border-collapse:collapse;margin-top:.8rem;font-size:.84rem}
@@ -229,6 +275,7 @@ body.api-page .sidebar{top:54px;height:calc(100vh - 54px)}
   border-radius:0;padding:.35rem .6rem;font:inherit;font-size:.8rem;cursor:pointer;width:100%}
 .theme-btn:hover{border-color:var(--op);color:var(--ink)}
 main{padding:2.4rem clamp(1rem,3vw,2.2rem) 5rem;min-width:0}
+.hero{position:relative}
 .hero h1{font-size:2.6rem;margin:0}
 .hero .tag{color:var(--muted);font-size:1.05rem;max-width:62ch;margin:.5rem 0 1rem}
 .install{display:flex;align-items:center;gap:.6rem;background:var(--panel);border:1px solid var(--line);
