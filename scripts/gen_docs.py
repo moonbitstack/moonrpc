@@ -44,6 +44,7 @@ SECTIONS = [
      "multiplexing channel and the managed channel dial one or many backends. Native "
      "only: moonbitlang/async has no JS or Wasm sockets."),
 ]
+PLUMBING = {"Eq", "Debug", "Show", "Hash", "Compare", "Default", "ToJson", "FromJson"}
 KIND = {"struct": "struct", "enum": "enum", "fn": "fn", "type": "type", "let": "let", "trait": "trait", "impl": "impl"}
 
 
@@ -62,6 +63,16 @@ def parse(path):
             doc = []
         elif s.startswith("///"):
             doc.append(s[3:].strip())
+        elif s.startswith(("pub extend", "pub impl")):
+            # Derived plumbing (Eq, Debug, Show...) is not what a reader came for;
+            # any other trait a type answers is listed, and says which.
+            m = re.match(r"pub (?:extend (\w+) with ([@\w.]+)::|impl(?:\[[^\]]*\])? ([@\w.]+) for (\w+))", s)
+            trait = m and (m.group(2) or m.group(3))
+            target = m and (m.group(1) or m.group(4))
+            if trait and trait.split(".")[-1] not in PLUMBING:
+                core = re.sub(r"\s*with fn .*$", "", re.sub(r"^pub\s+", "", s)).rstrip("{ ").strip()
+                items.append(("impl", core, " ".join(doc).strip() or f"`{target}` answers `{trait}`."))
+            doc = []
         elif s.startswith("pub"):
             buf = s
             is_alias = re.match(r"pub\s+(type|let|trait|impl)\b", buf) is not None

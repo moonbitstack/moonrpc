@@ -140,7 +140,7 @@ w.string_(1, "testing")          // field 1, a length-delimited string
 w.int32(2, -1)                   // field 2, a varint (negative -> ten octets)
 let r = @moonrpc.PbReader::new(w.to_bytes())
 let (field, wire) = r.read_tag() // (1, LengthDelim)
-r.read_string()                  // "testing"
+let text = r.read_string()                  // "testing"
 ```
 
 On top of it, a descriptor model builds and parses `FileDescriptorProto` and `FileDescriptorSet`, and `grpc.reflection.v1.ServerReflection` (with its `v1alpha` alias) answers `ListServices`, `FileContainingSymbol` and `FileByFilename`, so `grpcurl` can list and describe a service. CI runs exactly that against `cmd/greetd`.
@@ -180,11 +180,11 @@ let frame = @moonrpc.encode_message(b"hello grpc")
 let (compressed, payload) = @moonrpc.decode_message(frame).unwrap()
 // (false, b"hello grpc")
 
-@moonrpc.Status::code(NotFound)          // 5
-@moonrpc.Status::name(Unauthenticated)   // "UNAUTHENTICATED", one of the 17 codes
+let code = @moonrpc.Status::code(NotFound)          // 5
+let name = @moonrpc.Status::name(Unauthenticated)   // "UNAUTHENTICATED", one of the 17 codes
 
 let m : @moonrpc.Method = { service: "greet.Greeter", name: "SayHello" }
-m.path()                                 // "/greet.Greeter/SayHello"
+let path = m.path()                                 // "/greet.Greeter/SayHello"
 ```
 
 ## Retries and hedging

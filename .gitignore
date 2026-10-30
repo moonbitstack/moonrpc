@@ -6,3 +6,4 @@ target/
 
 examples/*/pkg.generated.mbti
 src/examples/browser/**/pkg.generated.mbti
+docs/engine/

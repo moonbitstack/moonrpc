@@ -317,24 +317,30 @@ footer a{color:var(--struct)}
   .titleblock .cell:nth-child(2n){border-right:none}
 }
 
-/* ---- custom scrollbars: hidden thumb at top, visible on scroll (docs.md) ---- */
+/* ---- scroll bars: the page's shows while it moves or under the pointer and
+   hides a moment after, keeping its place; a box's is thin, faint at rest and
+   darker under the pointer ---- */
 @supports selector(::-webkit-scrollbar){
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+  ::-webkit-scrollbar-thumb{border-radius:99px;border:2px solid transparent;background-clip:content-box;
+    background-color:color-mix(in srgb,var(--ink) 16%,transparent)}
+  *:hover::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink) 32%,transparent)}
   html::-webkit-scrollbar{width:10px;height:10px}
-  html::-webkit-scrollbar-track{background:transparent}
-  html::-webkit-scrollbar-thumb{border-radius:99px;border:3px solid transparent;background-clip:content-box;
-    background-color:color-mix(in srgb,var(--ink) 24%,transparent)}
-  html.at-top::-webkit-scrollbar-thumb{background-color:transparent}
-  .sidebar::-webkit-scrollbar{width:8px;height:8px}
-  .sidebar::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink) 22%,transparent)}
-  pre::-webkit-scrollbar{height:8px;width:8px}
-  pre::-webkit-scrollbar-thumb{background-color:color-mix(in srgb,var(--ink) 24%,transparent);border-radius:99px}
+  html::-webkit-scrollbar-thumb{border-width:3px;background-color:color-mix(in srgb,var(--ink) 24%,transparent)}
+  html:not(.scrolling)::-webkit-scrollbar-thumb{background-color:transparent}
 }
 @supports not selector(::-webkit-scrollbar){
-  html{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 26%,transparent) transparent}
-  html.at-top{scrollbar-color:transparent transparent}
+  *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--ink) 22%,transparent) transparent}
+  html:not(.scrolling){scrollbar-color:transparent transparent}
 }
 
 /* ---- responsive: no horizontal scroll at 390px ---- */
+:not(pre)>code{white-space:pre-wrap;overflow-wrap:anywhere}
+.show-grid>*{min-width:0}
+@media (max-width:600px){
+  table.fieldtbl{display:block;overflow-x:auto}
+}
 @media (max-width:860px){
   .layout{grid-template-columns:1fr}
   .sidebar{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}

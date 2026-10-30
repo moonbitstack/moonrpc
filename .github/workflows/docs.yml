@@ -1,10 +1,10 @@
 name: Docs
 
 # Keeps the documentation site in sync with the library source. The interactive
-# showcase needs a JS-compiled copy of the real library (docs/engine/moonrpc.js),
-# and the API reference (docs/api.html) is generated from the public signatures.
-# Both are rebuilt here and `git diff --exit-code` fails the build if the committed
-# copies have drifted from the source — so a stale doc is a red CI, not a surprise.
+# showcase needs a JS-compiled copy of the real library (docs/engine/moonrpc.js,
+# built here and never committed), and the API reference (docs/api.html) is
+# generated from the public signatures; `git diff --exit-code` fails the build
+# if the committed reference has drifted from the source.
 
 on:
   pull_request:
@@ -38,8 +38,9 @@ jobs:
       # sockets into the browser bundle.
       - name: build the showcase glue (JS)
         run: |
-          moon build --target js ./src/examples/browser/moonrpc-demo
-          cp _build/js/debug/build/examples/browser/moonrpc-demo/moonrpc-demo.js docs/engine/moonrpc.js
+          moon build --target js ./src/examples/browser
+          mkdir -p docs/engine
+          cp _build/js/debug/build/examples/browser/browser.js docs/engine/moonrpc.js
 
       - name: regenerate the API reference
         run: python3 scripts/gen_docs.py
@@ -73,8 +74,9 @@ jobs:
 
       - name: build the showcase glue (JS)
         run: |
-          moon build --target js ./src/examples/browser/moonrpc-demo
-          cp _build/js/debug/build/examples/browser/moonrpc-demo/moonrpc-demo.js docs/engine/moonrpc.js
+          moon build --target js ./src/examples/browser
+          mkdir -p docs/engine
+          cp _build/js/debug/build/examples/browser/browser.js docs/engine/moonrpc.js
 
       - name: regenerate the API reference
         run: python3 scripts/gen_docs.py

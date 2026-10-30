@@ -19,10 +19,17 @@
     apply(cur === "dark" ? "light" : "dark");
   });
 
-  // --- scrollbar: hide the thumb while parked at the top, show it once scrolling ---
-  function syncTop() { root.classList.toggle("at-top", window.scrollY <= 0); }
-  window.addEventListener("scroll", syncTop, { passive: true });
-  syncTop();
+  // --- scrollbar: shown while the page moves or the pointer is at the right
+  // edge, hidden a moment after both stop ---
+  var idle = 0, near = false;
+  function hideSoon() { clearTimeout(idle); idle = setTimeout(function () { if (!near) root.classList.remove("scrolling"); }, 1200); }
+  window.addEventListener("scroll", function () { root.classList.add("scrolling"); hideSoon(); }, { passive: true });
+  window.addEventListener("pointermove", function (e) {
+    var was = near;
+    near = e.pointerType === "mouse" && e.clientX >= root.clientWidth - 24;
+    if (near) root.classList.add("scrolling"); else if (was) hideSoon();
+  }, { passive: true });
+  root.addEventListener("pointerleave", function () { near = false; hideSoon(); });
 
   // --- copy-to-clipboard buttons ---
   document.addEventListener("click", function (e) {
