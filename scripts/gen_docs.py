@@ -200,7 +200,7 @@ def main():
 
     out = ROOT / "docs" / "api.html"
     out.parent.mkdir(exist_ok=True)
-    out.write_text("\n".join(body), encoding="utf-8")
+    out.write_text("\n".join(body), encoding="utf-8", newline="\n")
     print("wrote %s (%d public items across %d sections)" % (out, total, len(SECTIONS)))
 
 
