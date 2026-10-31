@@ -236,16 +236,16 @@ test "decode rejects a length-delimited field running past the buffer" {
 }
 
 ///|
-test "WireType code/from_code and group rejection" {
+test "WireType code/of and group rejection" {
   assert_eq(Varint.code(), 0)
   assert_eq(Fixed64.code(), 1)
   assert_eq(LengthDelim.code(), 2)
   assert_eq(Fixed32.code(), 5)
-  assert_eq(WireType::from_code(0) == Some(Varint), true)
-  assert_eq(WireType::from_code(2) == Some(LengthDelim), true)
-  assert_eq(WireType::from_code(3) == None, true) // start-group
-  assert_eq(WireType::from_code(4) == None, true) // end-group
-  assert_eq(WireType::from_code(6) == None, true)
+  assert_eq(WireType::of(0) == Some(Varint), true)
+  assert_eq(WireType::of(2) == Some(LengthDelim), true)
+  assert_eq(WireType::of(3) == None, true) // start-group
+  assert_eq(WireType::of(4) == None, true) // end-group
+  assert_eq(WireType::of(6) == None, true)
 }
 
 ///|

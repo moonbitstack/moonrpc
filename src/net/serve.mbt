@@ -589,10 +589,9 @@ fn greet_descriptor() -> @moonrpc.FileDescriptor {
     "greet.proto",
     "greet",
     messages=[
-      @moonrpc.MessageDescriptor::{
-        name: "HelloRequest",
-        fields: [@moonrpc.FieldDescriptor::scalar("name", 1, TypeString)],
-      },
+      @moonrpc.MessageDescriptor::new("HelloRequest", [
+        @moonrpc.FieldDescriptor::new("name", 1, TypeString),
+      ]),
     ],
     services=[
       @moonrpc.ServiceDescriptor::{

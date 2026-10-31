@@ -27,7 +27,7 @@ pub fn ServingStatus::code(self : ServingStatus) -> Int32 {
 ///|
 /// The serving status for a protobuf enum number; out-of-range numbers read as
 /// `StatusUnknown`.
-pub fn ServingStatus::from_code(n : Int32) -> ServingStatus {
+pub fn ServingStatus::of(n : Int32) -> ServingStatus {
   match n {
     1 => Serving
     2 => NotServing
@@ -105,7 +105,7 @@ pub fn decode_health_response(msg : Bytes) -> ServingStatus {
   } catch {
     _ => ()
   }
-  ServingStatus::from_code(status)
+  ServingStatus::of(status)
 }
 
 // -- the service ------------------------------------------------------------

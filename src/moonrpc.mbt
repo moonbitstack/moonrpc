@@ -8,6 +8,10 @@
 // `@wire.Status::Ok`, not `@moonrpc.Status::Ok`.
 
 ///|
+/// The metadata a call carries, the type moonhttp's HTTP/2 headers are.
+pub using @header {type Header}
+
+///|
 pub using @wire {
   type Keepalive,
   type StatusError,
@@ -28,7 +32,10 @@ pub using @wire {
 
 ///|
 pub using @proto {
+  trait Enum,
   trait Message,
+  type EnumDescriptor,
+  type EnumValueDescriptor,
   type FieldDescriptor,
   type FieldLabel,
   type FieldType,
@@ -86,6 +93,7 @@ pub using @balance {
 
 ///|
 pub using @client {
+  trait Caller,
   type CallReply,
   type ClientCall,
   type H2Client,
@@ -123,4 +131,6 @@ pub using @service {
   unary,
   server_streaming,
   client_streaming,
+  bidi,
+  bidi_each,
 }

@@ -79,3 +79,84 @@ pub fn[I : @proto.Message, O : @proto.Message] client_streaming(
     }
   })
 }
+
+///|
+/// A bidirectional-streaming handler over message types that answers once the
+/// client half-closes: every request decoded, the replies encoded in order.
+pub fn[I : @proto.Message, O : @proto.Message] bidi(
+  f : (@stream.RpcContext, Array[I]) -> Array[O] raise,
+) -> @stream.Handler {
+  Bidi(ctx => {
+    let inputs = []
+    let mut broken = false
+    {
+      on_message: body => {
+        if !broken {
+          match request(ctx, body) {
+            Some(input) => inputs.push(input)
+            None => broken = true
+          }
+        }
+        []
+      },
+      on_end: () => {
+        if broken {
+          return []
+        }
+        f(ctx, inputs).map(O::encode) catch {
+          e => {
+            let (code, message) = status_of(e)
+            ctx.fail(code, message)
+            []
+          }
+        }
+      },
+    }
+  })
+}
+
+///|
+/// A bidirectional-streaming handler over message types that answers as each
+/// request arrives: `f` gives the replies to one request, sent at once, and
+/// `end` the replies to send when the client half-closes.
+pub fn[I : @proto.Message, O : @proto.Message] bidi_each(
+  f : (@stream.RpcContext, I) -> Array[O] raise,
+  end? : (@stream.RpcContext) -> Array[O] raise,
+) -> @stream.Handler {
+  Bidi(ctx => {
+    let mut broken = false
+    let answer = (replies : () -> Array[O] raise) => {
+      if broken {
+        return []
+      }
+      replies().map(O::encode) catch {
+        e => {
+          broken = true
+          let (code, message) = status_of(e)
+          ctx.fail(code, message)
+          []
+        }
+      }
+    }
+    {
+      on_message: body => {
+        if broken {
+          return []
+        }
+        match request(ctx, body) {
+          Some(input) => answer(() => f(ctx, input))
+          None => {
+            broken = true
+            []
+          }
+        }
+      },
+      on_end: () => {
+        match end {
+          Some(g) => answer(() => g(ctx))
+          None => []
+        }
+      },
+    }
+  })
+}

@@ -12,6 +12,7 @@ import {
   "moonbitstack/moonast/gen",
   "moonbitstack/moonast/cli",
   "moonbitlang/parser/attribute",
+  "moonbitlang/parser/syntax",
   "moonbitlang/async",
   "moonbitlang/core/env",
   "moonbitlang/core/list",

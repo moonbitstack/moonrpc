@@ -66,3 +66,31 @@ test "method path" {
   let m : Method = { service: "greet.Greeter", name: "SayHello", }
   assert_eq(m.path(), "/greet.Greeter/SayHello")
 }
+
+///|
+test "Status::of inverts code, and a code out of range is Unknown" {
+  let all : Array[Status] = [
+    Ok,
+    Cancelled,
+    Unknown,
+    InvalidArgument,
+    DeadlineExceeded,
+    NotFound,
+    AlreadyExists,
+    PermissionDenied,
+    ResourceExhausted,
+    FailedPrecondition,
+    Aborted,
+    OutOfRange,
+    Unimplemented,
+    Internal,
+    Unavailable,
+    DataLoss,
+    Unauthenticated,
+  ]
+  for s in all {
+    assert_eq(Status::of(s.code()), s)
+  }
+  assert_eq(Status::of(17), Unknown)
+  assert_eq(Status::of(-1), Unknown)
+}

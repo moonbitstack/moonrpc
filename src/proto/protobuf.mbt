@@ -10,7 +10,7 @@
 ///|
 /// The four protobuf wire types carried by a field tag's low three bits. The two
 /// group types (`3` start-group, `4` end-group) are deprecated and unsupported, so
-/// `from_code` rejects them.
+/// `of` rejects them.
 pub(all) enum WireType {
   Varint
   Fixed64
@@ -45,7 +45,7 @@ pub fn WireType::code(self : WireType) -> Int32 {
 ///|
 /// The wire type for a tag's low three bits, or `None` for the deprecated group
 /// types (`3`/`4`) and any out-of-range value.
-pub fn WireType::from_code(n : Int32) -> WireType? {
+pub fn WireType::of(n : Int32) -> WireType? {
   match n {
     0 => Some(Varint)
     1 => Some(Fixed64)
@@ -286,7 +286,7 @@ pub fn PbReader::read_varint(self : PbReader) -> UInt64 raise PbError {
 pub fn PbReader::read_tag(self : PbReader) -> (Int32, WireType) raise PbError {
   let tag = self.read_varint().to_int()
   let field = tag >> 3
-  match WireType::from_code(tag & 0x7) {
+  match WireType::of(tag & 0x7) {
     Some(w) => (field, w)
     None => raise BadWireType(tag & 0x7)
   }

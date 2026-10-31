@@ -1,12 +1,18 @@
+// A greeter declared with `#rpc` annotations, served over moonrpc's own h2c
+// stack for grpcurl, and a client mode that calls it through the generated
+// client.
 import {
   "moonbitstack/moonrpc",
   "moonbitstack/moonrpc/net",
+  "moonbitstack/moonrpc/wire",
   "moonbitlang/async",
   "moonbitlang/core/env",
   "moonbitlang/core/string",
 }
 
 pkgtype(kind: "executable")
+
+formatter(ignore: [ "greet.g.mbt" ])
 
 options(
   supported_targets: "native",

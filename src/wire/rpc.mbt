@@ -113,6 +113,31 @@ pub fn Status::code(self : Status) -> Int32 {
 }
 
 ///|
+/// The status a `grpc-status` code stands for; a code outside 0 to 16 is
+/// `Unknown`, as the gRPC status code document says a client treats it.
+pub fn Status::of(code : Int32) -> Status {
+  match code {
+    0 => Ok
+    1 => Cancelled
+    3 => InvalidArgument
+    4 => DeadlineExceeded
+    5 => NotFound
+    6 => AlreadyExists
+    7 => PermissionDenied
+    8 => ResourceExhausted
+    9 => FailedPrecondition
+    10 => Aborted
+    11 => OutOfRange
+    12 => Unimplemented
+    13 => Internal
+    14 => Unavailable
+    15 => DataLoss
+    16 => Unauthenticated
+    _ => Unknown
+  }
+}
+
+///|
 /// The canonical uppercase status name.
 pub fn Status::name(self : Status) -> String {
   match self {

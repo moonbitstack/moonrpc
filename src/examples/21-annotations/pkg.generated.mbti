@@ -2,6 +2,9 @@
 package "moonbitstack/moonrpc/examples/21-annotations"
 
 import {
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonrpc/balance",
+  "moonbitstack/moonrpc/client",
   "moonbitstack/moonrpc/proto",
   "moonbitstack/moonrpc/stream",
 }
@@ -12,16 +15,31 @@ pub fn descriptor() -> @proto.FileDescriptor
 // Errors
 
 // Types and methods
+pub struct Badge {
+  label : String
+}
+pub impl @proto.Message for Badge
+
 pub struct Greeter {
   greeting : String
 }
 pub fn[R : @stream.Registrar] Greeter::register(Self, R) -> Unit
+
+pub struct GreeterClient[C] {
+  channel : C
+}
+pub async fn[C : @client.Caller] GreeterClient::add_up(Self[C], Array[Number], metadata? : Array[@header.Header], timeout_millis? : Int32, retry? : @balance.Retry) -> Number
+pub async fn[C : @client.Caller] GreeterClient::count_to(Self[C], Upto, metadata? : Array[@header.Header], timeout_millis? : Int32, retry? : @balance.Retry) -> Array[Number]
+pub async fn[C : @client.Caller] GreeterClient::echo(Self[C], Array[Number], metadata? : Array[@header.Header], timeout_millis? : Int32, retry? : @balance.Retry) -> Array[Number]
+pub fn[C] GreeterClient::new(C) -> Self[C]
+pub async fn[C : @client.Caller] GreeterClient::say_hello(Self[C], HelloRequest, metadata? : Array[@header.Header], timeout_millis? : Int32, retry? : @balance.Retry) -> HelloReply
 
 pub struct HelloReply {
   message : String
   calls : Int64
   scores : Array[Int32]
   ratio : Double
+  badges : Array[Badge]
   cached : Bool
 }
 pub impl @proto.Message for HelloReply
@@ -30,8 +48,17 @@ pub struct HelloRequest {
   name : String
   tags : Array[String]
   nickname : String?
+  mood : Mood
+  extras : Map[String, Int64]
 }
 pub impl @proto.Message for HelloRequest
+
+pub enum Mood {
+  Calm
+  Glad
+  Grumpy
+}
+pub impl @proto.Enum for Mood
 
 pub struct Number {
   value : Int32

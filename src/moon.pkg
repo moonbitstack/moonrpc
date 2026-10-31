@@ -9,6 +9,7 @@ import {
   "moonbitstack/moonrpc/client",
   "moonbitstack/moonrpc/server",
   "moonbitstack/moonrpc/service",
+  "moonbitstack/moonhttp/header",
 }
 
 import {

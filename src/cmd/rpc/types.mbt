@@ -10,21 +10,25 @@ priv enum Scalar {
   U64
   F64
   F32
-}
+} derive(Eq)
 
 ///|
-/// The protobuf type of a field: a scalar, or a message by its MoonBit name.
+/// The protobuf type of a value: a scalar, or a message or an enum by its
+/// MoonBit name.
 priv enum Base {
   Scalar(Scalar)
   Message(String)
+  Enum(String)
 }
 
 ///|
-/// How a field repeats: once, optionally (proto3 `optional`), or as a list.
+/// How a field holds its values: once, optionally (proto3 `optional`), as a
+/// list, or as a `map` keyed by a scalar of the given MoonBit type.
 priv enum Card {
   Single
   Optional
   Repeated
+  Keyed(Scalar, String)
 } derive(Eq)
 
 ///|
@@ -61,28 +65,57 @@ fn inside(ty : StringView, name : String) -> String? {
 }
 
 ///|
+/// `K` and `V` out of `K, V`, split at the comma outside any brackets.
+fn pair(text : String) -> (String, String)? {
+  let chars = text.to_array()
+  let mut depth = 0
+  for i, c in chars {
+    match c {
+      '[' | '(' => depth += 1
+      ']' | ')' => depth -= 1
+      ',' if depth == 0 => {
+        let key = String::from_array(chars[:i]).trim(chars=" ").to_owned()
+        let value = String::from_array(chars[i + 1:]).trim(chars=" ").to_owned()
+        return Some((key, value))
+      }
+      _ => ()
+    }
+  }
+  None
+}
+
+///|
 /// A MoonBit type as its protobuf base and how it repeats; `None` for a type
-/// protobuf has no field for. The element type is returned alongside.
+/// protobuf has no field for. The element type, the value type of a map, is
+/// returned alongside. A map key is a string, an integer or a bool, as the
+/// protobuf language allows.
 fn field_of(
   ty : String,
   messages : Map[String, String],
+  enums : Map[String, String],
 ) -> (Base, Card, String)? {
   let ty = ty.trim(chars=" ").to_owned()
   let (inner, card) = if ty.has_suffix("?") {
     (ty.view(end_offset=ty.length() - 1).trim(chars=" ").to_owned(), Optional)
-  } else {
-    match inside(ty, "Option") {
-      Some(t) => (t, Optional)
-      None =>
-        match inside(ty, "Array") {
-          Some(t) => (t, Repeated)
-          None => (ty, Single)
-        }
+  } else if inside(ty, "Option") is Some(t) {
+    (t, Optional)
+  } else if inside(ty, "Array") is Some(t) {
+    (t, Repeated)
+  } else if inside(ty, "Map") is Some(kv) {
+    guard pair(kv) is Some((k, v)) &&
+      scalar_of(k) is Some(key) &&
+      key is (Str | Boolean | I32 | I64 | U32 | U64) else {
+      return None
     }
+    (v, Keyed(key, k))
+  } else {
+    (ty, Single)
   }
   let base = match scalar_of(inner) {
     Some(s) => Scalar(s)
-    None => if messages.contains(inner) { Message(inner) } else { return None }
+    None if messages.contains(inner) => Message(inner)
+    None if enums.contains(inner) => Enum(inner)
+    None => return None
   }
   Some((base, card, inner))
 }
@@ -101,6 +134,7 @@ fn field_type(base : Base) -> String {
     Scalar(F64) => "TypeDouble"
     Scalar(F32) => "TypeFloat"
     Message(_) => "TypeMessage"
+    Enum(_) => "TypeEnum"
   }
 }
 
@@ -111,15 +145,16 @@ fn wire_of(base : Base) -> String {
     Scalar(Str | Raw) | Message(_) => "LengthDelim"
     Scalar(F64) => "Fixed64"
     Scalar(F32) => "Fixed32"
-    Scalar(_) => "Varint"
+    Scalar(_) | Enum(_) => "Varint"
   }
 }
 
 ///|
 /// Whether a repeated field of this base is written packed: the varint
-/// scalars. Doubles and floats go unpacked, which every parser reads too.
+/// scalars and enums. Doubles and floats go unpacked, which every parser reads
+/// too.
 fn packed(base : Base) -> Bool {
-  base is Scalar(Boolean | I32 | I64 | U32 | U64)
+  base is (Scalar(Boolean | I32 | I64 | U32 | U64) | Enum(_))
 }
 
 ///|
@@ -136,6 +171,7 @@ fn write_call(base : Base, n : Int32, e : String) -> String {
     Scalar(F64) => "w.double_(\{n}, \{e})"
     Scalar(F32) => "w.float_(\{n}, \{e})"
     Message(_) => "w.message_(\{n}, @moonrpc.Message::encode(\{e}))"
+    Enum(_) => "w.enum_(\{n}, @moonrpc.Enum::code(\{e}))"
   }
 }
 
@@ -147,6 +183,8 @@ fn packed_write(base : Base, e : String) -> String {
     Scalar(I32) => "p.write_varint(\{e}.to_int64().reinterpret_as_uint64())"
     Scalar(I64) => "p.write_varint(\{e}.reinterpret_as_uint64())"
     Scalar(U32) => "p.write_varint(\{e}.to_uint64())"
+    Enum(_) =>
+      "p.write_varint(@moonrpc.Enum::code(\{e}).to_int64().reinterpret_as_uint64())"
     _ => "p.write_varint(\{e})"
   }
 }
@@ -165,6 +203,7 @@ fn read_call(base : Base, r : String) -> String {
     Scalar(F64) => "\{r}.read_double()"
     Scalar(F32) => "\{r}.read_float()"
     Message(_) => "@moonrpc.Message::decode(\{r}.read_len_delim())"
+    Enum(_) => "@moonrpc.Enum::of(\{r}.read_int32())"
   }
 }
 
@@ -182,6 +221,18 @@ fn zero_of(base : Base) -> String {
     Scalar(F64) => "0.0"
     Scalar(F32) => "(0.0 : Float)"
     Message(_) => "@moonrpc.Message::decode(b\"\")"
+    Enum(_) => "@moonrpc.Enum::of(0)"
+  }
+}
+
+///|
+/// The test that `e` differs from the value a field leaves unwritten; `None`
+/// for a message, which is written whenever it is there.
+fn nonzero(base : Base, e : String) -> String? {
+  match base {
+    Message(_) => None
+    Enum(_) => Some("@moonrpc.Enum::code(\{e}) != 0")
+    Scalar(_) => Some("\{e} != \{zero_of(base)}")
   }
 }
 
@@ -197,6 +248,27 @@ fn pascal(name : String) -> String {
       out.write_char(if up { c.to_ascii_uppercase() } else { c })
       up = false
     }
+  }
+  out.to_string()
+}
+
+///|
+/// `InProgress` as `IN_PROGRESS`, and `HTTPError` as `HTTP_ERROR`.
+fn upper_snake(name : String) -> String {
+  let chars = name.to_array()
+  let out = StringBuilder()
+  for i, c in chars {
+    if i > 0 && c.is_ascii_uppercase() {
+      let before = chars[i - 1]
+      let after_lower = i + 1 < chars.length() &&
+        chars[i + 1].is_ascii_lowercase()
+      if before.is_ascii_lowercase() ||
+        before.is_ascii_digit() ||
+        (before.is_ascii_uppercase() && after_lower) {
+        out.write_char('_')
+      }
+    }
+    out.write_char(c.to_ascii_uppercase())
   }
   out.to_string()
 }

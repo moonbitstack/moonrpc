@@ -68,6 +68,8 @@ fn main {
     name: "Leo",
     tags: ["a", "bcd"],
     nickname: Some(""),
+    mood: Grumpy,
+    extras: { "calls": 42, "zero": 0 },
   }
   let bytes = @moonrpc.Message::encode(request)
   same("encoding", hex(bytes), hex(hand_request(request)))
@@ -83,8 +85,11 @@ fn main {
     ("/greet.Greeter/SayHello", [bytes]),
     ("/greet.Greeter/SayHello", [hand_request({ ..request, name: "", })]),
     ("/greet.Greeter/SayHello", [b"\x0a\x09short"]),
+    // Mood 9 is no value of `Mood`: it reads as the first, `Calm`.
+    ("/greet.Greeter/SayHello", [b"\x0a\x03Leo\x30\x09"]),
     ("/greet.Greeter/CountTo", [hand_int(1, 3)]),
     ("/greet.Greeter/Sum", [hand_int(1, 2), hand_int(1, 5), b""]),
+    ("/greet.Greeter/Echo", [hand_int(1, 1), hand_int(1, 2), hand_int(1, 3)]),
   ]
   for c in calls {
     let (path, requests) = c
@@ -103,6 +108,8 @@ fn main {
     hex(hand_descriptor().encode()),
   )
   println("descriptor   \{descriptor().symbols().join(" ")}")
+  println("")
+  println(descriptor().source().trim_end(chars="\n"))
   println("")
   println("generated and hand-written services agree")
 }

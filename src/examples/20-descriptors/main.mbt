@@ -13,26 +13,17 @@ fn run() -> Unit raise {
   println("TypeString code = \{string_ty.code()}")
   let repeated : @moonrpc.FieldLabel = LabelRepeated
   println("LabelRepeated code = \{repeated.code()}")
-  let back = @moonrpc.FieldType::from_code(11)
-  println("FieldType::from_code(11) is TypeMessage: \{back == TypeMessage}")
+  let back = @moonrpc.FieldType::of(11)
+  println("FieldType::of(11) is TypeMessage: \{back == TypeMessage}")
 
   // A request message with a scalar field and a repeated field.
-  let hello_request : @moonrpc.MessageDescriptor = {
-    name: "HelloRequest",
-    fields: [
-      @moonrpc.FieldDescriptor::scalar("name", 1, TypeString),
-      @moonrpc.FieldDescriptor::scalar(
-        "tags",
-        2,
-        TypeString,
-        label=LabelRepeated,
-      ),
-    ],
-  }
-  let hello_reply : @moonrpc.MessageDescriptor = {
-    name: "HelloReply",
-    fields: [@moonrpc.FieldDescriptor::scalar("message", 1, TypeString)],
-  }
+  let hello_request = @moonrpc.MessageDescriptor::new("HelloRequest", [
+    @moonrpc.FieldDescriptor::new("name", 1, TypeString),
+    @moonrpc.FieldDescriptor::new("tags", 2, TypeString, label=LabelRepeated),
+  ])
+  let hello_reply = @moonrpc.MessageDescriptor::new("HelloReply", [
+    @moonrpc.FieldDescriptor::new("message", 1, TypeString),
+  ])
   let greeter : @moonrpc.ServiceDescriptor = {
     name: "Greeter",
     methods: [

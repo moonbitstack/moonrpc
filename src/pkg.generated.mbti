@@ -2,6 +2,7 @@
 package "moonbitstack/moonrpc"
 
 import {
+  "moonbitstack/moonhttp/header",
   "moonbitstack/moonrpc/balance",
   "moonbitstack/moonrpc/client",
   "moonbitstack/moonrpc/proto",
@@ -12,6 +13,10 @@ import {
 }
 
 // Values
+pub fn[I : @proto.Message, O : @proto.Message] bidi((@stream.RpcContext, Array[I]) -> Array[O] raise) -> @stream.Handler
+
+pub fn[I : @proto.Message, O : @proto.Message] bidi_each((@stream.RpcContext, I) -> Array[O] raise, end? : (@stream.RpcContext) -> Array[O] raise) -> @stream.Handler
+
 pub fn[I : @proto.Message, O : @proto.Message] client_streaming((@stream.RpcContext, Array[I]) -> O raise) -> @stream.Handler
 
 pub fn decode_file_descriptor_set(Bytes) -> Array[@proto.FileDescriptor] raise @proto.PbError
@@ -115,6 +120,10 @@ pub using @balance {type DnsRecord}
 
 pub using @balance {type DnsResponse}
 
+pub using @proto {type EnumDescriptor}
+
+pub using @proto {type EnumValueDescriptor}
+
 pub using @proto {type FieldDescriptor}
 
 pub using @proto {type FieldLabel}
@@ -128,6 +137,8 @@ pub using @client {type H2Client}
 pub using @server {type H2Server}
 
 pub using @stream {type Handler}
+
+pub using @header {type Header}
 
 pub using @service {type HealthService}
 
@@ -192,6 +203,10 @@ pub using @balance {type Throttling}
 pub type UnaryInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes
 
 pub using @proto {type WireType}
+
+pub using @client {trait Caller}
+
+pub using @proto {trait Enum}
 
 pub using @proto {trait Message}
 

@@ -115,6 +115,8 @@ let bounded = chan.unary("/slow.S/Wait", request, timeout_millis=200)
 
 `MuxChannel` carries many concurrent calls and interactive bidirectional streams over one connection; `ManagedChannel` dials several backends, tracks each through the gRPC connectivity states and picks one per call (`pick_first` or `round_robin`).
 
+All three implement `Caller`, the trait the clients `#rpc` generates call through; a test double or an interceptor chain implements it to stand in their place. `reply.ok()` gives the messages of a call that ended `OK` and raises any other status as a `StatusError`; `one()` also wants exactly one message, and `reply()`／`replies()` decode them into a `Message` type, `INTERNAL` when they do not decode, as grpc-go reports.
+
 ## Health and interceptors
 
 The standard `grpc.health.v1.Health` service registers in one call, and server interceptors wrap unary and server-streaming handlers:
@@ -143,7 +145,7 @@ let (field, wire) = r.read_tag() // (1, LengthDelim)
 let text = r.read_string()                  // "testing"
 ```
 
-On top of it, a descriptor model builds and parses `FileDescriptorProto` and `FileDescriptorSet`, and `grpc.reflection.v1.ServerReflection` (with its `v1alpha` alias) answers `ListServices`, `FileContainingSymbol` and `FileByFilename`, so `grpcurl` can list and describe a service. CI runs exactly that against `cmd/greetd`.
+On top of it, a descriptor model builds and parses `FileDescriptorProto` and `FileDescriptorSet`: imports, messages with their nested messages, enums, oneofs and `map` entries, and services. `grpc.reflection.v1.ServerReflection` (with its `v1alpha` alias) answers `ListServices`, `FileContainingSymbol` (a service, a method, a message, a nested type or an enum) and `FileByFilename`, so `grpcurl` can list and describe a service. CI runs exactly that against `cmd/greetd`. `FileDescriptor::source()` prints the `.proto` a descriptor describes; protoc compiles it back to the same descriptor, which `21-annotations` checks.
 
 ```moonbit
 let greeter : @moonrpc.ServiceDescriptor = {
@@ -225,13 +227,21 @@ let reply = chan.unary(
 each service, and the file descriptor reflection serves:
 
 ```moonbit
+#rpc.enum
+pub enum Mood { Calm = 0; Glad = 1; Grumpy = 5 }   // MOOD_CALM, MOOD_GLAD, MOOD_GRUMPY
+
 #rpc.message
 pub struct HelloRequest {
   name : String               // 1
   #rpc.field(number="4")
   tags : Array[String]        // 4
   nickname : String?          // 5, proto3 optional
+  mood : Mood                 // 6
+  extras : Map[String, Int64] // 7, map<string, int64>
 }
+
+#rpc.message(name="HelloReply.Badge")   // nested: .greet.HelloReply.Badge
+pub struct Badge { label : String }
 
 #rpc.service(name="greet.Greeter")
 pub struct Greeter { greeting : String }
@@ -241,38 +251,63 @@ fn Greeter::say_hello(self : Greeter, req : HelloRequest) -> HelloReply raise { 
 
 #rpc.method
 fn Greeter::count_to(self : Greeter, req : Upto) -> Array[Number] { ... }
+
+#rpc.method
+fn Greeter::echo(self : Greeter, req : Array[Number]) -> Array[Number] { ... }
 ```
 
 ```moonbit
 Greeter::{ greeting: "hello" }.register(server)   // an H2Server or a GrpcServer
 reflection.add_file(descriptor())
+print(descriptor().source())                      // the .proto
+
+let client = GreeterClient::new(@net.Channel::connect("127.0.0.1", @net.port))
+let reply = client.say_hello({ name: "Leo", tags: [], nickname: None, mood: Glad, extras: {} })
+let numbers = client.count_to({ n: 3 }, timeout_millis=500)
 ```
 
 Fields are numbered in declaration order from 1; `number=` sets one, written as a
 string because the attribute grammar has no integers, and the count carries on
 from it. `#rpc.skip` leaves a field out. A method's name is the function's in
 PascalCase, `name=` overriding it; returning an array streams the replies, taking
-one receives a client stream, and a parameter of type `RpcContext` receives the
-call's context. A `StatusError` raised by a method answers with its status, any
-other error with `UNKNOWN`, and a request that does not decode with `INTERNAL`,
-as grpc-go does.
+one receives a client stream, both is a bidirectional stream answered once the
+client half-closes, and a parameter of type `RpcContext` receives the call's
+context. A `StatusError` raised by a method answers with its status, any other
+error with `UNKNOWN`, and a request that does not decode with `INTERNAL`, as
+grpc-go does. A dotted `name=` nests a message or an enum inside another message
+of the same file.
+
+An enum without payloads takes `#rpc.enum`. Its values are numbered by MoonBit's
+own tags (`Glad = 1`), or by `#rpc.value(number="N")`, or one past the previous,
+the first being 0 as proto3 requires; each is named after the enum and itself in
+upper snake case, `#rpc.value(name="...")` overriding it, as Google's style
+guide and buf's `ENUM_VALUE_PREFIX` ask. A number the enum does not know reads as
+its first value, or into a constructor holding one `Int` when there is one, as
+Java's and Swift's `UNRECOGNIZED` keep it.
+
+Each service also gets a client, `GreeterClient[C]` over any `Caller`: one
+`async` method per RPC, taking the request and `metadata?`, `timeout_millis?` and
+`retry?`, returning the decoded reply and raising a non-`OK` status as a
+`StatusError`. [`cmd/greetd`](src/cmd/greetd/) calls itself through it in CI.
 
 | MoonBit | protobuf |
 |:--:|:--:|
 | `String`, `Bytes`, `Bool` | `string`, `bytes`, `bool` |
 | `Int`, `Int64`, `UInt`, `UInt64` | `int32`, `int64`, `uint32`, `uint64` |
 | `Double`, `Float` | `double`, `float` |
-| a `#rpc.message` | that message |
-| `Array[T]` | `repeated T`, packed for the integers and `bool` |
+| a `#rpc.message`, a `#rpc.enum` | that message, that enum |
+| `Array[T]` | `repeated T`, packed for the integers, `bool` and enums |
 | `T?` | `optional T` |
+| `Map[K, V]` | `map<K, V>`, `K` a string, an integer or a `bool` |
 
 [`21-annotations`](src/examples/21-annotations/) checks the generated codec,
-service and descriptor against the same ones written by hand, byte for byte.
+service and descriptor against the same ones written by hand, byte for byte, and
+against protoc and Python's protobuf runtime (`scripts/gen_protoc_vectors.py`).
 
 Wire the generator into the build once. In `moon.mod`:
 
 ```
-rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.1 -C \"$mod_dir\" \"$input\" -o \"$output\"")
+rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.2 -C \"$mod_dir\" \"$input\" -o \"$output\"")
 ```
 
 and in the `moon.pkg` of the package holding the declarations:
@@ -288,8 +323,7 @@ formatter(ignore: [ "service.g.mbt" ])
 - Response and request compression; incoming gzip is decompressed, outgoing messages are not compressed.
 - Concurrent dispatch on one connection: a slow handler holds up the other streams, which is also why health `Watch` sends once and server-side deadlines are not preemptive.
 - Connection backoff, client interceptors, channelz and service config.
-- Descriptor fidelity for enums, nested types, imports and options, and transitive dependencies in reflection; `#rpc` waits on the same for enums and maps.
-- Bidirectional streaming and client stubs from `#rpc`.
+- Descriptor options other than `map_entry`, extensions, and transitive dependencies in reflection; `oneof` and imports from `#rpc`.
 
 ## Licence
 

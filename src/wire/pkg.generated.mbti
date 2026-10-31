@@ -82,6 +82,7 @@ pub fn Status::from_h2_error(Int32) -> Self
 pub fn Status::from_http(Int32) -> Self
 pub fn Status::name(Self) -> String
 pub fn Status::not_equal(Self, Self) -> Bool
+pub fn Status::of(Int32) -> Self
 pub fn Status::to_repr(Self) -> @debug.Repr
 
 // Type aliases

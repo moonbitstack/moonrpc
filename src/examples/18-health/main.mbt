@@ -75,8 +75,8 @@ fn run() -> Unit raise {
   // The status enum maps to and from its protobuf number.
   let serving : @moonrpc.ServingStatus = Serving
   println("SERVING code = \{serving.code()}")
-  let round = @moonrpc.ServingStatus::from_code(2)
-  println("from_code(2) = \{status_name(round)}")
+  let round = @moonrpc.ServingStatus::of(2)
+  println("of(2) = \{status_name(round)}")
 
   // Direct checks against the service map.
   let greeter = status_name(health.check("greet.Greeter"))

@@ -24,18 +24,38 @@ pub fn PbError::to_string(Self) -> String
 pub impl Show for PbError
 
 // Types and methods
+pub(all) struct EnumDescriptor {
+  name : String
+  values : Array[EnumValueDescriptor]
+} derive(Eq)
+pub fn EnumDescriptor::decode(Bytes) -> Self raise PbError
+pub fn EnumDescriptor::encode(Self) -> Bytes
+pub fn EnumDescriptor::equal(Self, Self) -> Bool
+pub fn EnumDescriptor::not_equal(Self, Self) -> Bool
+
+pub(all) struct EnumValueDescriptor {
+  name : String
+  number : Int32
+} derive(Eq)
+pub fn EnumValueDescriptor::decode(Bytes) -> Self raise PbError
+pub fn EnumValueDescriptor::encode(Self) -> Bytes
+pub fn EnumValueDescriptor::equal(Self, Self) -> Bool
+pub fn EnumValueDescriptor::not_equal(Self, Self) -> Bool
+
 pub(all) struct FieldDescriptor {
   name : String
   number : Int32
   label : FieldLabel
   type_ : FieldType
   type_name : String
+  oneof_index : Int32?
+  proto3_optional : Bool
 } derive(Eq)
 pub fn FieldDescriptor::decode(Bytes) -> Self raise PbError
 pub fn FieldDescriptor::encode(Self) -> Bytes
 pub fn FieldDescriptor::equal(Self, Self) -> Bool
+pub fn FieldDescriptor::new(String, Int32, FieldType, label? : FieldLabel, type_name? : String, oneof_index? : Int32, proto3_optional? : Bool) -> Self
 pub fn FieldDescriptor::not_equal(Self, Self) -> Bool
-pub fn FieldDescriptor::scalar(String, Int32, FieldType, label? : FieldLabel) -> Self
 
 pub(all) enum FieldLabel {
   LabelOptional
@@ -44,8 +64,8 @@ pub(all) enum FieldLabel {
 } derive(Eq)
 pub fn FieldLabel::code(Self) -> Int32
 pub fn FieldLabel::equal(Self, Self) -> Bool
-pub fn FieldLabel::from_code(Int32) -> Self
 pub fn FieldLabel::not_equal(Self, Self) -> Bool
+pub fn FieldLabel::of(Int32) -> Self
 
 pub(all) enum FieldType {
   TypeDouble
@@ -68,31 +88,40 @@ pub(all) enum FieldType {
 } derive(Eq)
 pub fn FieldType::code(Self) -> Int32
 pub fn FieldType::equal(Self, Self) -> Bool
-pub fn FieldType::from_code(Int32) -> Self
+pub fn FieldType::keyword(Self) -> String?
 pub fn FieldType::not_equal(Self, Self) -> Bool
+pub fn FieldType::of(Int32) -> Self
 
 pub(all) struct FileDescriptor {
   name : String
   package_ : String
+  dependencies : Array[String]
   messages : Array[MessageDescriptor]
+  enums : Array[EnumDescriptor]
   services : Array[ServiceDescriptor]
   syntax : String
 } derive(Eq)
 pub fn FileDescriptor::decode(Bytes) -> Self raise PbError
 pub fn FileDescriptor::encode(Self) -> Bytes
 pub fn FileDescriptor::equal(Self, Self) -> Bool
-pub fn FileDescriptor::new(String, String, messages? : Array[MessageDescriptor], services? : Array[ServiceDescriptor]) -> Self
+pub fn FileDescriptor::new(String, String, dependencies? : Array[String], messages? : Array[MessageDescriptor], enums? : Array[EnumDescriptor], services? : Array[ServiceDescriptor]) -> Self
 pub fn FileDescriptor::not_equal(Self, Self) -> Bool
 pub fn FileDescriptor::service_names(Self) -> Array[String]
+pub fn FileDescriptor::source(Self) -> String
 pub fn FileDescriptor::symbols(Self) -> Array[String]
 
 pub(all) struct MessageDescriptor {
   name : String
   fields : Array[FieldDescriptor]
+  nested : Array[MessageDescriptor]
+  enums : Array[EnumDescriptor]
+  oneofs : Array[String]
+  map_entry : Bool
 } derive(Eq)
 pub fn MessageDescriptor::decode(Bytes) -> Self raise PbError
 pub fn MessageDescriptor::encode(Self) -> Bytes
 pub fn MessageDescriptor::equal(Self, Self) -> Bool
+pub fn MessageDescriptor::new(String, Array[FieldDescriptor], nested? : Array[Self], enums? : Array[EnumDescriptor], oneofs? : Array[String], map_entry? : Bool) -> Self
 pub fn MessageDescriptor::not_equal(Self, Self) -> Bool
 
 pub(all) struct MethodDescriptor {
@@ -178,8 +207,8 @@ pub(all) enum WireType {
 } derive(Eq)
 pub fn WireType::code(Self) -> Int32
 pub fn WireType::equal(Self, Self) -> Bool
-pub fn WireType::from_code(Int32) -> Self?
 pub fn WireType::not_equal(Self, Self) -> Bool
+pub fn WireType::of(Int32) -> Self?
 pub fn WireType::output(Self, &Logger) -> Unit
 pub fn WireType::to_string(Self) -> String
 pub impl Show for WireType
@@ -187,6 +216,11 @@ pub impl Show for WireType
 // Type aliases
 
 // Traits
+pub(open) trait Enum {
+  fn code(Self) -> Int32
+  fn of(Int32) -> Self
+}
+
 pub(open) trait Message {
   fn encode(Self) -> Bytes
   fn decode(Bytes) -> Self raise PbError

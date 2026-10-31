@@ -2,14 +2,12 @@
 /// The descriptor of a `greet` service with one unary method and its two messages,
 /// reused across the descriptor and reflection tests.
 fn greet_file() -> @proto.FileDescriptor {
-  let request = @proto.MessageDescriptor::{
-    name: "HelloRequest",
-    fields: [@proto.FieldDescriptor::scalar("name", 1, TypeString)],
-  }
-  let reply = @proto.MessageDescriptor::{
-    name: "HelloReply",
-    fields: [@proto.FieldDescriptor::scalar("message", 1, TypeString)],
-  }
+  let request = @proto.MessageDescriptor::new("HelloRequest", [
+    @proto.FieldDescriptor::new("name", 1, TypeString),
+  ])
+  let reply = @proto.MessageDescriptor::new("HelloReply", [
+    @proto.FieldDescriptor::new("message", 1, TypeString),
+  ])
   let greeter = @proto.ServiceDescriptor::{
     name: "Greeter",
     methods: [

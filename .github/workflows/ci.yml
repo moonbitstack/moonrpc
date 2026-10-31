@@ -55,7 +55,9 @@ jobs:
           done
 
       - name: generated annotations are fresh
-        run: moon run src/cmd/rpc --target native -- -C . src/examples/21-annotations/greeter.mbt -o src/examples/21-annotations/greeter.g.mbt --check
+        run: |
+          moon run src/cmd/rpc --target native -- -C . src/examples/21-annotations/greeter.mbt -o src/examples/21-annotations/greeter.g.mbt --check
+          moon run src/cmd/rpc --target native -- -C . src/cmd/greetd/greet.mbt -o src/cmd/greetd/greet.g.mbt --check
 
       - name: lint (fmt is clean)
         run: |
@@ -116,10 +118,30 @@ jobs:
           echo "== describe =="
           grpcurl -plaintext -max-time 10 127.0.0.1:12000 describe greet.Greeter | tee /tmp/desc.txt
           grep -q 'rpc SayHello' /tmp/desc.txt
-          echo "== unary call (OK) =="
-          grpcurl -plaintext -max-time 10 -d '{"name":"world"}' 127.0.0.1:12000 greet.Greeter/SayHello | tee /tmp/call.txt
+          grep -q 'rpc Echo ( stream .greet.Number ) returns ( stream .greet.Number )' /tmp/desc.txt
+          grpcurl -plaintext -max-time 10 127.0.0.1:12000 describe greet.Mood | tee /tmp/enum.txt
+          grep -q 'MOOD_GLAD = 1' /tmp/enum.txt
+          grpcurl -plaintext -max-time 10 127.0.0.1:12000 describe greet.HelloRequest | tee /tmp/msg.txt
+          grep -q 'map<string, int64> extras = 3' /tmp/msg.txt
+          grpcurl -plaintext -max-time 10 127.0.0.1:12000 describe greet.Greeter.SayHello
+          echo "== unary call with an enum and a map (OK) =="
+          grpcurl -plaintext -max-time 10 -d '{"name":"world","mood":"MOOD_GLAD","extras":{"a":"2","b":"40"}}' 127.0.0.1:12000 greet.Greeter/SayHello | tee /tmp/call.txt
           grep -q 'Hello, world' /tmp/call.txt
-          echo "== unary call (non-OK status via ctx.fail) =="
+          grep -q '"mood": "MOOD_GLAD"' /tmp/call.txt
+          grep -q '"total": "42"' /tmp/call.txt
+          echo "== streams =="
+          grpcurl -plaintext -max-time 10 -d '{"n":3}' 127.0.0.1:12000 greet.Greeter/CountTo | tee /tmp/up.txt
+          test "$(grep -c '"value"' /tmp/up.txt)" = 3
+          grpcurl -plaintext -max-time 10 -d '{"value":1} {"value":41}' 127.0.0.1:12000 greet.Greeter/Sum | tee /tmp/sum.txt
+          grep -q '"value": 42' /tmp/sum.txt
+          grpcurl -plaintext -max-time 10 -d '{"value":1} {"value":2}' 127.0.0.1:12000 greet.Greeter/Echo | tr -d ' \n' | tee /tmp/echo.txt
+          grep -q '{"value":2}{"value":1}' /tmp/echo.txt
+          echo "== the generated client against the same server =="
+          # The built binary, not `moon run`, which would wait on the build lock the
+          # running server holds.
+          ./_build/native/debug/build/cmd/greetd/greetd.exe check 12000 | tee /tmp/check.txt
+          grep -q 'client and channel agree' /tmp/check.txt
+          echo "== unary call (non-OK status) =="
           # An empty name must come back as INVALID_ARGUMENT with its message; grpcurl
           # exits non-zero, so capture rather than let `set -e` abort.
           set +e

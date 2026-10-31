@@ -3,6 +3,8 @@ import {
   "moonbitlang/core/cmp",
   "moonbitstack/moonrpc/internal/h2",
   "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonrpc/balance",
+  "moonbitstack/moonrpc/proto",
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonurl",
   "moonbitstack/moonhttp/http2",

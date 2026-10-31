@@ -6,6 +6,9 @@ import {
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonrpc/balance",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/wire",
 }
 
 // Values
@@ -26,6 +29,10 @@ pub(all) struct CallReply {
   committed : Bool
   unprocessed : Bool
 }
+pub fn CallReply::ok(Self) -> Array[Bytes] raise @wire.StatusError
+pub fn CallReply::one(Self) -> Bytes raise @wire.StatusError
+pub fn[T : @proto.Message] CallReply::replies(Self) -> Array[T] raise @wire.StatusError
+pub fn[T : @proto.Message] CallReply::reply(Self) -> T raise @wire.StatusError
 
 pub(all) struct ClientCall {
   id : Int32
@@ -91,3 +98,6 @@ pub fn H2Client::unprocessed(Self, Int32) -> Bool
 // Type aliases
 
 // Traits
+pub(open) trait Caller {
+  async fn invoke(Self, String, Array[Bytes], Array[@header.Header], Int32?, @balance.Retry?) -> CallReply
+}

@@ -20,6 +20,100 @@ pub fn[R :  @moonrpc.Registrar] Greeter::register(self : Greeter, server : R) ->
       (_ctx, req : Array[Number]) => Greeter::add_up(self, req)
     ),
   )
+  server.register_handler(
+    "/greet.Greeter/Echo",
+    @moonrpc.bidi((_ctx, req : Array[Number]) => Greeter::echo(self, req)),
+  )
+}
+
+///|
+pub struct GreeterClient[C] {
+  channel : C
+}
+
+///|
+pub fn[C] GreeterClient::new(channel : C) -> GreeterClient[C] {
+  { channel, }
+}
+
+///|
+pub async fn[C :  @moonrpc.Caller] GreeterClient::say_hello(
+  self : GreeterClient[C],
+  req : HelloRequest,
+  metadata? : Array[@moonrpc.Header],
+  timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
+) -> HelloReply {
+  self
+    .channel
+    .invoke(
+      "/greet.Greeter/SayHello",
+      [@moonrpc.Message::encode(req)],
+      metadata.unwrap_or([]),
+      timeout_millis,
+      retry,
+    )
+    .reply()
+}
+
+///|
+pub async fn[C :  @moonrpc.Caller] GreeterClient::count_to(
+  self : GreeterClient[C],
+  req : Upto,
+  metadata? : Array[@moonrpc.Header],
+  timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
+) -> Array[Number] {
+  self
+    .channel
+    .invoke(
+      "/greet.Greeter/CountTo",
+      [@moonrpc.Message::encode(req)],
+      metadata.unwrap_or([]),
+      timeout_millis,
+      retry,
+    )
+    .replies()
+}
+
+///|
+pub async fn[C :  @moonrpc.Caller] GreeterClient::add_up(
+  self : GreeterClient[C],
+  req : Array[Number],
+  metadata? : Array[@moonrpc.Header],
+  timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
+) -> Number {
+  self
+    .channel
+    .invoke(
+      "/greet.Greeter/Sum",
+      req.map(m => @moonrpc.Message::encode(m)),
+      metadata.unwrap_or([]),
+      timeout_millis,
+      retry,
+    )
+    .reply()
+}
+
+///|
+pub async fn[C :  @moonrpc.Caller] GreeterClient::echo(
+  self : GreeterClient[C],
+  req : Array[Number],
+  metadata? : Array[@moonrpc.Header],
+  timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
+) -> Array[Number] {
+  self
+    .channel
+    .invoke(
+      "/greet.Greeter/Echo",
+      req.map(m => @moonrpc.Message::encode(m)),
+      metadata.unwrap_or([]),
+      timeout_millis,
+      retry,
+    )
+    .replies()
 }
 
 ///|
@@ -28,87 +122,89 @@ pub fn descriptor() -> @moonrpc.FileDescriptor {
     "greeter.proto",
     "greet",
     messages=[
-      {
-        name: "HelloRequest",
-        fields: [
-          {
-            name: "name",
-            number: 1,
-            label: LabelOptional,
-            type_: TypeString,
-            type_name: "",
-          },
-          {
-            name: "tags",
-            number: 4,
-            label: LabelRepeated,
-            type_: TypeString,
-            type_name: "",
-          },
-          {
-            name: "nickname",
-            number: 5,
-            label: LabelOptional,
-            type_: TypeString,
-            type_name: "",
-          },
+      @moonrpc.MessageDescriptor::new(
+        "HelloRequest",
+        [
+          @moonrpc.FieldDescriptor::new("name", 1, TypeString),
+          @moonrpc.FieldDescriptor::new(
+            "tags",
+            4,
+            TypeString,
+            label=LabelRepeated,
+          ),
+          @moonrpc.FieldDescriptor::new(
+            "nickname",
+            5,
+            TypeString,
+            oneof_index=0,
+            proto3_optional=true,
+          ),
+          @moonrpc.FieldDescriptor::new(
+            "mood",
+            6,
+            TypeEnum,
+            type_name=".greet.Mood",
+          ),
+          @moonrpc.FieldDescriptor::new(
+            "extras",
+            7,
+            TypeMessage,
+            type_name=".greet.HelloRequest.ExtrasEntry",
+            label=LabelRepeated,
+          ),
         ],
-      },
-      {
-        name: "HelloReply",
-        fields: [
-          {
-            name: "message",
-            number: 1,
-            label: LabelOptional,
-            type_: TypeString,
-            type_name: "",
-          },
-          {
-            name: "calls",
-            number: 2,
-            label: LabelOptional,
-            type_: TypeInt64,
-            type_name: "",
-          },
-          {
-            name: "scores",
-            number: 3,
-            label: LabelRepeated,
-            type_: TypeInt32,
-            type_name: "",
-          },
-          {
-            name: "ratio",
-            number: 4,
-            label: LabelOptional,
-            type_: TypeDouble,
-            type_name: "",
-          },
+        nested=[
+          @moonrpc.MessageDescriptor::new(
+            "ExtrasEntry",
+            [
+              @moonrpc.FieldDescriptor::new("key", 1, TypeString),
+              @moonrpc.FieldDescriptor::new("value", 2, TypeInt64),
+            ],
+            map_entry=true,
+          ),
         ],
-      },
-      {
-        name: "Upto",
-        fields: [
-          {
-            name: "n",
-            number: 1,
-            label: LabelOptional,
-            type_: TypeInt32,
-            type_name: "",
-          },
+        oneofs=["_nickname"],
+      ),
+      @moonrpc.MessageDescriptor::new(
+        "HelloReply",
+        [
+          @moonrpc.FieldDescriptor::new("message", 1, TypeString),
+          @moonrpc.FieldDescriptor::new("calls", 2, TypeInt64),
+          @moonrpc.FieldDescriptor::new(
+            "scores",
+            3,
+            TypeInt32,
+            label=LabelRepeated,
+          ),
+          @moonrpc.FieldDescriptor::new("ratio", 4, TypeDouble),
+          @moonrpc.FieldDescriptor::new(
+            "badges",
+            5,
+            TypeMessage,
+            type_name=".greet.HelloReply.Badge",
+            label=LabelRepeated,
+          ),
         ],
-      },
-      {
-        name: "Number",
-        fields: [
-          {
-            name: "value",
-            number: 1,
-            label: LabelOptional,
-            type_: TypeInt32,
-            type_name: "",
-          },
+        nested=[
+          @moonrpc.MessageDescriptor::new(
+            "Badge", [@moonrpc.FieldDescriptor::new("label", 1, TypeString)]
+          ),
+        ],
+      ),
+      @moonrpc.MessageDescriptor::new(
+        "Upto", [@moonrpc.FieldDescriptor::new("n", 1, TypeInt32)]
+      ),
+      @moonrpc.MessageDescriptor::new(
+        "Number", [@moonrpc.FieldDescriptor::new("value", 1, TypeInt32)]
+      ),
+    ],
+    enums=[
+      @moonrpc.EnumDescriptor::{
+        name: "Mood",
+        values: [
+          { name: "MOOD_CALM", number: 0 },
+          { name: "MOOD_GLAD", number: 1 },
+          { name: "MOOD_GRUMPY", number: 5 },
         ],
       },
     ],
@@ -137,10 +233,36 @@ pub fn descriptor() -> @moonrpc.FileDescriptor {
             client_streaming: true,
             server_streaming: false,
           },
+          {
+            name: "Echo",
+            input_type: ".greet.Number",
+            output_type: ".greet.Number",
+            client_streaming: true,
+            server_streaming: true,
+          },
         ],
       },
     ],
   )
+}
+
+///|
+pub impl @moonrpc.Enum for Mood with fn code(self) {
+  match self {
+    Calm => 0
+    Glad => 1
+    Grumpy => 5
+  }
+}
+
+///|
+pub impl @moonrpc.Enum for Mood with fn of(n) {
+  match n {
+    0 => Calm
+    1 => Glad
+    5 => Grumpy
+    _ => Calm
+  }
 }
 
 ///|
@@ -155,6 +277,18 @@ pub impl @moonrpc.Message for HelloRequest with fn encode(self) {
   if self.nickname is Some(x) {
     w.string_(5, x)
   }
+  if @moonrpc.Enum::code(self.mood) != 0 {
+    w.enum_(6, @moonrpc.Enum::code(self.mood))
+  }
+  for k, x in self.extras {
+    let entry = {
+      let w = @moonrpc.PbWriter::new()
+      w.string_(1, k)
+      w.int64(2, x)
+      w.to_bytes()
+    }
+    w.message_(7, entry)
+  }
   w.to_bytes()
 }
 
@@ -164,15 +298,59 @@ pub impl @moonrpc.Message for HelloRequest with fn decode(b) {
   let v_name :Ref[String] = Ref("")
   let v_tags :Array[String] = []
   let v_nickname :Ref[String?] = Ref(None)
+  let v_mood :Ref[Mood] = Ref(@moonrpc.Enum::of(0))
+  let v_extras :Map[String, Int64] = Map([])
   while !r.eof() {
     match r.read_tag() {
       (1, LengthDelim) => v_name.val = r.read_string()
       (4, LengthDelim) => v_tags.push(r.read_string())
       (5, LengthDelim) => v_nickname.val = Some(r.read_string())
+      (6, Varint) => v_mood.val = @moonrpc.Enum::of(r.read_int32())
+      (7, LengthDelim) => {
+        let e = @moonrpc.PbReader::new(r.read_len_delim())
+        let k :Ref[String] = Ref("")
+        let x :Ref[Int64] = Ref(0L)
+        while !e.eof() {
+          match e.read_tag() {
+            (1, LengthDelim) => k.val = e.read_string()
+            (2, Varint) => x.val = e.read_int64()
+            (_, wire) => e.skip(wire)
+          }
+        }
+        v_extras[k.val] =  x.val
+      }
       (_, wire) => r.skip(wire)
     }
   }
-  HelloRequest::{ name: v_name.val, tags: v_tags, nickname: v_nickname.val }
+  HelloRequest::{
+    name: v_name.val,
+    tags: v_tags,
+    nickname: v_nickname.val,
+    mood: v_mood.val,
+    extras: v_extras,
+  }
+}
+
+///|
+pub impl @moonrpc.Message for Badge with fn encode(self) {
+  let w = @moonrpc.PbWriter::new()
+  if self.label != "" {
+    w.string_(1, self.label)
+  }
+  w.to_bytes()
+}
+
+///|
+pub impl @moonrpc.Message for Badge with fn decode(b) {
+  let r = @moonrpc.PbReader::new(b)
+  let v_label :Ref[String] = Ref("")
+  while !r.eof() {
+    match r.read_tag() {
+      (1, LengthDelim) => v_label.val = r.read_string()
+      (_, wire) => r.skip(wire)
+    }
+  }
+  Badge::{ label: v_label.val }
 }
 
 ///|
@@ -195,6 +373,9 @@ pub impl @moonrpc.Message for HelloReply with fn encode(self) {
   if self.ratio != 0.0 {
     w.double_(4, self.ratio)
   }
+  for x in self.badges {
+    w.message_(5, @moonrpc.Message::encode(x))
+  }
   w.to_bytes()
 }
 
@@ -205,6 +386,7 @@ pub impl @moonrpc.Message for HelloReply with fn decode(b) {
   let v_calls :Ref[Int64] = Ref(0L)
   let v_scores :Array[Int32] = []
   let v_ratio :Ref[Double] = Ref(0.0)
+  let v_badges :Array[Badge] = []
   while !r.eof() {
     match r.read_tag() {
       (1, LengthDelim) => v_message.val = r.read_string()
@@ -217,6 +399,8 @@ pub impl @moonrpc.Message for HelloReply with fn decode(b) {
       }
       (3, Varint) => v_scores.push(r.read_int32())
       (4, Fixed64) => v_ratio.val = r.read_double()
+      (5, LengthDelim) => 
+        v_badges.push(@moonrpc.Message::decode(r.read_len_delim()))
       (_, wire) => r.skip(wire)
     }
   }
@@ -225,6 +409,7 @@ pub impl @moonrpc.Message for HelloReply with fn decode(b) {
     calls: v_calls.val,
     scores: v_scores,
     ratio: v_ratio.val,
+    badges: v_badges,
     cached: Default::default(),
   }
 }

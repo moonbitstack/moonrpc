@@ -1,81 +1,105 @@
-// A runnable gRPC server (helloworld-style greeter) over moonrpc's self-built h2c
-// stack, used to prove interoperability with a real gRPC client — `grpcurl` lists,
-// describes, and calls it through Server Reflection. If moonrpc's frames / HPACK /
-// trailers / descriptor bytes diverge from the spec, a foreign client fails here.
+// A runnable gRPC server over moonrpc's own h2c stack, declared with `#rpc`
+// annotations (`greet.g.mbt` comes from `cmd/rpc`), so a real client checks
+// both the transport and what the generator writes: grpcurl lists, describes
+// and calls it through Server Reflection.
+//
+//     greetd [port]          serve on 127.0.0.1
+//     greetd check [port]    call a running greetd through the generated client
 
 ///|
-/// Unary `greet.Greeter/SayHello`: decode `HelloRequest { name = 1 }`, reply with
-/// `HelloReply { message = 1 }`. An empty name ends the call with `INVALID_ARGUMENT`
-/// via `ctx.fail`, exercising the non-OK status path against a real client.
-fn say_hello(ctx : @moonrpc.RpcContext, req : Bytes) -> Bytes {
-  let name = try {
-    let r = @moonrpc.PbReader::new(req)
-    let mut n = ""
-    while !r.eof() {
-      let (field, wire) = r.read_tag()
-      if field == 1 {
-        n = r.read_string()
-      } else {
-        r.skip(wire)
-      }
-    }
-    n
-  } catch {
-    _ => ""
-  }
-  if name == "" {
-    ctx.fail(@moonrpc.Status::code(InvalidArgument), "name is required")
-    return b""
-  }
-  let w = @moonrpc.PbWriter::new()
-  w.string_(1, "Hello, " + name)
-  w.to_bytes()
+async fn serve(port : Int32) -> Unit {
+  let server = @net.GrpcServer::new()
+  Greeter::{ }.register(server)
+  let reflection = @moonrpc.ReflectionService::new()
+  reflection.add_file(descriptor())
+  server.register_reflection(reflection)
+  server.serve(host="127.0.0.1", port~)
 }
 
 ///|
-/// The `greet.proto` descriptor served over reflection so grpcurl can discover and
-/// call the service without a local `.proto`.
-fn greet_file() -> @moonrpc.FileDescriptor {
-  let request = @moonrpc.MessageDescriptor::{
-    name: "HelloRequest",
-    fields: [@moonrpc.FieldDescriptor::scalar("name", 1, TypeString)],
+fn hex(b : Bytes) -> String {
+  let out = StringBuilder()
+  for x in b {
+    out.write_string(x.to_int().to_string(radix=16).pad_start(2, '0'))
   }
-  let reply = @moonrpc.MessageDescriptor::{
-    name: "HelloReply",
-    fields: [@moonrpc.FieldDescriptor::scalar("message", 1, TypeString)],
+  out.to_string()
+}
+
+///|
+fn same(what : String, client : String, channel : String) -> Unit {
+  if client != channel {
+    abort("\{what} differs:\n  client:  \{client}\n  channel: \{channel}")
   }
-  let greeter = @moonrpc.ServiceDescriptor::{
-    name: "Greeter",
-    methods: [
-      @moonrpc.MethodDescriptor::{
-        name: "SayHello",
-        input_type: ".greet.HelloRequest",
-        output_type: ".greet.HelloReply",
-        client_streaming: false,
-        server_streaming: false,
-      },
-    ],
+  println("\{what}  \{client}")
+}
+
+///|
+fn[T : @moonrpc.Message] bytes_of(messages : Array[T]) -> String {
+  messages.map(m => hex(@moonrpc.Message::encode(m))).join(" ")
+}
+
+///|
+/// Every method once through `GreeterClient` and once as raw bytes on the
+/// same `Channel`: the replies and statuses must agree.
+async fn check(port : Int32) -> Unit {
+  let channel = @net.Channel::connect("127.0.0.1", port)
+  defer channel.close()
+  let client = GreeterClient::new(channel)
+  let request : HelloRequest = {
+    name: "world",
+    mood: Glad,
+    extras: { "a": 2, "b": 40 },
   }
-  @moonrpc.FileDescriptor::new(
-    "greet.proto",
-    "greet",
-    messages=[request, reply],
-    services=[greeter],
+  let reply = client.say_hello(request)
+  let raw = channel.unary(
+    "/greet.Greeter/SayHello",
+    @moonrpc.Message::encode(request),
   )
+  same("SayHello", bytes_of([reply]), raw.messages.map(hex).join(" "))
+  let refused = try {
+    ignore(client.say_hello({ ..request, name: "", }))
+    "OK"
+  } catch {
+    @wire.StatusError(status, message) => "\{status.code()} \{message}"
+    e => "\{e}"
+  }
+  let raw = channel.unary(
+    "/greet.Greeter/SayHello",
+    @moonrpc.Message::encode({ ..request, name: "", }),
+  )
+  same("SayHello refused", refused, "\{raw.grpc_status} \{raw.grpc_message}")
+  let numbers = client.count_to({ n: 3, })
+  let raw = channel.server_streaming(
+    "/greet.Greeter/CountTo",
+    @moonrpc.Message::encode(Upto::{ n: 3, }),
+  )
+  same("CountTo", bytes_of(numbers), raw.messages.map(hex).join(" "))
+  let ins : Array[Number] = [{ value: 1, }, { value: 2, }, { value: 39, }]
+  let total = client.sum(ins)
+  let raw = channel.client_streaming(
+    "/greet.Greeter/Sum",
+    ins.map(m => @moonrpc.Message::encode(m)),
+  )
+  same("Sum", bytes_of([total]), raw.messages.map(hex).join(" "))
+  let back = client.echo(ins)
+  let raw = channel.bidi(
+    "/greet.Greeter/Echo",
+    ins.map(m => @moonrpc.Message::encode(m)),
+  )
+  same("Echo", bytes_of(back), raw.messages.map(hex).join(" "))
+  println("client and channel agree")
 }
 
 ///|
 fn main {
-  let port = match @env.args() {
-    [_, p, ..] => @string.parse_int(p[:]) catch { _ => @net.port }
-    _ => @net.port
+  let (checking, rest) = match @env.args() {
+    [_, "check", .. rest] => (true, rest)
+    [_, .. rest] => (false, rest)
+    [] => (false, [])
   }
-  @async.run_async_main(() => {
-    let server = @net.GrpcServer::new()
-    server.register_unary("/greet.Greeter/SayHello", say_hello)
-    let refl = @moonrpc.ReflectionService::new()
-    refl.add_file(greet_file())
-    server.register_reflection(refl)
-    server.serve(host="127.0.0.1", port~)
-  })
+  let port = match rest {
+    [p, ..] => @string.parse_int(p[:]) catch { _ => @net.port }
+    [] => @net.port
+  }
+  @async.run_async_main(() => if checking { check(port) } else { serve(port) })
 }
