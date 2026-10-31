@@ -22,7 +22,7 @@ pub fn is_binary_metadata(name : Bytes) -> Bool {
 /// asks a receiver to tolerate.
 pub fn metadata_value_from_wire(name : Bytes, value : Bytes) -> Bytes {
   if is_binary_metadata(name) {
-    @base64.decode_lossy(@moonbase.text_of(value[:]))
+    @base64.decode_lossy(@utf8.decode_lossy(value[:]))
   } else {
     value
   }

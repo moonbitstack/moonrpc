@@ -4,6 +4,6 @@
 import {
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonvar/fixed",
-  "moonbitstack/moonbase",
   "moonbitstack/moonbase/base64",
+  "moonbitlang/core/encoding/utf8",
 }

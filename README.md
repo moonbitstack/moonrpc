@@ -307,7 +307,7 @@ against protoc and Python's protobuf runtime (`scripts/gen_protoc_vectors.py`).
 Wire the generator into the build once. In `moon.mod`:
 
 ```
-rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.2 -C \"$mod_dir\" \"$input\" -o \"$output\"")
+rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.3 -C \"$mod_dir\" \"$input\" -o \"$output\"")
 ```
 
 and in the `moon.pkg` of the package holding the declarations:
