@@ -1,10 +1,10 @@
 // The multiplexed gRPC channel: one h2c connection carrying many calls at once, driven
-// by a single background read pump. Where `Channel` handles one call at a time, a
+// by a single background read pump. Where `Channel` reads from inside its calls, a
 // `MuxChannel` runs a shared read loop that reads every frame off the socket, feeds the
 // `@moonrpc.H2Client` engine, and signals the owning call's inbox when its stream
-// completes — so concurrent calls, interactive streaming, and keepalive PINGs share the
-// connection safely. Socket writes are serialized through a mutex so frames from
-// different calls never interleave.
+// completes — so interactive streaming and keepalive PINGs, which need reading while no
+// call is, share the connection safely. Socket writes are serialized through a mutex so
+// frames from different calls never interleave.
 
 ///|
 /// A multiplexed channel over one connection: the engine keeps every call's stream state,
@@ -17,6 +17,7 @@ pub struct MuxChannel {
   inboxes : Map[Int32, @aqueue.Queue[Unit]]
   mut keepalive : @moonrpc.Keepalive?
   mut gone : Bool
+  mut reader : @async.Task[Unit]?
 }
 
 ///|
@@ -35,6 +36,7 @@ pub async fn MuxChannel::connect(host : String, port : Int32) -> MuxChannel {
     inboxes: Map([]),
     keepalive: None,
     gone: false,
+    reader: None,
   }
   ch.write_locked(engine.preface())
   ch
@@ -60,6 +62,19 @@ async fn MuxChannel::write_locked(
 /// this once per channel.
 pub async fn MuxChannel::read_pump(self : MuxChannel) -> Unit {
   defer self.hang_up()
+  // The loop is a task of its own so `close` can cancel it.
+  @async.with_task_group(g => {
+    self.reader = Some(g.spawn(() => self.read_loop(), allow_failure=true))
+  })
+}
+
+///|
+/// Read frames until the connection ends, and close it on the way out.
+async fn MuxChannel::read_loop(self : MuxChannel) -> Unit {
+  defer {
+    self.reader = None
+    self.conn.close()
+  }
   for ;; {
     let frame = read_frame(self.conn) catch { _ => return }
     if self.keepalive is Some(ka) {
@@ -259,6 +274,12 @@ pub async fn MuxChannel::run_keepalive(
 
 ///|
 /// Close the connection. Outstanding calls are abandoned; the read pump exits.
+///
+/// With a pump running this cancels it and the pump closes the socket: closed first, a pending
+/// read on Windows never completes, and the task group holding the pump never ends.
 pub fn MuxChannel::close(self : MuxChannel) -> Unit {
-  self.conn.close()
+  match self.reader {
+    Some(task) => task.cancel()
+    None => self.conn.close()
+  }
 }

@@ -144,3 +144,30 @@ async test "mux channel: a lost connection wakes a stream and fails a unary call
     ch.close()
   })
 }
+
+///|
+async test "mux channel: close ends the pump while the peer keeps the connection open" {
+  @async.with_task_group(g => {
+    let server = @socket.TcpServer::TcpServer(
+      @socket.Addr::parse("127.0.0.1:18211"),
+      reuse_addr=true,
+    )
+    let holding = g.spawn(() => {
+      server.run_forever((conn, _addr) => {
+        ignore(conn.read_exactly(@http2.preface.length()))
+        @async.sleep(60000)
+      })
+    })
+    @async.sleep(300)
+    let ended = @async.with_timeout_opt(3000, () => {
+      @async.with_task_group(client => {
+        let ch = MuxChannel::connect("127.0.0.1", 18211)
+        client.spawn_bg(no_wait=true, () => ch.read_pump())
+        @async.sleep(100)
+        ch.close()
+      })
+    })
+    assert_true(ended is Some(_))
+    holding.cancel()
+  })
+}
