@@ -117,3 +117,30 @@ async test "mux channel: many concurrent calls on one connection each get their 
     ch.close()
   })
 }
+
+///|
+async test "mux channel: a lost connection wakes a stream and fails a unary call" {
+  @async.with_task_group(g => {
+    let server = GrpcServer::new()
+    server.register("/echo.E/Say", req => b"echo:" + req)
+    let ts = g.spawn(() => server.serve(port=18112))
+    @async.sleep(300)
+    let ch = MuxChannel::connect("127.0.0.1", 18112)
+    let tp = g.spawn(() => ch.read_pump())
+    let bidi = ch.open_bidi("/echo.E/Nothing")
+    let waiting = g.spawn(() => bidi.recv())
+    @async.sleep(100)
+    ts.cancel()
+    let got = (@async.with_timeout_opt(3000, () => waiting.wait()) : Bytes??)
+    assert_true(got is Some(None))
+    let _ = tp.wait()
+    let reply = (
+      @async.with_timeout_opt(3000, () => ch.unary("/echo.E/Say", b"x")) catch {
+        _ => None
+      } : @moonrpc.CallReply?)
+    if reply is Some(r) {
+      assert_eq(r.grpc_status, 14)
+    }
+    ch.close()
+  })
+}

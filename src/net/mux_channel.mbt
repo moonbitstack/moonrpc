@@ -16,6 +16,7 @@ pub struct MuxChannel {
   write_lock : @async.Mutex
   inboxes : Map[Int32, @aqueue.Queue[Unit]]
   mut keepalive : @moonrpc.Keepalive?
+  mut gone : Bool
 }
 
 ///|
@@ -33,6 +34,7 @@ pub async fn MuxChannel::connect(host : String, port : Int32) -> MuxChannel {
     write_lock: @async.Mutex::Mutex(),
     inboxes: Map([]),
     keepalive: None,
+    gone: false,
   }
   ch.write_locked(engine.preface())
   ch
@@ -53,8 +55,11 @@ async fn MuxChannel::write_locked(
 ///|
 /// The shared read loop: read a frame, feed it to the engine, write back any control
 /// response (SETTINGS ack, PING pong, WINDOW_UPDATE), and wake every call whose stream has
-/// completed. Returns when the connection closes. Spawn this once per channel.
+/// completed. Returns when the connection closes or a frame breaks it, and every call
+/// still waiting is woken then, or it would wait for a reply nothing can deliver. Spawn
+/// this once per channel.
 pub async fn MuxChannel::read_pump(self : MuxChannel) -> Unit {
+  defer self.hang_up()
   for ;; {
     let frame = read_frame(self.conn) catch { _ => return }
     if self.keepalive is Some(ka) {
@@ -64,7 +69,7 @@ pub async fn MuxChannel::read_pump(self : MuxChannel) -> Unit {
         ka.on_ping_ack(now)
       }
     }
-    let out = self.engine.feed(frame) catch { _ => [] }
+    let out = self.engine.feed(frame) catch { _ => return }
     if out.length() > 0 {
       self.write_locked(out)
     }
@@ -81,6 +86,31 @@ pub async fn MuxChannel::read_pump(self : MuxChannel) -> Unit {
         q.put(())
       }
     }
+  }
+}
+
+///|
+/// Mark the connection lost and wake everything waiting on it.
+fn MuxChannel::hang_up(self : MuxChannel) -> Unit {
+  self.gone = true
+  for _, inbox in self.inboxes {
+    ignore(inbox.try_put(()) catch { _ => false })
+  }
+}
+
+///|
+/// What a call that was waiting when the connection went comes back as: `UNAVAILABLE`,
+/// which is the status gRPC gives a transport failure and the one a retry may act on.
+fn lost() -> @moonrpc.CallReply {
+  {
+    status: b"",
+    grpc_status: 14,
+    grpc_message: "connection lost",
+    headers: [],
+    messages: [],
+    trailers: [],
+    committed: true,
+    unprocessed: false,
   }
 }
 
@@ -106,6 +136,11 @@ pub async fn MuxChannel::unary(
   self.write_locked(frames)
   // The pump now also wakes on intermediate messages, so wait until the stream truly ends.
   while !self.engine.is_done(id) {
+    if self.gone {
+      self.inboxes.remove(id)
+      self.engine.release(id)
+      return lost()
+    }
     inbox.get()
   }
   self.inboxes.remove(id)
@@ -170,7 +205,7 @@ pub async fn BidiStream::recv(self : BidiStream) -> Bytes? {
       self.offset = 0
       continue
     }
-    if self.ch.engine.is_done(self.id) {
+    if self.ch.engine.is_done(self.id) || self.ch.gone {
       self.ch.inboxes.remove(self.id)
       return None
     }
