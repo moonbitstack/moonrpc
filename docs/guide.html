@@ -82,19 +82,8 @@ while !client.is_done(id) {
 <section class="section wrap">
   <h2 class="h">3 · Define a message</h2>
   <p class="lede">A message is just bytes on the wire, packed by the protobuf codec. You can do it by hand, or let <code>#rpc.message</code> derive the codec from the struct.</p>
-  <h3>By hand</h3>
-  <pre><code>fn encode_request(name : String) -> Bytes {
-  let w = @moonrpc.PbWriter::new()
-  w.string_(1, name)        // field 1, wire type LengthDelimited
-  w.to_bytes()
-}
-
-fn decode_name(msg : Bytes) -> String {
-  let r = @moonrpc.PbReader::new(msg)
-  let _ = r.read_tag()      // consume the tag for field 1
-  r.read_string()
-}</code></pre>
-  <h3>With <code>#rpc.message</code> (derives <code>@moonrpc.Message</code>)</h3>
+  <h3>With <code>#rpc.message</code></h3>
+  <p class="lede">The annotation derives <code>@moonrpc.Message</code>.</p>
   <pre><code>#rpc.message
 pub struct HelloRequest {
   #rpc.field(number="1")
@@ -115,6 +104,18 @@ pub struct Profile {
   mood : Mood                    // an enum field
   scores : Map[String, Int64]    // map&lt;string, int64&gt;
   nickname : String?             // proto3 optional
+}</code></pre>
+  <h3>By hand</h3>
+  <pre><code>fn encode_request(name : String) -> Bytes {
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, name)        // field 1, wire type LengthDelimited
+  w.to_bytes()
+}
+
+fn decode_name(msg : Bytes) -> String {
+  let r = @moonrpc.PbReader::new(msg)
+  let _ = r.read_tag()      // consume the tag for field 1
+  r.read_string()
 }</code></pre>
   <p class="note"><span class="src"></span> <code>#rpc.field(number="…")</code> pins the protobuf tag. Omitted fields get consecutive numbers; <code>#rpc.skip</code> leaves a field out of the wire form. An enum's values take MoonBit's own tags, or count up from 0.</p>
 </section>

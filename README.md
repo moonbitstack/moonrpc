@@ -15,33 +15,138 @@
 `moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, health checking, server reflection, retries, hedging and load balancing. The client and server engines are pure functions over frames and run on every backend; only the socket driver in `net` is native.
 
 ```moonbit
+#rpc.message
+pub struct HelloRequest {
+  name : String
+}
+
+#rpc.message
+pub struct HelloReply {
+  message : String
+}
+
+#rpc.service(name="greet.Greeter")
+pub struct Greeter {
+  greeting : String
+}
+
+#rpc.method
+fn Greeter::say_hello(self : Greeter, req : HelloRequest) -> HelloReply {
+  { message: self.greeting + ", " + req.name }
+}
+
 let server = @net.GrpcServer::new()
-
-// unary: one request, one reply.
-server.register("/greet.Greeter/SayHello", req => handle(req))
-
-// server-streaming: one request, an ordered run of replies.
-server.register_server_streaming("/count.C/Up", (ctx, req) => [
-  first(req), second(req), third(req),
-])
-
-// client-streaming: many requests collected, one reply at half-close.
-server.register_client_streaming("/sum.S/Add", (ctx, msgs) => fold(msgs))
-
-// bidi: each request answered as it arrives, a farewell at half-close.
-server.register_bidi("/chat.C/Echo", ctx => @moonrpc.BidiHandler::{
-  on_message: m => [reply_to(m)],
-  on_end: () => [b"bye"],
-})
-
+Greeter::{ greeting: "hello" }.register(server)
 server.serve()             // listens on 12000
 ```
+
+Annotations give the protobuf codec of each message, the registration of each service,
+and the descriptor reflection serves; see [Annotations](#annotations). A method's
+shape says which of gRPC's four call kinds it is.
 
 The handler sees the call's `RpcContext`: the request metadata, the `grpc-timeout` deadline in milliseconds, and slots for response initial and trailing metadata.
 
 **Documentation:** the [five-piece doc site](docs/index.html) — a home page, a [guide](docs/guide.html), the full [API reference](docs/api.html), and a [live in-browser showcase](docs/showcase.html) that runs the real engine.
 
-## The four call kinds
+## Annotations
+
+`#rpc` annotations write the protobuf codec of each message, the registration of
+each service, and the file descriptor reflection serves:
+
+```moonbit
+#rpc.enum
+pub enum Mood { Calm = 0; Glad = 1; Grumpy = 5 }   // MOOD_CALM, MOOD_GLAD, MOOD_GRUMPY
+
+#rpc.message
+pub struct HelloRequest {
+  name : String               // 1
+  #rpc.field(number="4")
+  tags : Array[String]        // 4
+  nickname : String?          // 5, proto3 optional
+  mood : Mood                 // 6
+  extras : Map[String, Int64] // 7, map<string, int64>
+}
+
+#rpc.message(name="HelloReply.Badge")   // nested: .greet.HelloReply.Badge
+pub struct Badge { label : String }
+
+#rpc.service(name="greet.Greeter")
+pub struct Greeter { greeting : String }
+
+#rpc.method
+fn Greeter::say_hello(self : Greeter, req : HelloRequest) -> HelloReply raise { ... }
+
+#rpc.method
+fn Greeter::count_to(self : Greeter, req : Upto) -> Array[Number] { ... }
+
+#rpc.method
+fn Greeter::echo(self : Greeter, req : Array[Number]) -> Array[Number] { ... }
+```
+
+```moonbit
+Greeter::{ greeting: "hello" }.register(server)   // an H2Server or a GrpcServer
+reflection.add_file(descriptor())
+print(descriptor().source())                      // the .proto
+
+let client = GreeterClient::new(@net.Channel::connect("127.0.0.1", @net.port))
+let reply = client.say_hello({ name: "Leo", tags: [], nickname: None, mood: Glad, extras: {} })
+let numbers = client.count_to({ n: 3 }, timeout_millis=500)
+```
+
+Fields are numbered in declaration order from 1; `number=` sets one, written as a
+string because the attribute grammar has no integers, and the count carries on
+from it. `#rpc.skip` leaves a field out. A method's name is the function's in
+PascalCase, `name=` overriding it; returning an array streams the replies, taking
+one receives a client stream, both is a bidirectional stream answered once the
+client half-closes, and a parameter of type `RpcContext` receives the call's
+context. A `StatusError` raised by a method answers with its status, any other
+error with `UNKNOWN`, and a request that does not decode with `INTERNAL`, as
+grpc-go does. A dotted `name=` nests a message or an enum inside another message
+of the same file.
+
+An enum without payloads takes `#rpc.enum`. Its values are numbered by MoonBit's
+own tags (`Glad = 1`), or by `#rpc.value(number="N")`, or one past the previous,
+the first being 0 as proto3 requires; each is named after the enum and itself in
+upper snake case, `#rpc.value(name="...")` overriding it, as Google's style
+guide and buf's `ENUM_VALUE_PREFIX` ask. A number the enum does not know reads as
+its first value, or into a constructor holding one `Int` when there is one, as
+Java's and Swift's `UNRECOGNIZED` keep it.
+
+Each service also gets a client, `GreeterClient[C]` over any `Caller`: one
+`async` method per RPC, taking the request and `metadata?`, `timeout_millis?` and
+`retry?`, returning the decoded reply and raising a non-`OK` status as a
+`StatusError`. [`cmd/greetd`](src/cmd/greetd/) calls itself through it in CI.
+
+| MoonBit | protobuf |
+|:--:|:--:|
+| `String`, `Bytes`, `Bool` | `string`, `bytes`, `bool` |
+| `Int`, `Int64`, `UInt`, `UInt64` | `int32`, `int64`, `uint32`, `uint64` |
+| `Double`, `Float` | `double`, `float` |
+| a `#rpc.message`, a `#rpc.enum` | that message, that enum |
+| `Array[T]` | `repeated T`, packed for the integers, `bool` and enums |
+| `T?` | `optional T` |
+| `Map[K, V]` | `map<K, V>`, `K` a string, an integer or a `bool` |
+
+[`21-annotations`](src/examples/21-annotations/) checks the generated codec,
+service and descriptor against the same ones written by hand, byte for byte, and
+against protoc and Python's protobuf runtime (`scripts/gen_protoc_vectors.py`).
+
+Wire the generator into the build once. In `moon.mod`:
+
+```
+rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.3 -C \"$mod_dir\" \"$input\" -o \"$output\"")
+```
+
+and in the `moon.pkg` of the package holding the declarations:
+
+```
+dev_build(rule: "rpc", input: "service.mbt", output: "service.g.mbt")
+formatter(ignore: [ "service.g.mbt" ])
+```
+
+## The four call kinds by hand
+
+Annotations generate these calls, and a handler registered at run time is written the same way.
 
 gRPC defines four shapes of a call. moonrpc implements all of them as the same frame machinery — only how many messages each side sends differs. Register the one that matches your handler, or let `#rpc` infer it from the method's type.
 
@@ -220,102 +325,6 @@ let reply = chan.unary(
 | Deadline | one deadline for the whole call; each attempt's `grpc-timeout` is what is left of it |
 
 `ManagedChannel` picks a backend for every attempt, so a retry can land elsewhere, and `unary_hedged` takes `hedging`: the next attempt every `delay` or at once after a non-fatal status, the pushback and the throttle applying as for retries.
-
-## Annotations
-
-`#rpc` annotations write the protobuf codec of each message, the registration of
-each service, and the file descriptor reflection serves:
-
-```moonbit
-#rpc.enum
-pub enum Mood { Calm = 0; Glad = 1; Grumpy = 5 }   // MOOD_CALM, MOOD_GLAD, MOOD_GRUMPY
-
-#rpc.message
-pub struct HelloRequest {
-  name : String               // 1
-  #rpc.field(number="4")
-  tags : Array[String]        // 4
-  nickname : String?          // 5, proto3 optional
-  mood : Mood                 // 6
-  extras : Map[String, Int64] // 7, map<string, int64>
-}
-
-#rpc.message(name="HelloReply.Badge")   // nested: .greet.HelloReply.Badge
-pub struct Badge { label : String }
-
-#rpc.service(name="greet.Greeter")
-pub struct Greeter { greeting : String }
-
-#rpc.method
-fn Greeter::say_hello(self : Greeter, req : HelloRequest) -> HelloReply raise { ... }
-
-#rpc.method
-fn Greeter::count_to(self : Greeter, req : Upto) -> Array[Number] { ... }
-
-#rpc.method
-fn Greeter::echo(self : Greeter, req : Array[Number]) -> Array[Number] { ... }
-```
-
-```moonbit
-Greeter::{ greeting: "hello" }.register(server)   // an H2Server or a GrpcServer
-reflection.add_file(descriptor())
-print(descriptor().source())                      // the .proto
-
-let client = GreeterClient::new(@net.Channel::connect("127.0.0.1", @net.port))
-let reply = client.say_hello({ name: "Leo", tags: [], nickname: None, mood: Glad, extras: {} })
-let numbers = client.count_to({ n: 3 }, timeout_millis=500)
-```
-
-Fields are numbered in declaration order from 1; `number=` sets one, written as a
-string because the attribute grammar has no integers, and the count carries on
-from it. `#rpc.skip` leaves a field out. A method's name is the function's in
-PascalCase, `name=` overriding it; returning an array streams the replies, taking
-one receives a client stream, both is a bidirectional stream answered once the
-client half-closes, and a parameter of type `RpcContext` receives the call's
-context. A `StatusError` raised by a method answers with its status, any other
-error with `UNKNOWN`, and a request that does not decode with `INTERNAL`, as
-grpc-go does. A dotted `name=` nests a message or an enum inside another message
-of the same file.
-
-An enum without payloads takes `#rpc.enum`. Its values are numbered by MoonBit's
-own tags (`Glad = 1`), or by `#rpc.value(number="N")`, or one past the previous,
-the first being 0 as proto3 requires; each is named after the enum and itself in
-upper snake case, `#rpc.value(name="...")` overriding it, as Google's style
-guide and buf's `ENUM_VALUE_PREFIX` ask. A number the enum does not know reads as
-its first value, or into a constructor holding one `Int` when there is one, as
-Java's and Swift's `UNRECOGNIZED` keep it.
-
-Each service also gets a client, `GreeterClient[C]` over any `Caller`: one
-`async` method per RPC, taking the request and `metadata?`, `timeout_millis?` and
-`retry?`, returning the decoded reply and raising a non-`OK` status as a
-`StatusError`. [`cmd/greetd`](src/cmd/greetd/) calls itself through it in CI.
-
-| MoonBit | protobuf |
-|:--:|:--:|
-| `String`, `Bytes`, `Bool` | `string`, `bytes`, `bool` |
-| `Int`, `Int64`, `UInt`, `UInt64` | `int32`, `int64`, `uint32`, `uint64` |
-| `Double`, `Float` | `double`, `float` |
-| a `#rpc.message`, a `#rpc.enum` | that message, that enum |
-| `Array[T]` | `repeated T`, packed for the integers, `bool` and enums |
-| `T?` | `optional T` |
-| `Map[K, V]` | `map<K, V>`, `K` a string, an integer or a `bool` |
-
-[`21-annotations`](src/examples/21-annotations/) checks the generated codec,
-service and descriptor against the same ones written by hand, byte for byte, and
-against protoc and Python's protobuf runtime (`scripts/gen_protoc_vectors.py`).
-
-Wire the generator into the build once. In `moon.mod`:
-
-```
-rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.3 -C \"$mod_dir\" \"$input\" -o \"$output\"")
-```
-
-and in the `moon.pkg` of the package holding the declarations:
-
-```
-dev_build(rule: "rpc", input: "service.mbt", output: "service.g.mbt")
-formatter(ignore: [ "service.g.mbt" ])
-```
 
 ## Not yet
 
