@@ -4,6 +4,9 @@
 // this file only pumps bytes — write the engine's request frames, read response
 // frames off the socket, feed them back — and enforces the client-side deadline by
 // racing the read loop against a timer.
+//
+// There is no background task: a call that finds the socket unread reads it for every
+// call, so a channel needs no task group and any number of tasks may share one.
 
 ///|
 /// A connected gRPC channel. One TCP connection carries every call, each on its own
@@ -14,6 +17,9 @@ pub struct Channel {
   engine : @moonrpc.H2Client
   throttle : @moonrpc.Throttle?
   roll : () -> Double
+  outgoing : @async.Mutex
+  turn : @async.CondVar
+  mut reading : Bool
 }
 
 ///|
@@ -41,6 +47,9 @@ pub async fn Channel::connect(
     engine,
     throttle: throttling.map(@moonrpc.Throttle::new),
     roll: rand.unwrap_or(system_roll()),
+    outgoing: @async.Mutex::Mutex(),
+    turn: @async.CondVar::Cond(),
+    reading: false,
   }
 }
 
@@ -51,13 +60,55 @@ pub fn Channel::close(self : Channel) -> Unit {
 }
 
 ///|
-/// Read response frames for call `id`, feeding each to the engine and writing back
-/// whatever it produces (SETTINGS ack, PING pong, WINDOW_UPDATE), until the engine
-/// marks the call complete.
+/// Run `body` with the connection's write side to itself. The engine's frames must leave in
+/// the order it made them, since HPACK state is shared and a header block overtaken by a later
+/// one does not decode; a cancelled task still finishes, since half a frame ends the connection.
+async fn[T] Channel::sending(self : Channel, body : async () -> T) -> T {
+  @async.protect_from_cancel(() => {
+    self.outgoing.acquire()
+    defer self.outgoing.release()
+    body()
+  })
+}
+
+///|
+/// Read one frame. A cancel lands only between frames: one inside a frame would leave the next
+/// reader partway through it, and every call on the channel after that would fail.
+async fn read_whole_frame(conn : @socket.Tcp) -> @http2.Frame {
+  let first : FixedArray[Byte] = FixedArray::make(1, 0)
+  if conn.read(first) == 0 {
+    raise @io.ReaderClosed
+  }
+  @async.protect_from_cancel(() => {
+    let head = [first[0], ..conn.read_exactly(8)]
+    read_payload(conn, Bytes::from_array(head))
+  })
+}
+
+///|
+/// Take one step: read a frame for every call on the channel, or wait for the call that is. When
+/// the reader leaves, by finishing, by its deadline or by the connection failing, the calls
+/// waiting wake and one of them takes over.
+async fn Channel::advance(self : Channel) -> Unit {
+  if self.reading {
+    self.turn.wait()
+    return
+  }
+  self.reading = true
+  defer {
+    self.reading = false
+    self.turn.broadcast()
+  }
+  let frame = read_whole_frame(self.conn)
+  self.sending(() => write_frames(self.conn, self.engine.feed(frame)))
+}
+
+///|
+/// Read response frames, feeding each to the engine and writing back whatever it produces
+/// (SETTINGS ack, PING pong, WINDOW_UPDATE), until the engine marks call `id` complete.
 async fn Channel::pump(self : Channel, id : Int32) -> Unit {
   while !self.engine.is_done(id) {
-    let frame = read_frame(self.conn)
-    write_frames(self.conn, self.engine.feed(frame))
+    self.advance()
   }
 }
 
@@ -84,12 +135,14 @@ async fn Channel::drive(
       match (@async.with_timeout_opt(ms, () => self.pump(id)) : Unit?) {
         Some(_) => self.engine.reply(id)
         None => {
-          write_frames(self.conn, [
-            @http2.Frame::RstStream(
-              stream_id=id,
-              error_code=@http2.error_cancel,
-            ),
-          ]) catch {
+          self.sending(() => {
+            write_frames(self.conn, [
+              @http2.Frame::RstStream(
+                stream_id=id,
+                error_code=@http2.error_cancel,
+              ),
+            ])
+          }) catch {
             _ => ()
           }
           deadline_reply()
@@ -107,13 +160,16 @@ async fn Channel::unary_once(
   metadata : Array[@header.Header],
   timeout_millis : Int32?,
 ) -> @moonrpc.CallReply {
-  let (id, frames) = self.engine.unary(
-    path,
-    request,
-    metadata~,
-    timeout_millis?,
-  )
-  write_frames(self.conn, frames)
+  let id = self.sending(() => {
+    let (id, frames) = self.engine.unary(
+      path,
+      request,
+      metadata~,
+      timeout_millis?,
+    )
+    write_frames(self.conn, frames)
+    id
+  })
   self.drive(id, timeout_millis)
 }
 
@@ -161,11 +217,14 @@ async fn Channel::stream_once(
   metadata : Array[@header.Header],
   timeout_millis : Int32?,
 ) -> @moonrpc.CallReply {
-  let id = self.engine.open(path, metadata~, timeout_millis?)
-  for m in requests {
-    write_frames(self.conn, self.engine.send(id, m))
-  }
-  write_frames(self.conn, self.engine.close_send(id))
+  let id = self.sending(() => {
+    let id = self.engine.open(path, metadata~, timeout_millis?)
+    for m in requests {
+      write_frames(self.conn, self.engine.send(id, m))
+    }
+    write_frames(self.conn, self.engine.close_send(id))
+    id
+  })
   self.drive(id, timeout_millis)
 }
 
@@ -188,13 +247,11 @@ pub async fn Channel::server_streaming(
 }
 
 ///|
-/// Open a streaming call and collect at least `count` reply messages read inline off the
-/// socket — no background reader — returning as soon as that many have arrived or the server
-/// ends the stream. This bounds an otherwise unbounded stream (a subscription such as etcd's
-/// Watch, or a long server-streaming feed) to the messages the caller wants, then the caller
-/// closes the channel; reading inline keeps the whole exchange in one task with a clean
-/// close, avoiding a demux pump that a blocked socket read can't be cancelled out of. Pass
-/// `half_close=false` for a bidi subscription that keeps its request side open.
+/// Open a streaming call and collect at least `count` reply messages, returning as soon as that
+/// many have arrived or the server ends the stream. This bounds an otherwise unbounded stream (a
+/// subscription such as etcd's Watch, or a long server-streaming feed) to the messages the
+/// caller wants. Pass `half_close=false` for a bidi subscription that keeps its request side
+/// open.
 pub async fn Channel::stream_take(
   self : Channel,
   path : String,
@@ -204,17 +261,20 @@ pub async fn Channel::stream_take(
   timeout_millis? : Int32,
   half_close~ : Bool = true,
 ) -> Array[Bytes] {
-  let id = self.engine.open(path, metadata~, timeout_millis?)
-  write_frames(self.conn, self.engine.send(id, request, end=half_close))
+  let id = self.sending(() => {
+    let id = self.engine.open(path, metadata~, timeout_millis?)
+    write_frames(self.conn, self.engine.send(id, request, end=half_close))
+    id
+  })
   let collected : Array[Bytes] = []
-  while collected.length() < count && !self.engine.is_done(id) {
-    let frame = read_frame(self.conn)
-    write_frames(self.conn, self.engine.feed(frame))
-    for m in self.engine.take_messages(id) {
-      collected.push(m)
+  // Taken before each step too: another call's read may already have fed this stream.
+  for ;; {
+    collected.append(self.engine.take_messages(id))
+    if collected.length() >= count || self.engine.is_done(id) {
+      return collected
     }
+    self.advance()
   }
-  collected
 }
 
 ///|
@@ -239,10 +299,9 @@ pub async fn Channel::client_streaming(
 /// then read the ordered run of reply messages the server produced (in
 /// `CallReply::messages`). This is the eager form the engine's synchronous core
 /// models — every request is sent before the replies are collected, which pairs with
-/// the eager server `BidiHandler`. A truly interactive exchange (sending while
-/// receiving) or several concurrent calls multiplexed on one channel need the shared
-/// read-demux loop on the roadmap; until then a `Channel` drives one call at a time.
-/// Because every request is in hand, `retry` works as for [`Channel::unary`].
+/// the eager server `BidiHandler`. An interactive exchange, sending while receiving, is
+/// what `MuxChannel` is for. Because every request is in hand, `retry` works as for
+/// [`Channel::unary`].
 pub async fn Channel::bidi(
   self : Channel,
   path : String,

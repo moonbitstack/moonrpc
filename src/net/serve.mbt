@@ -9,7 +9,12 @@
 /// declared payload — and decode it with the pure frame codec. Raises when the
 /// peer closes mid-frame (a short read) or the bytes are malformed.
 async fn read_frame(conn : &@io.Reader) -> @http2.Frame {
-  let head = conn.read_exactly(9)
+  read_payload(conn, conn.read_exactly(9))
+}
+
+///|
+/// The rest of a frame whose 9-octet header is already read.
+async fn read_payload(conn : &@io.Reader, head : Bytes) -> @http2.Frame {
   let hdr = @http2.FrameHeader::decode(head)
   let payload = if hdr.length > 0 { conn.read_exactly(hdr.length) } else { b"" }
   let buf = @buffer.Buffer()

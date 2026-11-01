@@ -1,9 +1,7 @@
 ///|
 /// Hedging exists to race attempts, so the parallel path is the one that matters.
-/// A `Channel` drives one call at a time, so two attempts landing on the same
-/// backend would put two readers on one socket — which aborts the event loop rather
-/// than failing a call. With one backend there is nothing to hedge onto, so exactly
-/// one attempt must run and the call must still answer normally.
+/// With one backend there is nothing to hedge onto, so exactly one attempt must run
+/// and the call must still answer normally.
 async test "hedging with no delay does not double up on a single backend" {
   @async.with_task_group(g => {
     let count = [0]

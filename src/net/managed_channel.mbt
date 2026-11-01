@@ -110,9 +110,8 @@ fn ManagedChannel::pick(self : ManagedChannel) -> Channel? {
 
 ///|
 /// A READY backend that no in-flight attempt has claimed, preferring one this call
-/// has not tried yet, together with its address. Hedging needs this because a
-/// `Channel` drives one call at a time: two attempts sharing one channel would read
-/// the same socket concurrently, which aborts the event loop.
+/// has not tried yet, together with its address. Hedging races backends, and a second
+/// attempt on the backend already working on the call would only add load.
 fn ManagedChannel::pick_unused(
   self : ManagedChannel,
   claimed : Array[String],
