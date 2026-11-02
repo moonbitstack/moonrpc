@@ -33,6 +33,7 @@ pub(all) struct CallReply {
   committed : Bool
   unprocessed : Bool
 }
+pub fn CallReply::details(Self) -> @proto.StatusDetails?
 pub fn CallReply::ok(Self) -> Array[Bytes] raise @wire.StatusError
 pub fn CallReply::one(Self) -> Bytes raise @wire.StatusError
 pub fn[T : @proto.Message] CallReply::replies(Self) -> Array[T] raise @wire.StatusError

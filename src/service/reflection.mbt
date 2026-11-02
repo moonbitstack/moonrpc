@@ -25,6 +25,12 @@ pub(all) enum ReflectionRequest {
   ListServices(String)
   FileByFilename(String)
   FileContainingSymbol(String)
+  // `extension_request { containing_type = 1; extension_number = 2 }`: the file that
+  // declares an extension of a type. A server that declares none answers NOT_FOUND, which
+  // is what gRPC's reflection service says when the extension is not there.
+  FileContainingExtension(String, Int32)
+  // `AllExtensionNumbersOfType`: every extension number declared for a type.
+  AllExtensionNumbers(String)
   Unsupported
 } derive(Eq)
 
@@ -40,6 +46,20 @@ pub fn decode_reflection_request(
     match r.read_tag() {
       (3, LengthDelim) => out = FileByFilename(r.read_string())
       (4, LengthDelim) => out = FileContainingSymbol(r.read_string())
+      (5, LengthDelim) => {
+        let inner = @proto.PbReader::new(r.read_bytes())
+        let mut containing = ""
+        let mut number = 0
+        while !inner.eof() {
+          match inner.read_tag() {
+            (1, LengthDelim) => containing = inner.read_string()
+            (2, Varint) => number = inner.read_int32()
+            (_, w) => inner.skip(w)
+          }
+        }
+        out = FileContainingExtension(containing, number)
+      }
+      (6, LengthDelim) => out = AllExtensionNumbers(r.read_string())
       (7, LengthDelim) => out = ListServices(r.read_string())
       (_, w) => r.skip(w)
     }
@@ -56,6 +76,13 @@ pub fn encode_reflection_request(req : ReflectionRequest) -> Bytes {
     ListServices(v) => w.string_(7, v)
     FileByFilename(v) => w.string_(3, v)
     FileContainingSymbol(v) => w.string_(4, v)
+    FileContainingExtension(type_, number) => {
+      let inner = @proto.PbWriter::new()
+      inner.string_(1, type_)
+      inner.int32(2, number)
+      w.message_(5, inner.to_bytes())
+    }
+    AllExtensionNumbers(v) => w.string_(6, v)
     Unsupported => ()
   }
   w.to_bytes()
@@ -66,6 +93,7 @@ pub fn encode_reflection_request(req : ReflectionRequest) -> Bytes {
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
+  ExtensionNumbers(String, Array[Int32])
   ReflectionError(Int32, String)
 } derive(Eq)
 
@@ -130,6 +158,27 @@ fn encode_error_response(
 }
 
 ///|
+/// A `ServerReflectionResponse` whose `message_response` is an
+/// `ExtensionNumberResponse`: the type asked about, and the extension numbers declared
+/// for it — none at all when the server declares no extensions, which is an answer, not
+/// an error.
+fn encode_extension_numbers_response(
+  type_name : String,
+  numbers : Array[Int32],
+  original : Bytes,
+) -> Bytes {
+  let inner = @proto.PbWriter::new()
+  inner.string_(1, type_name)
+  for n in numbers {
+    inner.int32(2, n)
+  }
+  let w = @proto.PbWriter::new()
+  w.message_(2, original)
+  w.message_(8, inner.to_bytes())
+  w.to_bytes()
+}
+
+///|
 /// Decode a `ServerReflectionResponse` down to its `message_response` arm — the
 /// half an in-process reflection client (and the tests) needs to read an answer.
 pub fn decode_reflection_response(
@@ -170,6 +219,19 @@ pub fn decode_reflection_response(
           }
         }
         out = ServiceList(names)
+      }
+      (8, LengthDelim) => {
+        let inner = @proto.PbReader::new(r.read_bytes())
+        let mut base = ""
+        let numbers : Array[Int32] = []
+        while !inner.eof() {
+          match inner.read_tag() {
+            (1, LengthDelim) => base = inner.read_string()
+            (2, Varint) => numbers.push(inner.read_int32())
+            (_, w) => inner.skip(w)
+          }
+        }
+        out = ExtensionNumbers(base, numbers)
       }
       (7, LengthDelim) => {
         let inner = @proto.PbReader::new(r.read_bytes())
@@ -246,18 +308,69 @@ pub fn ReflectionService::handle(
     ListServices(_) => encode_list_services_response(self.services, request)
     FileContainingSymbol(sym) =>
       match self.by_symbol.get(sym) {
-        Some(i) =>
-          encode_file_descriptor_response([self.files[i].encode()], request)
+        // A descriptor set is only useful whole: the file a client asked for, then every
+        // file it imports, transitively, so the client can resolve the types it found
+        // without asking again (gRPC's reflection document asks for exactly that).
+        Some(i) => encode_file_descriptor_response(self.closed_set(i), request)
         None => encode_error_response(5, "symbol not found: " + sym, request)
       }
     FileByFilename(name) =>
       match self.by_filename.get(name) {
-        Some(i) =>
-          encode_file_descriptor_response([self.files[i].encode()], request)
+        Some(i) => encode_file_descriptor_response(self.closed_set(i), request)
         None => encode_error_response(5, "file not found: " + name, request)
+      }
+    FileContainingExtension(type_name, number) =>
+      // No extension is declared anywhere in this descriptor database, so the honest
+      // answer is the one gRPC's own service gives for an extension it does not have.
+      encode_error_response(
+        5,
+        "extension not found: " + type_name + " " + number.to_string(),
+        request,
+      )
+    AllExtensionNumbers(type_name) =>
+      if self.by_symbol.get(type_name) is Some(_) {
+        // A known type with no extensions declared: an empty list, not an error.
+        encode_extension_numbers_response(type_name, [], request)
+      } else {
+        encode_error_response(5, "type not found: " + type_name, request)
       }
     Unsupported =>
       encode_error_response(12, "unsupported reflection request", request)
+  }
+}
+
+///|
+/// The file at `index` and every file it depends on, transitively, each once — the
+/// descriptor set a reflection client needs to read the file it asked for. A dependency
+/// that was never registered is skipped: the rest of the set is still worth sending.
+fn ReflectionService::closed_set(
+  self : ReflectionService,
+  index : Int32,
+) -> Array[Bytes] {
+  let out : Array[Bytes] = []
+  let seen : Array[String] = []
+  self.collect(index, out, seen)
+  out
+}
+
+///|
+fn ReflectionService::collect(
+  self : ReflectionService,
+  index : Int32,
+  out : Array[Bytes],
+  seen : Array[String],
+) -> Unit {
+  let file = self.files[index]
+  if seen.contains(file.name) {
+    return
+  }
+  seen.push(file.name)
+  out.push(file.encode())
+  for name in file.dependencies {
+    match self.by_filename.get(name) {
+      Some(dep) => self.collect(dep, out, seen)
+      None => ()
+    }
   }
 }
 

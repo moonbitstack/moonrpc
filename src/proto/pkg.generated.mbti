@@ -3,10 +3,17 @@ package "moonbitstack/moonrpc/proto"
 
 import {
   "moonbitlang/core/buffer",
+  "moonbitlang/core/debug",
 }
 
 // Values
 pub fn decode_file_descriptor_set(Bytes) -> Array[FileDescriptor] raise PbError
+
+pub fn decode_status_details(BytesView) -> StatusDetails?
+
+pub fn detail_body(BytesView) -> Bytes?
+
+pub fn detail_type_url(BytesView) -> String?
 
 pub fn encode_file_descriptor_set(Array[FileDescriptor]) -> Bytes
 
@@ -198,6 +205,15 @@ pub fn ServiceDescriptor::decode(Bytes) -> Self raise PbError
 pub fn ServiceDescriptor::encode(Self) -> Bytes
 pub fn ServiceDescriptor::equal(Self, Self) -> Bool
 pub fn ServiceDescriptor::not_equal(Self, Self) -> Bool
+
+pub(all) struct StatusDetails {
+  code : Int32
+  message : String
+  details : Array[Bytes]
+} derive(Eq, @debug.Debug)
+pub fn StatusDetails::equal(Self, Self) -> Bool
+pub fn StatusDetails::not_equal(Self, Self) -> Bool
+pub fn StatusDetails::to_repr(Self) -> @debug.Repr
 
 pub(all) enum WireType {
   Varint

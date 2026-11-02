@@ -49,8 +49,12 @@ pub using @proto {
   type PbReader,
   type PbWriter,
   type ServiceDescriptor,
+  type StatusDetails,
   type WireType,
   decode_file_descriptor_set,
+  decode_status_details,
+  detail_body,
+  detail_type_url,
   encode_file_descriptor_set,
 }
 

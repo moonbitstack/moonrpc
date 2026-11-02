@@ -56,6 +56,8 @@ pub(all) enum ReflectionRequest {
   ListServices(String)
   FileByFilename(String)
   FileContainingSymbol(String)
+  FileContainingExtension(String, Int32)
+  AllExtensionNumbers(String)
   Unsupported
 } derive(Eq)
 pub fn ReflectionRequest::equal(Self, Self) -> Bool
@@ -64,6 +66,7 @@ pub fn ReflectionRequest::not_equal(Self, Self) -> Bool
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
+  ExtensionNumbers(String, Array[Int32])
   ReflectionError(Int32, String)
 } derive(Eq)
 pub fn ReflectionResponse::equal(Self, Self) -> Bool

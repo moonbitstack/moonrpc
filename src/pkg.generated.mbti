@@ -15,6 +15,8 @@ import {
 // Values
 pub let accept_encodings : String
 
+pub let backoff : @balance.Backoff
+
 pub fn[I : @proto.Message, O : @proto.Message] bidi((@stream.RpcContext, Array[I]) -> Array[O] raise) -> @stream.Handler
 
 pub fn[I : @proto.Message, O : @proto.Message] bidi_each((@stream.RpcContext, I) -> Array[O] raise, end? : (@stream.RpcContext) -> Array[O] raise) -> @stream.Handler
@@ -33,11 +35,17 @@ pub fn decode_reflection_request(Bytes) -> @service.ReflectionRequest raise @pro
 
 pub fn decode_reflection_response(Bytes) -> @service.ReflectionResponse raise @proto.PbError
 
+pub fn decode_status_details(BytesView) -> @proto.StatusDetails?
+
 pub let default_max_frame_size : Int32
 
 pub let default_max_streams : Int32
 
 pub let default_window_size : Int32
+
+pub fn detail_body(BytesView) -> Bytes?
+
+pub fn detail_type_url(BytesView) -> String?
 
 pub fn dns_decode_response(Bytes) -> @balance.DnsResponse
 
@@ -110,6 +118,8 @@ pub fn[I : @proto.Message, O : @proto.Message] unary((@stream.RpcContext, I) -> 
 // Type aliases
 pub using @balance {type Attempts}
 
+pub using @balance {type Backoff}
+
 pub using @stream {type BidiHandler}
 
 pub using @server {type Call}
@@ -176,6 +186,8 @@ pub using @proto {type PbWriter}
 
 pub using @balance {type Pushback}
 
+pub using @balance {type Reconnect}
+
 pub using @service {type ReflectionRequest}
 
 pub using @service {type ReflectionResponse}
@@ -195,6 +207,8 @@ pub using @service {type ServingStatus}
 pub using @server {type SrvStream}
 
 pub using @wire {type Status}
+
+pub using @proto {type StatusDetails}
 
 pub using @wire {type StatusError}
 
