@@ -73,6 +73,7 @@ pub using @stream {
 
 ///|
 pub using @balance {
+  type Backoff,
   type ConnectionPool,
   type ConnectivityState,
   type DnsRecord,
@@ -82,6 +83,7 @@ pub using @balance {
   type LbPolicy,
   type LoadBalancer,
   type Pushback,
+  type Reconnect,
   type Retry,
   type SubConn,
   type Throttle,
@@ -89,6 +91,7 @@ pub using @balance {
   dns_decode_response,
   dns_encode_query,
   dns_type_a,
+  backoff,
   dns_type_aaaa,
   hedging,
   limit,

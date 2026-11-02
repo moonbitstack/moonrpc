@@ -10,6 +10,8 @@ import {
 }
 
 // Values
+pub let backoff : Backoff
+
 pub fn dns_decode_response(Bytes) -> DnsResponse
 
 pub fn dns_encode_query(Int32, String, Int32) -> Bytes
@@ -21,6 +23,8 @@ pub let dns_type_aaaa : Int32
 pub let hedging : Hedging
 
 pub let limit : Int32
+
+pub let min_connect_timeout : @moondate.Span
 
 pub let retry : Retry
 
@@ -34,12 +38,22 @@ pub fn Attempts::made(Self) -> Int32
 pub fn Attempts::new(retry? : Retry, throttle? : Throttle, limit? : Int32) -> Self
 pub fn Attempts::next(Self, Int32, ArrayView[@header.Header], committed? : Bool, unprocessed? : Bool, roll? : Double) -> @moondate.Span?
 
+pub(all) struct Backoff {
+  initial : @moondate.Span
+  max : @moondate.Span
+  factor : Double
+  jitter : Double
+}
+pub fn Backoff::delay(Self, Int32, roll? : Double) -> @moondate.Span
+pub fn Backoff::new(initial? : @moondate.Span, max? : @moondate.Span, factor? : Double, jitter? : Double) -> Self
+
 pub struct ConnectionPool {
   order : Array[String]
   subconns : Map[String, SubConn]
   policy : LbPolicy
   mut cursor : Int32
 }
+pub fn ConnectionPool::add(Self, String) -> Bool
 pub fn ConnectionPool::new(Array[String], policy? : LbPolicy) -> Self
 pub fn ConnectionPool::pick(Self) -> String?
 pub fn ConnectionPool::ready_addresses(Self) -> Array[String]
@@ -114,6 +128,17 @@ pub fn Pushback::equal(Self, Self) -> Bool
 pub fn Pushback::not_equal(Self, Self) -> Bool
 pub fn Pushback::read(ArrayView[@header.Header]) -> Self
 pub fn Pushback::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Reconnect {
+  backoff : Backoff
+  mut failures : Int32
+  mut next_at : Int64
+}
+pub fn Reconnect::due(Self, Int64) -> Bool
+pub fn Reconnect::failed(Self, Int64, roll? : Double) -> Unit
+pub fn Reconnect::new(backoff? : Backoff, now? : Int64) -> Self
+pub fn Reconnect::succeeded(Self) -> Unit
+pub fn Reconnect::wait_millis(Self, Int64) -> Int64
 
 pub(all) struct Retry {
   backoff : @moonward.Backoff

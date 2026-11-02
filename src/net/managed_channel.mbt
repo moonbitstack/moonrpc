@@ -20,6 +20,11 @@ pub struct ManagedChannel {
   interceptors : Array[@client.Interceptor]
   // What every sub-connection compresses its requests with, if anything.
   encoding : @moonrpc.Encoding?
+  // The reconnect clock: how long after a failed dial the next one may be made.
+  reconnect : @moonrpc.Reconnect
+  // Where the address list came from, when it came from a name: re-dialling asks it again,
+  // so a backend that moved or a replica that appeared is picked up.
+  resolve : (() -> Array[(String, Int32)])?
 }
 
 ///|
@@ -63,6 +68,8 @@ pub async fn ManagedChannel::connect(
   tls? : @tls.Client,
   interceptors? : Array[@client.Interceptor],
   encoding? : @moonrpc.Encoding,
+  backoff? : @moonrpc.Backoff,
+  resolve? : () -> Array[(String, Int32)],
 ) -> ManagedChannel {
   let keys = targets.map(t => t.0 + ":" + t.1.to_string())
   let pool = @moonrpc.ConnectionPool::new(keys, policy~)
@@ -79,7 +86,7 @@ pub async fn ManagedChannel::connect(
       _ => sc.on_failure()
     }
   }
-  {
+  let chan = {
     pool,
     targets,
     channels,
@@ -88,7 +95,17 @@ pub async fn ManagedChannel::connect(
     tls,
     interceptors: interceptors.unwrap_or([]),
     encoding,
+    reconnect: @moonrpc.Reconnect::new(
+      backoff=backoff.unwrap_or(@moonrpc.backoff),
+    ),
+    resolve,
   }
+  if channels.length() == 0 {
+    // Nothing came up at dial time: the first call waits out one backoff rather than
+    // hammering the same dead addresses.
+    chan.reconnect.failed(@async.now(), roll=(chan.roll)())
+  }
+  chan
 }
 
 ///|
@@ -172,7 +189,9 @@ pub fn ManagedChannel::ready_addresses(self : ManagedChannel) -> Array[String] {
 }
 
 ///|
-/// Take `address` out of rotation: its connection failed, so the next call goes elsewhere.
+/// Take `address` out of rotation: its connection failed, so the next call goes elsewhere,
+/// and the next dial to anything waits out the backoff — a backend that just dropped is not
+/// asked again in the same millisecond.
 fn ManagedChannel::lost(self : ManagedChannel, address : String) -> Unit {
   if self.channels.get(address) is Some(ch) {
     ch.close()
@@ -181,6 +200,7 @@ fn ManagedChannel::lost(self : ManagedChannel, address : String) -> Unit {
   if self.pool.subconn(address) is Some(sc) {
     sc.on_failure()
   }
+  self.reconnect.failed(@async.now(), roll=(self.roll)())
 }
 
 ///|

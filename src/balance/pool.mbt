@@ -31,6 +31,20 @@ pub fn ConnectionPool::new(
 }
 
 ///|
+/// Add a sub-connection for `address` — a name that resolved to it after the pool was built
+/// — and return whether it was new. Re-resolution feeds the pool this way, so a backend that
+/// appeared since the channel started can be dialled without rebuilding the pool and losing
+/// what the others' states are.
+pub fn ConnectionPool::add(self : ConnectionPool, address : String) -> Bool {
+  if self.subconns.get(address) is Some(_) {
+    return false
+  }
+  self.order.push(address)
+  self.subconns[address] = SubConn::new(address)
+  true
+}
+
+///|
 /// The sub-connection for `address`, if the pool has one — the handle the Channel drives.
 pub fn ConnectionPool::subconn(
   self : ConnectionPool,
