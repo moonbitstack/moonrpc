@@ -59,6 +59,29 @@ async test "client interceptors: the token reaches all four kinds of call" {
 }
 
 ///|
+async test "client interceptors: a server-side chain sees the call on the other end" {
+  @async.with_task_group(g => {
+    let server = GrpcServer::new()
+    let seen : Array[String] = []
+    // The server's own chain: every call on every connection goes through it.
+    server.add_interceptor((info, _ctx, requests, next) => {
+      seen.push("\{info.path} \{requests.length()}")
+      next(requests)
+    })
+    server.register_unary("/echo.Echo/Say", (_ctx, req) => req)
+    server.register_server_streaming("/count.C/Up", (_ctx, req) => [req, req])
+    let task = g.spawn(() => server.serve(port=18091))
+    @async.sleep(300)
+    let chan = Channel::connect("127.0.0.1", 18091)
+    ignore(chan.unary("/echo.Echo/Say", b"u"))
+    ignore(chan.server_streaming("/count.C/Up", b"s"))
+    assert_eq(seen, ["/echo.Echo/Say 1", "/count.C/Up 1"])
+    chan.close()
+    task.cancel()
+  })
+}
+
+///|
 async test "client interceptors: a reply is changed on the way back" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()

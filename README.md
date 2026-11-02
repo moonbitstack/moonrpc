@@ -242,8 +242,9 @@ health.set_status("greet.Greeter", NotServing)   // every live Watch is told
 One shape covers all four call kinds, on both ends. A call is the request messages it carries and the replies they produce, so a unary method is simply one message each way:
 
 ```moonbit
-// server: (info, ctx, requests, next) -> replies
-engine.add_interceptor((info, ctx, requests, next) => {
+// server: (info, ctx, requests, next) -> replies. `add_interceptor` is on the server a
+// program serves with — `GrpcServer` — and on the engine, when there is no socket.
+server.add_interceptor((info, ctx, requests, next) => {
   let started = @async.now()
   let replies = next(requests)      // or answer here, without calling it
   println("{info.path} took {now - started} ms")

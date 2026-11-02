@@ -211,6 +211,12 @@ pub(all) struct GrpcServer {
   // What replies are compressed with, when the caller accepts it. Identity unless a
   // server opts in, so a program that does not care pays nothing for compression.
   mut encoding : @moonrpc.Encoding
+  // The interceptor chain every connection's engine is built with, and the two limits a
+  // server sets once and applies to each.
+  interceptors : Array[@server.Interceptor]
+  mut max_recv : Int32
+  mut max_send : Int32
+  mut keepalive : @wire.ServerKeepalive?
 }
 
 ///|
@@ -223,7 +229,42 @@ pub fn GrpcServer::new() -> GrpcServer {
     draining: false,
     next_conn: 0,
     encoding: @moonrpc.Encoding::Identity,
+    interceptors: [],
+    max_recv: @wire.max_message_size,
+    max_send: @wire.max_message_size,
+    keepalive: None,
   }
+}
+
+///|
+/// Add a server interceptor: every call on every connection this server accepts runs
+/// through it, whichever of the four call kinds it is.
+pub fn GrpcServer::add_interceptor(
+  self : GrpcServer,
+  interceptor : @server.Interceptor,
+) -> Unit {
+  self.interceptors.push(interceptor)
+}
+
+///|
+/// Cap the messages this server accepts and sends, in octets, on every connection.
+pub fn GrpcServer::set_max_message_size(
+  self : GrpcServer,
+  recv~ : Int32 = @wire.max_message_size,
+  send~ : Int32 = @wire.max_message_size,
+) -> Unit {
+  self.max_recv = recv
+  self.max_send = send
+}
+
+///|
+/// Hold every peer to a keepalive policy: PINGs closer together than it allows are strikes,
+/// and a peer that runs out of them is answered `GOAWAY(ENHANCE_YOUR_CALM)`.
+pub fn GrpcServer::set_keepalive(
+  self : GrpcServer,
+  policy : @wire.ServerKeepalive,
+) -> Unit {
+  self.keepalive = Some(policy)
 }
 
 ///|
@@ -329,6 +370,14 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
   // once one is handed to it.
   e.set_clock(() => @async.now())
   e.set_encoding(self.encoding)
+  e.set_max_message_size(recv=self.max_recv, send=self.max_send)
+  match self.keepalive {
+    Some(policy) => e.set_keepalive(policy)
+    None => ()
+  }
+  for interceptor in self.interceptors {
+    e.add_interceptor(interceptor)
+  }
   // The driver runs each call on its own task, so one slow handler cannot hold up the
   // other streams on the connection.
   e.concurrent()

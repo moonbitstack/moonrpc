@@ -14,6 +14,13 @@ async fn serve(port : Int32, tls : @tls.Server?) -> Unit {
   // Replies are compressed for any client that says it accepts gzip — a real grpc-go
   // client does — which is what makes the interop job cover the compressed path too.
   server.set_encoding(@moonrpc.Encoding::Gzip)
+  // One interceptor, on every call and every kind: the interop job's traffic — grpcurl
+  // included — goes through the chain, so a chain that disturbed the wire would show up
+  // there rather than only in the tests.
+  server.add_interceptor((info, _ctx, requests, next) => {
+    println("call \{info.path} (\{requests.length()} request message(s))")
+    next(requests)
+  })
   Greeter::{ }.register(server)
   let reflection = @moonrpc.ReflectionService::new()
   reflection.add_file(descriptor())
