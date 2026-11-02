@@ -136,6 +136,15 @@ jobs:
           grep -q '"value": 42' /tmp/sum.txt
           grpcurl -plaintext -max-time 10 -d '{"value":1} {"value":2}' 127.0.0.1:12000 greet.Greeter/Echo | tr -d ' \n' | tee /tmp/echo.txt
           grep -q '{"value":2}{"value":1}' /tmp/echo.txt
+          echo "== a compressed reply, to a client that says it accepts gzip =="
+          # The server compresses when the caller lists gzip; grpc-go — which grpcurl is —
+          # registers the gzip codec, so it decodes the reply as usual.
+          grpcurl -plaintext -max-time 10 \
+            -H 'grpc-accept-encoding: gzip' \
+            -d '{"name":"world","mood":"MOOD_GLAD","extras":{"a":"2","b":"40"}}' \
+            127.0.0.1:12000 greet.Greeter/SayHello | tee /tmp/gzip.txt
+          grep -q 'Hello, world' /tmp/gzip.txt
+          grep -q '"total": "42"' /tmp/gzip.txt
           echo "== the generated client against the same server =="
           # The built binary, not `moon run`, which would wait on the build lock the
           # running server holds.
