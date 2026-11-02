@@ -12,7 +12,7 @@
 
 > Moved on mooncakes from `Lfan-ke/moonrpc` to `moonbitstack/moonrpc`.
 
-`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, health checking, server reflection, retries, hedging and load balancing. The client and server engines are pure functions over frames and run on every backend; only the socket driver in `net` is native.
+`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing. The client and server engines are pure functions over frames and run on every backend; only the socket driver in `net` is native.
 
 ```moonbit
 #rpc.message
@@ -190,7 +190,7 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 | `moonrpc/server` | `H2Server`, interceptors | `wire`, `proto`, `stream`, moonhttp, moonzip, moonbase |
 | `moonrpc/service` | health checking, server reflection, and `unary`／`server_streaming`／`client_streaming` over message types | `server`, `stream`, `proto`, `wire`, moonvar |
 | `moonrpc/cmd/rpc` | the generator behind the `#rpc` annotations | moonast |
-| `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP (native) | the root, moonbitlang/async |
+| `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP and TLS (native) | the root, moonnet, moontls, moonbitlang/async |
 
 A client links nothing of the server and a server nothing of the client; protobuf alone is `proto`.
 
@@ -218,24 +218,91 @@ let sum = chan.client_streaming("/sum.S/Add", [a, b, c])
 let bounded = chan.unary("/slow.S/Wait", request, timeout_millis=200)
 ```
 
-`MuxChannel` carries many concurrent calls and interactive bidirectional streams over one connection; `ManagedChannel` dials several backends, tracks each through the gRPC connectivity states and picks one per call (`pick_first` or `round_robin`).
+`MuxChannel` carries many concurrent calls and interactive bidirectional streams over one connection; `ManagedChannel` dials several backends, tracks each through the gRPC connectivity states and picks one per call (`pick_first` or `round_robin`). A failed dial puts the channel on a backoff clock — one second, times 1.6, capped at two minutes, jittered ±20% — so a backend that is down costs one dial per wait rather than one per call; re-dialling resolves the name again when the channel was given one.
+
+Both ends cap message size per engine (`set_max_message_size(recv~, send~)`); an incoming message over the cap ends its call with `RESOURCE_EXHAUSTED` rather than pinning the memory its length prefix declares, and a reply over the send cap ends it the same way. The client sends `user-agent`, `moonrpc/<version>` unless a caller sets its own.
 
 All three implement `Caller`, the trait the clients `#rpc` generates call through; a test double or an interceptor chain implements it to stand in their place. `reply.ok()` gives the messages of a call that ended `OK` and raises any other status as a `StatusError`; `one()` also wants exactly one message, and `reply()`／`replies()` decode them into a `Message` type, `INTERNAL` when they do not decode, as grpc-go reports.
 
-## Health and interceptors
+## Health
 
-The standard `grpc.health.v1.Health` service registers in one call, and server interceptors wrap unary and server-streaming handlers:
+The standard `grpc.health.v1.Health` service registers in one call. `Check` answers the status of a name — `SERVING`, `NOT_SERVING`, or `NOT_FOUND` for a service the server does not know — and `Watch` keeps one stream open, sending the status at subscribe time and again on every change:
 
 ```moonbit
 let health = @moonrpc.HealthService::new()
 health.set_status("greet.Greeter", Serving)
 server.register_health(health)      // Check + Watch on /grpc.health.v1.Health/*
+health.set_status("greet.Greeter", NotServing)   // every live Watch is told
+```
 
-engine.add_unary_interceptor((ctx, req, next) => {
-  // inspect, then proceed — or return without calling next to short-circuit.
-  next(ctx, req)
+`Watch` is a *pushed* handler: it owns its response stream and answers over time rather than once. Any method can be written that way — `Handler::Pushed` is handed the request messages and a `Responder` with `send` and `finish` — which is what a subscription of any kind needs.
+
+## Interceptors
+
+One shape covers all four call kinds, on both ends. A call is the request messages it carries and the replies they produce, so a unary method is simply one message each way:
+
+```moonbit
+// server: (info, ctx, requests, next) -> replies
+engine.add_interceptor((info, ctx, requests, next) => {
+  let started = @async.now()
+  let replies = next(requests)      // or answer here, without calling it
+  println("{info.path} took {now - started} ms")
+  replies
+})
+
+// client: (invocation, next) -> reply
+chan.add_interceptor((invocation, next) => {
+  let metadata = invocation.metadata.copy()
+  metadata.push(@header.Header::of("authorization", "Bearer ..."))
+  next({ ..invocation, metadata })
 })
 ```
+
+`CallInfo` carries the path and which of the two sides streams, so an interceptor that only wants unary calls reads it and passes the rest through — which is what `add_unary_interceptor` and `add_stream_interceptor` do. The client chain wraps a call once, outside the retry loop: a retry is one invocation to an interceptor, and `Invocation` holds the path, every request message, the metadata, the deadline and the retry policy.
+
+## TLS
+
+HTTP/2 over TLS is chosen by ALPN, so both ends offer `h2` and check what the handshake settled on before a frame is exchanged. `client_tls` and `server_tls` build the two configurations with `h2` alone:
+
+```moonbit
+// server: a certificate chain, leaf first, and its key
+server.serve(port=12000, tls=@net.server_tls(@x509.pems(cert_text), @x509.PrivateKey::pem(key_text)))
+
+// client: the roots to verify against
+let chan = @net.Channel::connect("api.example.com", 12000, tls=@net.client_tls(roots))
+```
+
+`MuxChannel::connect`, `ManagedChannel::connect` and `ManagedChannel::dns_connect` take the same `tls`. A peer that offers no `h2` is closed rather than spoken to in a version it did not agree to (RFC 9113 §3.2), and a failed handshake on `serve` is a refused client, not a broken server.
+
+## Compression
+
+gRPC names three encodings — `identity`, `gzip` and `deflate`, the last of which is the raw DEFLATE stream rather than the zlib format — and negotiates them with `grpc-encoding` and `grpc-accept-encoding`:
+
+```moonbit
+let server = @net.GrpcServer::new()
+server.set_encoding(@moonrpc.Encoding::Gzip)     // replies, for a caller that accepts it
+greeter.register(server)
+
+let chan = @net.Channel::connect("127.0.0.1", 12000, encoding=@moonrpc.Encoding::Gzip)
+```
+
+A server only compresses for a caller whose `grpc-accept-encoding` lists the encoding; a caller that accepts nothing but `identity` gets identity, because sending a body the far end cannot read is not compression. A message whose flag is set under `identity` — compressed and not compressed at once — is refused on both ends, and a body that will not inflate fails the call rather than reaching the handler as bytes. `wire.Encoding` carries the codecs and the list this library advertises.
+
+## Concurrency on a connection
+
+A finished call is not run inside the frame loop. The server hands it to the driver, which runs it on a task of its own, so a handler that is waiting on something holds up nothing else on the connection:
+
+```moonbit
+engine.register_handler("/slow.S/Wait", @moonrpc.Handler::Pushed((_ctx, requests, out) => {
+  @async.sleep(400)                  // a slow handler, on its own task
+  (out.send)(requests)
+  (out.finish)()
+}))
+```
+
+Deadlines are preemptive: when a call's `grpc-timeout` passes, the engine ends the stream with `DEADLINE_EXCEEDED` and the driver stops the task behind it, so a handler that would have taken half a second stops at the deadline. One lock per connection serializes writes, since calls, the reader and a shutdown GOAWAY all write the same socket.
+
+The server also holds peers to a keepalive policy when one is set — PINGs closer together than the policy allows are strikes, and a peer that runs out of them is answered `GOAWAY(ENHANCE_YOUR_CALM)` — and refuses the frames RFC 9113 calls a protocol violation: PUSH_PROMISE, DATA or HEADERS on stream 0, a zero-increment WINDOW_UPDATE, a frame over the advertised `SETTINGS_MAX_FRAME_SIZE`, and a SETTINGS nobody acknowledges.
 
 ## Protobuf and Server Reflection
 
@@ -328,11 +395,10 @@ let reply = chan.unary(
 
 ## Not yet
 
-- TLS. `moonbitlang/async`'s TLS exposes no ALPN, so HTTP/2 runs as h2c until moontls carries it over TCP.
-- Response and request compression; incoming gzip is decompressed, outgoing messages are not compressed.
-- Concurrent dispatch on one connection: a slow handler holds up the other streams, which is also why health `Watch` sends once and server-side deadlines are not preemptive.
-- Connection backoff, client interceptors, channelz and service config.
-- Descriptor options other than `map_entry`, extensions, and transitive dependencies in reflection; `oneof` and imports from `#rpc`.
+- `channelz`, `WaitForReady`, `stats.Handler` and service config (gRPC A14); no client-side keepalive policy beyond `MuxChannel::run_keepalive`.
+- Descriptor options other than `map_entry`; `oneof` and imports from `#rpc`; extensions anywhere in the descriptor model — the reflection queries are answered, but there is nothing to report.
+- HPACK `never-indexed` literals: the encoder indexes what it is given, and sends the dynamic table size update the peer asks for.
+- `-bin` metadata goes out base64-padded. Receivers accept both forms (and `metadata_value_from_wire` reads unpadded), and the suite pins the padded form.
 
 ## Licence
 

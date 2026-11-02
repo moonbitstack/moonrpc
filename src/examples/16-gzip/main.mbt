@@ -1,7 +1,8 @@
-// Per-message gzip (RFC 1952 framing over RFC 1951 DEFLATE): `gunzip` inflates a gzip
-// member, and the client engine transparently inflates a `grpc-encoding: gzip` reply
-// whose message has the compression flag set. These vectors are real gzip members
-// (fixed-Huffman, stored, and one with an FNAME field), and the last is delivered as a
+// Per-message compression (RFC 1952 gzip over RFC 1951 DEFLATE, and the raw DEFLATE stream
+// gRPC calls `deflate`): `gunzip` inflates a gzip member, the client engine transparently
+// inflates a `grpc-encoding: gzip` reply whose message has the compression flag set, and
+// the negotiation decides which encoding a reply may use. The vectors are real gzip
+// members (fixed-Huffman, stored, and one with an FNAME field); the last is delivered as a
 // compressed reply the caller receives already decompressed.
 //
 //     moon run src/examples/16-gzip
@@ -17,6 +18,26 @@ fn ascii(bs : Bytes) -> String {
 
 ///|
 fn run() -> Unit raise {
+  // Which encoding a reply may go out under: the server's choice, kept only when the
+  // caller listed it, and identity when it did not.
+  let accepts = b"identity,gzip,deflate"
+  println(
+    "negotiated with \"\{ascii(accepts)}\": gzip -> \{@moonrpc.negotiated(Gzip, accepts[:]).code()}",
+  )
+  println(
+    "negotiated with \"identity\":   gzip -> \{@moonrpc.negotiated(Gzip, b"identity"[:]).code()}",
+  )
+  // A body survives both encodings, and both shrink a repetitive one.
+  let body = b"the quick brown fox jumps over the lazy dog. ".repeat(16)
+  let all : Array[@moonrpc.Encoding] = [Identity, Gzip, Deflate]
+  for encoding in all {
+    let encoded = encoding.encode(body[:])
+    let back = encoding.decode(encoded[:]).unwrap()
+    println(
+      "\{encoding.code()}: \{body.length()} -> \{encoded.length()} octets, round trip \{back == body}",
+    )
+  }
+
   // Three real gzip members, one per DEFLATE block type / optional field.
   let fixed = @base16.decode_lossy(
     "1f8b0800cb9b6a6a02ffcb48cdc9c9d75148afca2c5028cf2fca490100eb83468211000000",

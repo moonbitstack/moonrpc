@@ -237,6 +237,54 @@ let reply = client.reply(id)
 </section>
 
 <section class="section wrap">
+  <h2 class="h">9 · TLS</h2>
+  <p class="lede">HTTP/2 over TLS is chosen by ALPN: both ends name <code>h2</code> in the handshake and check what it settled on before a frame is exchanged. <code>@net.server_tls</code> and <code>@net.client_tls</code> build the two configurations with <code>h2</code> alone, so the agreement cannot be forgotten.</p>
+  <pre><code>// the server: a certificate chain, leaf first, and its key
+let server = @net.GrpcServer::new()
+greeter.register(server)
+server.serve(port=12000, tls=@net.server_tls(@x509.pems(cert_text), @x509.PrivateKey::pem(key_text)))
+
+// the client: the CA that signed the server, and nothing else to configure
+let chan = @net.Channel::connect("api.example.com", 12000, tls=@net.client_tls(ca_roots))
+let reply = chan.unary("/greet.Greeter/SayHello", request)</code></pre>
+  <p class="note"><span class="src"></span> <code>MuxChannel::connect</code>, <code>ManagedChannel::connect</code> and <code>dns_connect</code> take the same <code>tls</code>. A peer that offers no <code>h2</code> is closed rather than spoken to in a version it did not agree to, and a handshake failure on <code>serve</code> is a refused client, not a broken server.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">10 · Interceptors</h2>
+  <p class="lede">One interceptor shape covers all four call kinds, on both ends: a call is the request messages it carries and the replies they produce.</p>
+  <pre><code>// server: (info, ctx, requests, next) -> replies
+server_engine.add_interceptor((info, ctx, requests, next) => {
+  let started = @async.now()
+  let replies = next(requests)          // or answer here and never call it
+  println("\{info.path} took \{@async.now() - started} ms")
+  replies
+})
+
+// client: (invocation, next) -> reply
+chan.add_interceptor((invocation, next) => {
+  let metadata = invocation.metadata.copy()
+  metadata.push({ name: b"authorization", value: b"Bearer ..." })
+  next({ ..invocation, metadata })
+})</code></pre>
+  <p class="note"><span class="src"></span> An interceptor sees <code>CallInfo</code> — the path and which sides stream — so passing unary calls through untouched and handling only those is one <code>if</code>. The client chain wraps a call once, outside the retry loop: a retry is one invocation to an interceptor.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">11 · Compression</h2>
+  <p class="lede">gRPC names three encodings — <code>identity</code>, <code>gzip</code> and <code>deflate</code> — and negotiates them with <code>grpc-encoding</code> and <code>grpc-accept-encoding</code>. Set one and messages go compressed; a peer that did not ask for it still gets identity.</p>
+  <pre><code>// the server answers in gzip to a caller that accepts it
+let server = @net.GrpcServer::new()
+server.set_encoding(@moonrpc.Encoding::Gzip)
+greeter.register(server)
+
+// the client compresses its own requests, and decodes whatever comes back
+let chan = @net.Channel::connect("127.0.0.1", 12000, encoding=@moonrpc.Encoding::Gzip)
+let reply = chan.unary("/greet.Greeter/SayHello", request)</code></pre>
+  <p class="note"><span class="src"></span> A message whose compression flag is set under <code>identity</code> — compressed and not compressed at once — is refused rather than read as plaintext, and a body that will not inflate fails the call with <code>INTERNAL</code>.</p>
+</section>
+
+<section class="section wrap">
   <h2 class="h">Where to next</h2>
   <p class="lede">The <a href="api.html">API reference</a> lists every public item by package. The <a href="showcase.html">Showcase</a> runs the real engine in your browser. The repository's <code>src/examples/*</code> cover HTTP/2 frames, HPACK, flow control, health, reflection, deadlines, retries and more.</p>
   <p><a class="btn" href="index.html">Back to home</a></p>

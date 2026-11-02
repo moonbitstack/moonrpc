@@ -1,8 +1,10 @@
 // Server interceptors: a chain wrapped around a method handler, outermost first. Each
 // interceptor sees the context and request, may rewrite either, calls `next` to proceed,
 // and may post-process the reply — or return without calling `next` to short-circuit.
-// This shows a unary chain rewriting request and reply, a short-circuiting auth guard,
-// and a server-streaming interceptor appending a message. Driven over the pure engines.
+// This shows a unary chain rewriting request and reply, a short-circuiting auth guard, a
+// server-streaming interceptor appending a message, and the one shape that covers all four
+// call kinds — `add_interceptor`, which is what the two narrower forms are built from.
+// Driven over the pure engines.
 //
 //     moon run src/examples/17-interceptors
 
@@ -100,6 +102,32 @@ fn run() -> Unit raise {
   for m in reply3.messages {
     println("  \{ascii(m)}")
   }
+
+  // One interceptor over all four kinds: the chain reports the path and which sides
+  // stream, and passes the messages through untouched.
+  let universal = @moonrpc.H2Server::new()
+  universal.register("/svc.S/M", req => b"echo:" + req)
+  universal.register_server_streaming("/svc.S/Feed", (_ctx, req) => {
+    [req + b"-1", req + b"-2"]
+  })
+  universal.add_interceptor((info, _ctx, requests, next) => {
+    println(
+      "  chain: \{info.path} client_streaming=\{info.client_streaming} server_streaming=\{info.server_streaming}",
+    )
+    next(requests)
+  })
+  let c4 = @moonrpc.H2Client::new()
+  let (id4, init4) = c4.unary("/svc.S/M", b"one")
+  drive(universal, c4, id4, init4)
+  println("universal, unary: \{ascii(c4.reply(id4).messages[0])}")
+  // The same client and the same connection carry the second call: a fresh stream id,
+  // which is what multiplexing is.
+  let (id5, init5) = c4.unary("/svc.S/Feed", b"n")
+  drive(universal, c4, id5, init5)
+  let streamed = c4.reply(id5).messages
+  println(
+    "universal, server streaming (\{streamed.length()} replies): \{ascii(streamed[0])} \{ascii(streamed[1])}",
+  )
 }
 
 ///|
