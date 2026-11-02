@@ -136,8 +136,8 @@ pub struct H2Server {
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
   streams : Map[Int32, SrvStream]
-  unary_interceptors : Array[UnaryInterceptor]
-  stream_interceptors : Array[StreamInterceptor]
+  // The interceptor chain every call goes through, whatever its kind, outermost first.
+  interceptors : Array[Interceptor]
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -174,8 +174,7 @@ pub fn H2Server::new() -> H2Server {
     encoder: @hpack.Encoder::new(),
     decoder: @hpack.Decoder::new(),
     streams: Map([]),
-    unary_interceptors: [],
-    stream_interceptors: [],
+    interceptors: [],
     conn_recv_window: @wire.default_window_size,
     conn_send_window: @wire.default_window_size,
     remote_initial_window: @wire.default_window_size,
@@ -1087,18 +1086,18 @@ fn H2Server::advance(
       return self.produce(s)
     }
     match self.handlers.get(s.path) {
-      Some(Bidi(_)) =>
-        match s.bidi {
-          Some(bh) =>
-            while s.bidi_processed < s.req_msgs.length() {
-              let m = s.req_msgs[s.bidi_processed]
-              s.bidi_processed = s.bidi_processed + 1
-              for r in (bh.on_message)(m) {
-                self.enqueue(s, r)
-              }
-            }
-          None => ()
+      Some(Bidi(_)) => {
+        let batch : Array[Bytes] = []
+        while s.bidi_processed < s.req_msgs.length() {
+          batch.push(s.req_msgs[s.bidi_processed])
+          s.bidi_processed = s.bidi_processed + 1
         }
+        if batch.length() > 0 {
+          for r in self.invoke(s, self.handlers[s.path], batch, all=false) {
+            self.enqueue(s, r)
+          }
+        }
+      }
       _ => ()
     }
     if s.end_stream_recv && !s.finalized {
@@ -1124,26 +1123,82 @@ fn H2Server::enqueue(self : H2Server, s : SrvStream, msg : Bytes) -> Unit {
 }
 
 ///|
+/// Run a call's handler through the interceptor chain and hand back its replies. A
+/// bidirectional call's messages arrive over time, so `all` says whether this is the
+/// half-close batch — the one where the other three kinds, and a bidi handler's `on_end`,
+/// produce their answers — and a bidi batch that is not collects its replies as it goes.
+fn H2Server::invoke(
+  self : H2Server,
+  s : SrvStream,
+  handler : @stream.Handler,
+  requests : Array[Bytes],
+  all~ : Bool,
+) -> Array[Bytes] {
+  let info = handler.info(s.path)
+  match handler {
+    Unary(h) =>
+      if all {
+        self.intercepted(info, s.ctx, requests, reqs => {
+          let request = if reqs.length() > 0 { reqs[0] } else { b"" }
+          [h(s.ctx, request)]
+        })
+      } else {
+        []
+      }
+    ServerStreaming(h) =>
+      if all {
+        self.intercepted(info, s.ctx, requests, reqs => {
+          let request = if reqs.length() > 0 { reqs[0] } else { b"" }
+          h(s.ctx, request)
+        })
+      } else {
+        []
+      }
+    ClientStreaming(h) =>
+      if all {
+        self.intercepted(info, s.ctx, requests, reqs => [h(s.ctx, reqs)])
+      } else {
+        []
+      }
+    Bidi(_) =>
+      match s.bidi {
+        Some(bh) =>
+          self.intercepted(info, s.ctx, requests, reqs => {
+            let out : Array[Bytes] = []
+            for m in reqs {
+              for r in (bh.on_message)(m) {
+                out.push(r)
+              }
+            }
+            if all {
+              for r in (bh.on_end)() {
+                out.push(r)
+              }
+            }
+            out
+          })
+        None => []
+      }
+  }
+}
+
+///|
 /// Run the resolved handler at half-close, enqueue its reply message(s), and mark
 /// the response body complete so the trailers follow once the body drains.
 fn H2Server::finalize(self : H2Server, s : SrvStream) -> Unit {
   match self.handlers.get(s.path) {
-    Some(Unary(h)) => {
-      let msg = if s.req_msgs.length() > 0 { s.req_msgs[0] } else { b"" }
-      let effective = compose_unary(self.unary_interceptors, h)
-      self.deliver(s, [effective(s.ctx, msg)])
-    }
-    Some(ServerStreaming(h)) => {
-      let msg = if s.req_msgs.length() > 0 { s.req_msgs[0] } else { b"" }
-      let effective = compose_stream(self.stream_interceptors, h)
-      self.deliver(s, effective(s.ctx, msg))
-    }
-    Some(ClientStreaming(h)) => self.deliver(s, [h(s.ctx, s.req_msgs)])
-    Some(Bidi(_)) =>
-      match s.bidi {
-        Some(bh) => self.deliver(s, (bh.on_end)())
-        None => ()
+    // A bidirectional call has already answered the messages that arrived before the
+    // half-close, so only the last batch is left for it, plus `on_end`.
+    Some(@stream.Bidi(_) as handler) => {
+      let rest : Array[Bytes] = []
+      for i = s.bidi_processed; i < s.req_msgs.length(); i = i + 1 {
+        rest.push(s.req_msgs[i])
       }
+      s.bidi_processed = s.req_msgs.length()
+      self.deliver(s, self.invoke(s, handler, rest, all=true))
+    }
+    Some(handler) =>
+      self.deliver(s, self.invoke(s, handler, s.req_msgs, all=true))
     None => ()
   }
   s.started_response = true

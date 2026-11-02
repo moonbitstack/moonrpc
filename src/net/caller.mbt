@@ -48,28 +48,7 @@ pub impl @moonrpc.Caller for MuxChannel with fn invoke(
       "a MuxChannel does not retry; call through a Channel or a ManagedChannel",
     )
   }
-  if requests is [request] {
-    return self.unary(path, request, metadata~, timeout_millis?)
-  }
-  let id = self.engine.open(path, metadata~, timeout_millis?)
-  let stream : BidiStream = {
-    ch: self,
-    id,
-    inbox: @aqueue.Queue::Queue(kind=Unbounded),
-    pending: [],
-    offset: 0,
-  }
-  self.inboxes[id] = stream.inbox
-  for request in requests {
-    stream.send(request)
-  }
-  stream.close_send()
-  let messages = []
-  while stream.recv() is Some(m) {
-    messages.push(m)
-  }
-  defer self.engine.release(id)
-  { ..self.engine.reply(id), messages, }
+  self.call({ path, requests, metadata, timeout_millis, retry, })
 }
 
 ///|

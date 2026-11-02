@@ -108,6 +108,8 @@ pub using @balance {type Attempts}
 
 pub using @stream {type BidiHandler}
 
+pub using @server {type CallInfo}
+
 pub using @client {type CallReply}
 
 pub using @client {type ClientCall}
@@ -143,6 +145,8 @@ pub using @header {type Header}
 pub using @service {type HealthService}
 
 pub using @balance {type Hedging}
+
+pub using @client {type Invocation}
 
 pub using @wire {type Keepalive}
 

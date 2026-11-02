@@ -18,6 +18,8 @@ pub struct MuxChannel {
   mut keepalive : @moonrpc.Keepalive?
   mut gone : Bool
   mut reader : @async.Task[Unit]?
+  // The client interceptor chain every call goes through, outermost first.
+  interceptors : Array[@client.Interceptor]
 }
 
 ///|
@@ -27,6 +29,7 @@ pub async fn MuxChannel::connect(
   host : String,
   port : Int32,
   tls? : @tls.Client,
+  interceptors? : Array[@client.Interceptor],
 ) -> MuxChannel {
   let conn = @tcp.dial(host, port~, tls?)
   // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
@@ -45,6 +48,7 @@ pub async fn MuxChannel::connect(
     keepalive: None,
     gone: false,
     reader: None,
+    interceptors: interceptors.unwrap_or([]),
   }
   ch.write_locked(engine.preface())
   ch
@@ -138,6 +142,16 @@ fn lost() -> @moonrpc.CallReply {
 }
 
 ///|
+/// Add a client interceptor to this channel: every call it makes from now on runs through
+/// it, whichever of the four call kinds it is.
+pub fn MuxChannel::add_interceptor(
+  self : MuxChannel,
+  interceptor : @client.Interceptor,
+) -> Unit {
+  self.interceptors.push(interceptor)
+}
+
+///|
 /// Make a unary call, concurrent with any other calls on this channel: register an inbox,
 /// send the request under the write lock, and wait for the pump to signal the stream
 /// done, then take the reply.
@@ -148,29 +162,74 @@ pub async fn MuxChannel::unary(
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
 ) -> @moonrpc.CallReply {
-  let (id, frames) = self.engine.unary(
+  self.call({
     path,
-    request,
-    metadata~,
-    timeout_millis?,
-  )
-  let inbox : @aqueue.Queue[Unit] = @aqueue.Queue::Queue(kind=Unbounded)
-  self.inboxes[id] = inbox
-  self.write_locked(frames)
-  // The pump now also wakes on intermediate messages, so wait until the stream truly ends.
-  while !self.engine.is_done(id) {
-    if self.gone {
+    requests: [request],
+    metadata,
+    timeout_millis,
+    retry: None,
+  })
+}
+
+///|
+/// Run one call through the interceptor chain and out over the shared connection: one
+/// request goes as a unary call, any other number as a stream that is half-closed after
+/// the last, every reply collected.
+async fn MuxChannel::call(
+  self : MuxChannel,
+  invocation : @client.Invocation,
+) -> @moonrpc.CallReply {
+  let chain = @client.intercepted(self.interceptors, invocation => {
+    if invocation.requests is [request] {
+      let (id, frames) = self.engine.unary(
+        invocation.path,
+        request,
+        metadata=invocation.metadata,
+        timeout_millis?=invocation.timeout_millis,
+      )
+      let inbox : @aqueue.Queue[Unit] = @aqueue.Queue::Queue(kind=Unbounded)
+      self.inboxes[id] = inbox
+      self.write_locked(frames)
+      // The pump also wakes on intermediate messages, so wait until the stream truly ends.
+      while !self.engine.is_done(id) {
+        if self.gone {
+          self.inboxes.remove(id)
+          self.engine.release(id)
+          return lost()
+        }
+        inbox.get()
+      }
       self.inboxes.remove(id)
-      self.engine.release(id)
-      return lost()
+      // The inbox goes; so must the engine's buffers for this call, or a multiplexed
+      // connection accumulates every RPC it has ever carried.
+      defer self.engine.release(id)
+      return self.engine.reply(id)
     }
-    inbox.get()
-  }
-  self.inboxes.remove(id)
-  // The inbox goes; so must the engine's buffers for this call, or a multiplexed
-  // connection accumulates every RPC it has ever carried.
-  defer self.engine.release(id)
-  self.engine.reply(id)
+    let id = self.engine.open(
+      invocation.path,
+      metadata=invocation.metadata,
+      timeout_millis?=invocation.timeout_millis,
+    )
+    let stream : BidiStream = {
+      ch: self,
+      id,
+      inbox: @aqueue.Queue::Queue(kind=Unbounded),
+      pending: [],
+      offset: 0,
+    }
+    self.inboxes[id] = stream.inbox
+    for request in invocation.requests {
+      stream.send(request)
+    }
+    stream.close_send()
+    let messages = []
+    while stream.recv() is Some(m) {
+      messages.push(m)
+    }
+    defer self.engine.release(id)
+    { ..self.engine.reply(id), messages, }
+  })
+  chain(invocation)
 }
 
 ///|

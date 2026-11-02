@@ -14,6 +14,8 @@ import {
 // Values
 pub fn encode_grpc_timeout(Int32) -> Bytes
 
+pub fn intercepted(Array[async (Invocation, async (Invocation) -> CallReply) -> CallReply], async (Invocation) -> CallReply) -> async (Invocation) -> CallReply
+
 pub fn percent_decode(Bytes) -> String
 
 // Errors
@@ -95,7 +97,16 @@ pub fn H2Client::take_messages(Self, Int32) -> Array[Bytes]
 pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> (Int32, Array[@http2.Frame])
 pub fn H2Client::unprocessed(Self, Int32) -> Bool
 
+pub(all) struct Invocation {
+  path : String
+  requests : Array[Bytes]
+  metadata : Array[@header.Header]
+  timeout_millis : Int32?
+  retry : @balance.Retry?
+}
+
 // Type aliases
+pub type Interceptor = async (Invocation, async (Invocation) -> CallReply) -> CallReply
 
 // Traits
 pub(open) trait Caller {

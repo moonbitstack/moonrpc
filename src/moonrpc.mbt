@@ -97,12 +97,14 @@ pub using @client {
   type CallReply,
   type ClientCall,
   type H2Client,
+  type Invocation,
   encode_grpc_timeout,
   percent_decode,
 }
 
 ///|
 pub using @server {
+  type CallInfo,
   type H2Server,
   type SrvStream,
   type StreamInterceptor,

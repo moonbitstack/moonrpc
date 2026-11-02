@@ -14,13 +14,18 @@ pub let default_max_streams : Int32
 // Errors
 
 // Types and methods
+pub(all) struct CallInfo {
+  path : String
+  client_streaming : Bool
+  server_streaming : Bool
+}
+
 pub struct H2Server {
   handlers : Map[String, @stream.Handler]
   encoder : @hpack.Encoder
   decoder : @hpack.Decoder
   streams : Map[Int32, SrvStream]
-  unary_interceptors : Array[(@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes]
-  stream_interceptors : Array[(@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]]
+  interceptors : Array[(CallInfo, @stream.RpcContext, Array[Bytes], (Array[Bytes]) -> Array[Bytes]) -> Array[Bytes]]
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -34,6 +39,7 @@ pub struct H2Server {
   mut drained : Int32?
 }
 pub fn H2Server::active_streams(Self) -> Int32
+pub fn H2Server::add_interceptor(Self, (CallInfo, @stream.RpcContext, Array[Bytes], (Array[Bytes]) -> Array[Bytes]) -> Array[Bytes]) -> Unit
 pub fn H2Server::add_stream_interceptor(Self, (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]) -> Unit
 pub fn H2Server::add_unary_interceptor(Self, (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes) -> Unit
 pub fn H2Server::closing(Self) -> Bool
@@ -91,6 +97,8 @@ pub(all) struct SrvStream {
 }
 
 // Type aliases
+pub type Interceptor = (CallInfo, @stream.RpcContext, Array[Bytes], (Array[Bytes]) -> Array[Bytes]) -> Array[Bytes]
+
 pub type StreamInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]
 
 pub type UnaryInterceptor = (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes

@@ -20,6 +20,9 @@ pub struct Channel {
   outgoing : @async.Mutex
   turn : @async.CondVar
   mut reading : Bool
+  // The client interceptor chain every call on this channel goes through, outermost
+  // first; empty unless a caller added one.
+  interceptors : Array[@client.Interceptor]
 }
 
 ///|
@@ -37,6 +40,7 @@ pub async fn Channel::connect(
   throttling? : @moonrpc.Throttling,
   rand? : () -> Double,
   tls? : @tls.Client,
+  interceptors? : Array[@client.Interceptor],
 ) -> Channel {
   let conn = @tcp.dial(host, port~, tls?)
   // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
@@ -56,7 +60,18 @@ pub async fn Channel::connect(
     outgoing: @async.Mutex::Mutex(),
     turn: @async.CondVar::Cond(),
     reading: false,
+    interceptors: interceptors.unwrap_or([]),
   }
+}
+
+///|
+/// Add a client interceptor to this channel: every call it makes from now on runs through
+/// it, whichever of the four call kinds it is.
+pub fn Channel::add_interceptor(
+  self : Channel,
+  interceptor : @client.Interceptor,
+) -> Unit {
+  self.interceptors.push(interceptor)
 }
 
 ///|
@@ -180,17 +195,29 @@ async fn Channel::unary_once(
 }
 
 ///|
-/// Run a call's attempts on this channel under `retry`, transparently retrying a
-/// stream the server refused even without one.
+/// Run one call from the interceptor chain inward: the chain first, then the call's
+/// attempts under `retry`, transparently retrying a stream the server refused even
+/// without one. The chain wraps the whole call, not each attempt, so a retry is one
+/// invocation as far as an interceptor is concerned.
 async fn Channel::call(
   self : Channel,
-  metadata : Array[@header.Header],
-  timeout_millis : Int32?,
-  retry : @moonrpc.Retry?,
-  once : async (Array[@header.Header], Int32?) -> @moonrpc.CallReply,
+  invocation : @client.Invocation,
+  once : async (@client.Invocation) -> @moonrpc.CallReply,
 ) -> @moonrpc.CallReply {
-  let attempts = @moonrpc.Attempts::new(retry?, throttle?=self.throttle)
-  attempting(attempts, self.roll, metadata, timeout_millis, once)
+  let chain = @client.intercepted(self.interceptors, invocation => {
+    let attempts = @moonrpc.Attempts::new(
+      retry?=invocation.retry,
+      throttle?=self.throttle,
+    )
+    attempting(
+      attempts,
+      self.roll,
+      invocation.metadata,
+      invocation.timeout_millis,
+      (md, ms) => once({ ..invocation, metadata: md, timeout_millis: ms, }),
+    )
+  })
+  chain(invocation)
 }
 
 ///|
@@ -209,8 +236,9 @@ pub async fn Channel::unary(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call(metadata, timeout_millis, retry, (md, ms) => {
-    self.unary_once(path, request, md, ms)
+  self.call({ path, requests: [request], metadata, timeout_millis, retry, }, inv => {
+    let request = if inv.requests.length() > 0 { inv.requests[0] } else { b"" }
+    self.unary_once(inv.path, request, inv.metadata, inv.timeout_millis)
   })
 }
 
@@ -247,8 +275,8 @@ pub async fn Channel::server_streaming(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call(metadata, timeout_millis, retry, (md, ms) => {
-    self.stream_once(path, [request], md, ms)
+  self.call({ path, requests: [request], metadata, timeout_millis, retry, }, inv => {
+    self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
   })
 }
 
@@ -295,8 +323,8 @@ pub async fn Channel::client_streaming(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call(metadata, timeout_millis, retry, (md, ms) => {
-    self.stream_once(path, requests, md, ms)
+  self.call({ path, requests, metadata, timeout_millis, retry, }, inv => {
+    self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
   })
 }
 
@@ -316,8 +344,8 @@ pub async fn Channel::bidi(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call(metadata, timeout_millis, retry, (md, ms) => {
-    self.stream_once(path, requests, md, ms)
+  self.call({ path, requests, metadata, timeout_millis, retry, }, inv => {
+    self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
   })
 }
 

@@ -16,4 +16,6 @@ import {
 
 import {
   "moonbitstack/moonbase/base16",
+  "moonbitlang/async",
+  "moonbitlang/core/encoding/utf8",
 } for "wbtest"
