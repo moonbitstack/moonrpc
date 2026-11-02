@@ -30,6 +30,8 @@ pub fn metadata_value_to_wire(Bytes, Bytes) -> Bytes
 
 pub fn negotiated(Encoding, BytesView) -> Encoding
 
+pub let server_keepalive : ServerKeepalive
+
 pub fn split_messages(Bytes) -> Array[Bytes]
 
 // Errors
@@ -74,6 +76,24 @@ pub(all) struct Method {
   name : String
 }
 pub fn Method::path(Self) -> String
+
+pub(all) struct PingGuard {
+  min_interval : Int64
+  max_strikes : Int32
+  mut last : Int64
+  mut strikes : Int32
+}
+pub fn PingGuard::new(min_interval~ : Int64, max_strikes~ : Int32, now? : Int64) -> Self
+pub fn PingGuard::observe(Self, Int64) -> Bool
+
+pub(all) struct ServerKeepalive {
+  time : Int64
+  timeout : Int64
+  min_ping_interval : Int64
+  permit_without_calls : Bool
+  max_ping_strikes : Int32
+}
+pub fn ServerKeepalive::ping_guard(Self, now? : Int64) -> PingGuard
 
 pub(all) enum Status {
   Ok

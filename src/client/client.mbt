@@ -141,6 +141,15 @@ pub struct H2Client {
   // What this client compresses request messages with, and what it names in
   // `grpc-encoding`. Identity by default.
   mut encoding : @wire.Encoding
+  // What goes in `user-agent`: the library, and a caller's own application name if it sets
+  // one, as gRPC's own clients do.
+  mut user_agent : Bytes
+  // The largest message this client will accept, and the largest it will send.
+  mut max_recv : Int32
+  mut max_send : Int32
+  // A dynamic table size the peer asked for that has not been announced in a header block
+  // yet: HPACK requires the encoder to say the new size before it uses it (RFC 7541 §6.3).
+  mut size_update : Int32?
   // @header.Header blocks arriving for streams this client no longer tracks. They still
   // have to reach the decoder — HPACK's table is per-connection — so they are
   // accumulated here and dropped once complete.
@@ -221,9 +230,18 @@ pub fn H2Client::new() -> H2Client {
     goaway_received: false,
     goaway_last_stream_id: 0,
     encoding: @wire.Encoding::Identity,
+    user_agent: @utf8.encode(user_agent),
+    max_recv: @wire.max_message_size,
+    max_send: @wire.max_message_size,
+    size_update: None,
     orphan_blocks: Map([]),
   }
 }
+
+///|
+/// What this client calls itself in `user-agent` unless told otherwise: the library and the
+/// version this source is, which is what a server's access log wants to know.
+pub let user_agent : String = "moonrpc/0.21.8"
 
 ///|
 /// The client's opening frames (RFC 7540 §3.5): a SETTINGS frame disabling server
@@ -242,6 +260,26 @@ pub fn H2Client::set_encoding(
   encoding : @wire.Encoding,
 ) -> Unit {
   self.encoding = encoding
+}
+
+///|
+/// What this client calls itself in `user-agent` — `moonrpc/<version>` unless a caller has
+/// an application name of its own to add.
+pub fn H2Client::set_user_agent(self : H2Client, user_agent : String) -> Unit {
+  self.user_agent = @utf8.encode(user_agent)
+}
+
+///|
+/// Cap the messages this client will accept and send, in octets. A larger incoming message
+/// ends its call with RESOURCE_EXHAUSTED rather than pinning the memory it declares; a
+/// larger outgoing one raises `Refused` from `send` instead of going out.
+pub fn H2Client::set_max_message_size(
+  self : H2Client,
+  recv~ : Int32 = @wire.max_message_size,
+  send~ : Int32 = @wire.max_message_size,
+) -> Unit {
+  self.max_recv = recv
+  self.max_send = send
 }
 
 ///|
@@ -339,6 +377,24 @@ pub fn H2Client::unary(
 }
 
 ///|
+/// Encode a request header block, first telling the peer about a dynamic table size it
+/// asked for: HPACK lets an encoder shrink its table, but only if the next block says so
+/// before it is used (RFC 7541 §6.3), or the decoder's table and ours disagree for good.
+fn H2Client::encode_block(
+  self : H2Client,
+  headers : Array[@header.Header],
+) -> Bytes {
+  let lead = match self.size_update {
+    Some(n) => {
+      self.size_update = None
+      @hpack.size_update(n)
+    }
+    None => b""
+  }
+  lead + self.encoder.encode(headers)
+}
+
+///|
 /// Emit the request frames a call can send right now: the HEADERS once, then as
 /// much buffered DATA as the connection and stream send windows and the peer's
 /// max-frame size allow, the last frame carrying END_STREAM once the request is
@@ -361,6 +417,7 @@ fn H2Client::produce_request(
         name: b"grpc-accept-encoding",
         value: @utf8.encode(@wire.accept_encodings),
       },
+      { name: b"user-agent", value: self.user_agent, },
     ]
     match self.encoding {
       @wire.Encoding::Identity => ()
@@ -381,7 +438,7 @@ fn H2Client::produce_request(
         value: @wire.metadata_value_to_wire(h.name, h.value),
       })
     }
-    let block = self.encoder.encode(headers)
+    let block = self.encode_block(headers)
     let end = c.req_ended && c.out.length() == 0
     // A request carrying more metadata than the peer's MAX_FRAME_SIZE has to go out
     // as HEADERS + CONTINUATION, or the peer answers FRAME_SIZE_ERROR.
@@ -638,6 +695,7 @@ fn H2Client::apply_setting(self : H2Client, id : Int32, value : Int32) -> Unit {
   } else if id == @http2.settings_header_table_size {
     if value >= 0 {
       self.encoder.table.resize(value)
+      self.size_update = Some(value)
     }
   }
 }

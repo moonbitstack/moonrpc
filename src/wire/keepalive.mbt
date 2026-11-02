@@ -67,3 +67,77 @@ pub fn Keepalive::on_ping_ack(self : Keepalive, now : Int64) -> Unit {
 pub fn Keepalive::is_timed_out(self : Keepalive, now : Int64) -> Bool {
   self.ping_outstanding && now - self.ping_sent_at >= self.keepalive_timeout
 }
+
+///|
+/// A server's keepalive policy (gRPC A8): `time` is how long an idle connection is left
+/// alone before the server pings it, `timeout` how long the PING may go unanswered before
+/// the connection is declared dead, `min_ping_interval` the shortest gap the server will
+/// tolerate between a peer's PINGs, and `max_ping_strikes` how many of those too-soon PINGs
+/// a peer gets before the connection is closed.
+pub(all) struct ServerKeepalive {
+  time : Int64
+  timeout : Int64
+  min_ping_interval : Int64
+  permit_without_calls : Bool
+  max_ping_strikes : Int32
+}
+
+///|
+/// The policy gRPC core uses when a server sets none: two hours of idleness before a PING,
+/// twenty seconds to answer it, a PING no more often than every five minutes, and two
+/// strikes before the peer is told to calm down (`ENHANCE_YOUR_CALM`).
+pub let server_keepalive : ServerKeepalive = {
+  time: 7_200_000L,
+  timeout: 20_000L,
+  min_ping_interval: 300_000L,
+  permit_without_calls: false,
+  max_ping_strikes: 2,
+}
+
+///|
+/// The guard a server keeps against a peer that pings it faster than the policy allows: a
+/// PING inside `min_interval` is a strike, and `max_strikes` of them end the connection.
+/// This is what stops a client from keeping a hundred thousand connections alive with a
+/// PING every millisecond.
+pub(all) struct PingGuard {
+  min_interval : Int64
+  max_strikes : Int32
+  mut last : Int64
+  mut strikes : Int32
+}
+
+///|
+/// A guard that has seen no PING yet.
+pub fn PingGuard::new(
+  min_interval~ : Int64,
+  max_strikes~ : Int32,
+  now~ : Int64 = 0L,
+) -> PingGuard {
+  { min_interval, max_strikes, last: now, strikes: 0, }
+}
+
+///|
+/// Record a PING at `now` and say whether the peer has struck out. The first PING of a
+/// connection is never a strike: `last` starts at the connection's own start.
+pub fn PingGuard::observe(self : PingGuard, now : Int64) -> Bool {
+  // A well-spaced PING earns back nothing: the count is of strikes on this connection,
+  // not a rate, so a peer that hammers three times and then behaves is still out.
+  if now - self.last < self.min_interval {
+    self.strikes = self.strikes + 1
+  }
+  self.last = now
+  self.strikes > self.max_strikes
+}
+
+///|
+/// The guard a policy implies, or `None` when the server takes no view on PING rate.
+pub fn ServerKeepalive::ping_guard(
+  self : ServerKeepalive,
+  now~ : Int64 = 0L,
+) -> PingGuard {
+  PingGuard::new(
+    min_interval=self.min_ping_interval,
+    max_strikes=self.max_ping_strikes,
+    now~,
+  )
+}

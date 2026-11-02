@@ -9,6 +9,11 @@
 // runs in-memory on every backend; the socket driver in `net/` only pumps bytes.
 
 ///|
+/// How long a peer has to acknowledge a SETTINGS frame before the connection is given up
+/// on: ten seconds, the value gRPC core uses for `SETTINGS` timeouts.
+pub let settings_ack_timeout : Int64 = 10_000L
+
+///|
 /// The `SETTINGS_MAX_CONCURRENT_STREAMS` the server advertises and enforces unless a
 /// caller says otherwise: 100, the value gRPC and nghttp2 both settle on. RFC 9113
 /// §5.1.2 leaves the setting unset by default, which means unbounded — and every live
@@ -169,6 +174,20 @@ pub struct H2Server {
   // by a reset, so the driver knows which tasks to stop.
   mut calls : Array[Call]
   mut ended : Array[Int32]
+  // The keepalive policy this server holds its peers to, and the guard that counts their
+  // PINGs; `None` until a policy is set, which is the default — a server that says nothing
+  // about PINGs takes them all.
+  mut keepalive : @wire.ServerKeepalive?
+  mut pings : @wire.PingGuard?
+  // When the SETTINGS we sent last went out unanswered, so a peer that never acknowledges
+  // them ends the connection instead of leaving us guessing (RFC 9113 §6.5.3).
+  mut settings_sent_at : Int64?
+  // The largest message this server will accept, and the largest it will send.
+  mut max_recv : Int32
+  mut max_send : Int32
+  // A dynamic table size the peer asked for that no header block has announced yet: HPACK
+  // wants the encoder to say the new size before it is used (RFC 7541 §6.3).
+  mut size_update : Int32?
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -210,6 +229,12 @@ pub fn H2Server::new() -> H2Server {
     concurrent: false,
     calls: [],
     ended: [],
+    keepalive: None,
+    pings: None,
+    settings_sent_at: None,
+    max_recv: @wire.max_message_size,
+    max_send: @wire.max_message_size,
+    size_update: None,
     conn_recv_window: @wire.default_window_size,
     conn_send_window: @wire.default_window_size,
     remote_initial_window: @wire.default_window_size,
@@ -300,6 +325,19 @@ pub fn H2Server::register_bidi(
 }
 
 ///|
+/// End the connection with `code` and `why`, as a fault of the server's own finding: the
+/// frames that report it, after which `closing` is set. A driver uses this for a fault it
+/// detects while reading — a frame over the size the server advertised never becomes a
+/// `Frame` at all, so the engine cannot be the one to notice.
+pub fn H2Server::fail(
+  self : H2Server,
+  code : Int32,
+  why : String,
+) -> Array[@http2.Frame] {
+  self.report(@h2.ConnFault(code~, why~))
+}
+
+///|
 /// Whether the peer has sent GOAWAY; the driver stops accepting new streams once
 /// this is set.
 pub fn H2Server::goaway_received(self : H2Server) -> Bool {
@@ -311,6 +349,7 @@ pub fn H2Server::goaway_received(self : H2Server) -> Bool {
 /// and naming how many streams this connection will run at once. Sent immediately after
 /// the client connection @http2.preface is validated, before any request frame is read.
 pub fn H2Server::preface(self : H2Server) -> Array[@http2.Frame] {
+  self.settings_sent_at = Some((self.clock)())
   [
     Settings(
       params=[
@@ -320,6 +359,21 @@ pub fn H2Server::preface(self : H2Server) -> Array[@http2.Frame] {
       ack=false,
     ),
   ]
+}
+
+///|
+/// Announce a settings change of our own: a SETTINGS frame the peer must acknowledge. A
+/// setting the server enforces on arrival is applied now as well, since a peer cannot be
+/// held to a limit it has not been told about either way.
+pub fn H2Server::announce(
+  self : H2Server,
+  params : Array[(Int32, Int32)],
+) -> Array[@http2.Frame] {
+  for p in params {
+    self.apply_setting(p.0, p.1)
+  }
+  self.settings_sent_at = Some((self.clock)())
+  [Settings(params~, ack=false)]
 }
 
 ///|
@@ -339,6 +393,32 @@ pub fn H2Server::set_encoding(
   encoding : @wire.Encoding,
 ) -> Unit {
   self.encoding = encoding
+}
+
+///|
+/// Cap the messages this server will accept and send, in octets. A larger incoming message
+/// ends its call with RESOURCE_EXHAUSTED rather than pinning the memory the length prefix
+/// declares; a larger reply ends its call the same way instead of going out.
+pub fn H2Server::set_max_message_size(
+  self : H2Server,
+  recv~ : Int32 = @wire.max_message_size,
+  send~ : Int32 = @wire.max_message_size,
+) -> Unit {
+  self.max_recv = recv
+  self.max_send = send
+}
+
+///|
+/// Hold peers to `policy`: PINGs closer together than its `min_ping_interval` are strikes,
+/// and a peer that runs out of them is answered `GOAWAY(ENHANCE_YOUR_CALM)`. The driver
+/// uses the same policy's `time` and `timeout` to ping an idle connection and to declare it
+/// dead. Off by default: a server that sets no policy accepts any PING rate.
+pub fn H2Server::set_keepalive(
+  self : H2Server,
+  policy : @wire.ServerKeepalive,
+) -> Unit {
+  self.keepalive = Some(policy)
+  self.pings = Some(policy.ping_guard(now=(self.clock)()))
 }
 
 ///|
@@ -617,7 +697,7 @@ fn request_reject(headers : Array[@header.Header]) -> (Int32, Int32, String)? {
 /// Pull every complete length-prefixed message now buffered on this stream into
 /// `req_msgs`, advancing the read cursor. Partial trailing bytes stay buffered for
 /// a later DATA frame to complete.
-fn drain_messages(s : SrvStream) -> Unit {
+fn drain_messages(s : SrvStream, max~ : Int32) -> Unit {
   let all = s.data.to_bytes()
   let n = all.length()
   let mut off = s.req_off
@@ -626,7 +706,7 @@ fn drain_messages(s : SrvStream) -> Unit {
     let len = @wire.message_len(all[:], at=off).unwrap()
     // A high-bit-set prefix decodes negative; either that or a length past the cap is
     // rejected before it can drive an out-of-bounds slice or pin unbounded buffer.
-    if len < 0 || len > @wire.max_message_size {
+    if len < 0 || len > max {
       s.oversize = true
       break
     }
@@ -702,6 +782,7 @@ fn H2Server::apply_setting(self : H2Server, id : Int32, value : Int32) -> Unit {
   } else if id == @http2.settings_header_table_size {
     if value >= 0 {
       self.encoder.table.resize(value)
+      self.size_update = Some(value)
     }
   }
 }
@@ -788,6 +869,21 @@ fn H2Server::report(self : H2Server, f : @h2.Fault) -> Array[@http2.Frame] {
 pub fn H2Server::tick(self : H2Server) -> Array[@http2.Frame] {
   if self.closing {
     return []
+  }
+  // A peer that never acknowledges our SETTINGS is not reading what we send: at the limit
+  // gRPC uses (ten seconds) the connection is over, rather than a server waiting for ever
+  // on a handshake half done.
+  match self.settings_sent_at {
+    Some(at) =>
+      if (self.clock)() - at > settings_ack_timeout {
+        return self.report(
+          @h2.ConnFault(
+            code=@http2.error_settings_timeout,
+            why="SETTINGS not acknowledged",
+          ),
+        )
+      }
+    None => ()
   }
   self.sweep() catch {
     f => self.report(f)
@@ -910,6 +1006,7 @@ fn H2Server::step(
   match frame {
     Settings(params~, ack~) =>
       if ack {
+        self.settings_sent_at = None
         []
       } else {
         for p in params {
@@ -917,7 +1014,25 @@ fn H2Server::step(
         }
         [Settings(params=[], ack=true)]
       }
-    Ping(payload~, ack~) => if ack { [] } else { [Ping(payload~, ack=true)] }
+    Ping(payload~, ack~) =>
+      if ack {
+        []
+      } else {
+        // A peer that pings faster than the policy allows is striking out; when it runs
+        // out of strikes the connection ends with ENHANCE_YOUR_CALM, which is what tells a
+        // client to slow down rather than to reconnect (gRPC A8).
+        match self.pings {
+          Some(watchdog) =>
+            if watchdog.observe((self.clock)()) {
+              raise @h2.ConnFault(
+                code=@http2.error_enhance_your_calm,
+                why="too many pings",
+              )
+            }
+          None => ()
+        }
+        [Ping(payload~, ack=true)]
+      }
     WindowUpdate(stream_id~, increment~) => {
       // §6.9: a zero increment credits nothing and is an error — on the connection
       // window the whole connection's, on a stream only that stream's.
@@ -1100,7 +1215,15 @@ fn H2Server::step(
       self.goaway_received = true
       []
     }
-    @http2.Priority(..) | PushPromise(..) | Unknown(..) => []
+    // A client cannot push: PUSH_PROMISE is a server-to-client frame, and a connection
+    // that receives one is speaking to a peer that is not playing the protocol
+    // (RFC 9113 §6.6).
+    PushPromise(..) =>
+      raise @h2.ConnFault(
+        code=@http2.error_protocol_error,
+        why="PUSH_PROMISE from a client",
+      )
+    @http2.Priority(..) | Unknown(..) => []
   }
 }
 
@@ -1207,7 +1330,7 @@ fn H2Server::advance(
     return self.expire(s)
   }
   if !s.trailers_only {
-    drain_messages(s)
+    drain_messages(s, max=self.max_recv)
     // A compressed request under an encoding we do not decode ends the call with
     // UNIMPLEMENTED (gRPC's answer for an unsupported message-encoding), rather than
     // running the handler over misread bytes.
@@ -1268,7 +1391,18 @@ fn H2Server::advance(
 /// Append a reply message to the stream's outbound buffer, length-prefixed, and
 /// mark that a normal response has begun (so its initial HEADERS get sent).
 fn H2Server::enqueue(self : H2Server, s : SrvStream, msg : Bytes) -> Unit {
-  ignore(self)
+  if msg.length() > self.max_send {
+    // A reply too large to send is the call's own failure: answering with it would break
+    // the caller's own limit, and truncating it would be a lie.
+    if !s.headers_sent {
+      s.trailers_only = true
+      s.status_code = @wire.Status::code(ResourceExhausted)
+      s.status_message = "response larger than max"
+    }
+    s.started_response = true
+    s.response_ended = true
+    return
+  }
   match s.resp_encoding {
     @wire.Encoding::Identity => s.out = s.out + @wire.encode_message(msg)
     encoding => {
@@ -1463,6 +1597,24 @@ fn H2Server::deliver(
 }
 
 ///|
+/// Encode a header block, first telling the peer about a dynamic table size it asked for:
+/// HPACK lets an encoder shrink its table, but only if the next block says so before the
+/// table is used, or the decoder's table and ours disagree for good (RFC 7541 §6.3).
+fn H2Server::encode_block(
+  self : H2Server,
+  headers : Array[@header.Header],
+) -> Bytes {
+  let lead = match self.size_update {
+    Some(n) => {
+      self.size_update = None
+      @hpack.size_update(n)
+    }
+    None => b""
+  }
+  lead + self.encoder.encode(headers)
+}
+
+///|
 /// Emit the frames a stream can send right now: the response HEADERS once a normal
 /// response has begun, as much buffered DATA as the connection and stream send
 /// windows and `remote_max_frame` allow, then the trailer HEADERS carrying
@@ -1509,7 +1661,7 @@ fn H2Server::produce(
           value: @wire.metadata_value_to_wire(h.name, h.value),
         })
       }
-      let block = self.encoder.encode(tr)
+      let block = self.encode_block(tr)
       for f in emit_header_frames(s.id, block, true, self.remote_max_frame) {
         frames.push(f)
       }
@@ -1534,7 +1686,7 @@ fn H2Server::produce(
         value: @wire.metadata_value_to_wire(h.name, h.value),
       })
     }
-    let block = self.encoder.encode(headers)
+    let block = self.encode_block(headers)
     for f in emit_header_frames(s.id, block, false, self.remote_max_frame) {
       frames.push(f)
     }
@@ -1590,7 +1742,7 @@ fn H2Server::produce(
         value: @wire.metadata_value_to_wire(h.name, h.value),
       })
     }
-    let block = self.encoder.encode(trailers)
+    let block = self.encode_block(trailers)
     // Split like every other header block: a block over the peer's MAX_FRAME_SIZE is
     // a FRAME_SIZE_ERROR at the far end, and rich error details make trailers the
     // block most likely to get there.

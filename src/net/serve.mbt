@@ -14,6 +14,20 @@ async fn read_frame(conn : &@io.Reader) -> @http2.Frame {
 }
 
 ///|
+/// Read one frame, refusing one over the size this endpoint advertised: `None` is a frame
+/// too large to be one of ours, told from the nine-octet header alone so the payload is
+/// never read. RFC 9113 §4.2 makes that a FRAME_SIZE_ERROR, and checking it here is what
+/// stops a peer from making the server buffer an arbitrarily large frame first.
+async fn read_frame_sized(conn : &@io.Reader) -> @http2.Frame? {
+  let head = conn.read_exactly(9)
+  let hdr = @http2.FrameHeader::decode(head)
+  if hdr.length > @wire.default_max_frame_size {
+    return None
+  }
+  Some(read_payload(conn, head))
+}
+
+///|
 /// The rest of a frame whose 9-octet header is already read.
 async fn read_payload(conn : &@io.Reader, head : Bytes) -> @http2.Frame {
   let hdr = @http2.FrameHeader::decode(head)
@@ -130,7 +144,23 @@ async fn drive(live : Live, draining : () -> Bool) -> Unit {
     })
     let mut leaving = false
     while !leaving {
-      let frame = read_frame(live.conn) catch { _ => break }
+      let frame = read_frame_sized(live.conn) catch { _ => break }
+      let frame = match frame {
+        Some(frame) => frame
+        None => {
+          // Over the size we advertised: the connection ends with the reason on the wire,
+          // and the frame itself is never buffered.
+          send_frames(
+            live,
+            engine.fail(
+              @http2.error_frame_size_error, "frame over SETTINGS_MAX_FRAME_SIZE",
+            ),
+          ) catch {
+            _ => ()
+          }
+          break
+        }
+      }
       // Whatever the engine hands back goes out first, RST_STREAM and GOAWAY included:
       // a connection error is only closed *after* the peer has been told why
       // (RFC 9113 §5.4.1).
