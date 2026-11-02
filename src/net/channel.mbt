@@ -353,14 +353,3 @@ pub async fn Channel::bidi(
     self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
   })
 }
-
-///|
-/// Register the `grpc.health.v1.Health` service (Check + Watch) on this server.
-pub fn GrpcServer::register_health(
-  self : GrpcServer,
-  health : @moonrpc.HealthService,
-) -> Unit {
-  for entry in health.handlers() {
-    self.handlers[entry.0] = entry.1
-  }
-}

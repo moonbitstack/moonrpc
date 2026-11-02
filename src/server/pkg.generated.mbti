@@ -15,6 +15,13 @@ pub let default_max_streams : Int32
 // Errors
 
 // Types and methods
+pub(all) struct Call {
+  id : Int32
+  ctx : @stream.RpcContext
+  requests : Array[Bytes]
+  run : async (@stream.RpcContext, Array[Bytes], @stream.Responder) -> Unit
+}
+
 pub(all) struct CallInfo {
   path : String
   client_streaming : Bool
@@ -28,6 +35,9 @@ pub struct H2Server {
   streams : Map[Int32, SrvStream]
   interceptors : Array[(CallInfo, @stream.RpcContext, Array[Bytes], (Array[Bytes]) -> Array[Bytes]) -> Array[Bytes]]
   mut encoding : @wire.Encoding
+  mut concurrent : Bool
+  mut calls : Array[Call]
+  mut ended : Array[Int32]
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -45,12 +55,16 @@ pub fn H2Server::add_interceptor(Self, (CallInfo, @stream.RpcContext, Array[Byte
 pub fn H2Server::add_stream_interceptor(Self, (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Array[Bytes]) -> Array[Bytes]) -> Unit
 pub fn H2Server::add_unary_interceptor(Self, (@stream.RpcContext, Bytes, (@stream.RpcContext, Bytes) -> Bytes) -> Bytes) -> Unit
 pub fn H2Server::closing(Self) -> Bool
+pub fn H2Server::concurrent(Self, on? : Bool) -> Unit
+pub fn H2Server::end(Self, Int32) -> Array[@http2.Frame]
+pub fn H2Server::ended_streams(Self) -> Array[Int32]
 pub fn H2Server::feed(Self, @http2.Frame) -> Array[@http2.Frame]
 pub fn H2Server::goaway(Self, Int32) -> Array[@http2.Frame]
 pub fn H2Server::goaway_received(Self) -> Bool
 pub fn H2Server::highest_stream(Self) -> Int32
 pub fn H2Server::new() -> Self
 pub fn H2Server::preface(Self) -> Array[@http2.Frame]
+pub fn H2Server::push(Self, Int32, Array[Bytes]) -> Array[@http2.Frame]
 pub fn H2Server::register(Self, String, (Bytes) -> Bytes) -> Unit
 pub fn H2Server::register_bidi(Self, String, (@stream.RpcContext) -> @stream.BidiHandler) -> Unit
 pub fn H2Server::register_client_streaming(Self, String, (@stream.RpcContext, Array[Bytes]) -> Bytes) -> Unit
@@ -62,6 +76,7 @@ pub fn H2Server::set_clock(Self, () -> Int64) -> Unit
 pub fn H2Server::set_encoding(Self, @wire.Encoding) -> Unit
 pub fn H2Server::set_max_streams(Self, Int32) -> Unit
 pub fn H2Server::stream_state(Self, Int32) -> @stream.StreamState
+pub fn H2Server::take_calls(Self) -> Array[Call]
 pub fn H2Server::tick(Self) -> Array[@http2.Frame]
 pub impl @stream.Registrar for H2Server
 

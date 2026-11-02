@@ -16,5 +16,6 @@ import {
 
 import {
   "moonbitstack/moonbase/base16",
+  "moonbitlang/async",
   "moonbitstack/moonrpc/client",
 } for "wbtest"

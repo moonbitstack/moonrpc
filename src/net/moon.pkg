@@ -15,6 +15,7 @@ import {
   "moonbitlang/async/aqueue",
   "moonbitlang/core/buffer",
   "moonbitlang/core/random",
+  "moonbitlang/core/encoding/utf8",
   "moonbitstack/moonrpc",
 }
 

@@ -34,42 +34,133 @@ async fn write_frames(conn : &@io.Writer, frames : Array[@http2.Frame]) -> Unit 
 }
 
 ///|
-/// Drive one accepted h2c connection to completion: validate the client
-/// connection @http2.preface, send the server SETTINGS, then loop — read a frame, feed it
-/// to the engine, write back whatever the engine produces — until the peer closes
-/// the connection, a GOAWAY is seen, the engine reports a connection error, or the
-/// server is shutting down and this connection has finished its last call.
-async fn drive(
-  conn : @tcp.Conn,
-  engine : @moonrpc.H2Server,
-  draining : () -> Bool,
-) -> Unit {
-  let got = conn.read_exactly(@http2.preface.length())
+/// One connection as the server holds it: the socket, the engine that owns its protocol
+/// state, and the lock that serializes writes, so a call answered on its own task and a
+/// shutdown GOAWAY never interleave their bytes.
+struct Live {
+  conn : @tcp.Conn
+  engine : @moonrpc.H2Server
+  writes : @async.Mutex
+}
+
+///|
+/// Write frames to the connection under the connection's write lock. Every writer goes
+/// through here: the reader's answers, a call running on its own task, a shutdown.
+async fn send_frames(live : Live, frames : Array[@http2.Frame]) -> Unit {
+  if frames.length() == 0 {
+    return
+  }
+  live.writes.acquire()
+  defer live.writes.release()
+  write_frames(live.conn, frames)
+}
+
+///|
+/// How often the driver looks at the clock while nothing is arriving: a call whose
+/// deadline passes in a quiet connection is ended within this long.
+let tick_millis : Int32 = 10
+
+///|
+/// Run one call the engine handed over, on a task of its own, so a slow handler holds up
+/// nothing else on the connection. The handler answers through the responder, which comes
+/// back into the engine as `push` and `end`; a handler that raises ends the call with
+/// `INTERNAL` rather than leaving the stream open.
+async fn run_call(live : Live, call : @moonrpc.Call) -> Unit {
+  let responder : @moonrpc.Responder = {
+    send: messages => send_frames(live, live.engine.push(call.id, messages)),
+    finish: () => send_frames(live, live.engine.end(call.id)),
+  }
+  (call.run)(call.ctx, call.requests, responder) catch {
+    _ => {
+      call.ctx.fail(@wire.Status::code(Internal), "handler failed")
+      ()
+    }
+  }
+  // A handler that returned without finishing still ends its call: a stream left open
+  // with no task behind it would hang the caller for ever.
+  send_frames(live, live.engine.end(call.id)) catch {
+    _ => ()
+  }
+}
+
+///|
+/// Drive one accepted connection to completion: validate the client connection
+/// @http2.preface, send the server SETTINGS, then loop — read a frame, feed it to the
+/// engine, write back whatever the engine produces — until the peer closes the connection,
+/// a GOAWAY is seen, the engine reports a connection error, or the server is shutting down
+/// and this connection has finished its last call.
+///
+/// Calls are not run inside `feed`: the engine queues them and this loop starts a task for
+/// each, while a timer task watches the clock so a deadline passes even on a connection
+/// that has gone quiet. Both write through the connection's lock, which is why the engine
+/// is only ever stepped from one of them at a time.
+async fn drive(live : Live, draining : () -> Bool) -> Unit {
+  let engine = live.engine
+  let got = live.conn.read_exactly(@http2.preface.length())
   if !@http2.has_preface(got) {
     return
   }
-  write_frames(conn, engine.preface())
-  for ;; {
-    let frame = read_frame(conn)
-    // Whatever the engine hands back goes out first, RST_STREAM and GOAWAY included:
-    // a connection error is only closed *after* the peer has been told why
-    // (RFC 9113 §5.4.1).
-    write_frames(conn, engine.feed(frame))
-    // A call that has been waiting on this connection may have run out of time while we
-    // were parked in `read_frame`. This driver only notices when traffic arrives, so a
-    // connection that goes silent holds its expired calls until it says something.
-    write_frames(conn, engine.tick())
-    if engine.closing() {
-      break
+  send_frames(live, engine.preface())
+  @async.with_task_group(g => {
+    // The calls running on this connection, so a deadline or a reset can stop them.
+    let tasks : Map[Int32, @async.Task[Unit]] = Map([])
+    let stop = (ids : Array[Int32]) => {
+      for id in ids {
+        match tasks.get(id) {
+          Some(task) => {
+            tasks.remove(id)
+            task.cancel()
+          }
+          None => ()
+        }
+      }
     }
-    if engine.goaway_received() {
-      break
+    let ticker = g.spawn(allow_failure=true, () => {
+      for ;; {
+        @async.sleep(tick_millis)
+        if engine.closing() || engine.goaway_received() {
+          return
+        }
+        // A call that ran out of time is ended here, and its task stopped with it.
+        send_frames(live, engine.tick()) catch {
+          _ => return
+        }
+        stop(engine.ended_streams())
+      }
+    })
+    let mut leaving = false
+    while !leaving {
+      let frame = read_frame(live.conn) catch { _ => break }
+      // Whatever the engine hands back goes out first, RST_STREAM and GOAWAY included:
+      // a connection error is only closed *after* the peer has been told why
+      // (RFC 9113 §5.4.1).
+      send_frames(live, engine.feed(frame)) catch {
+        _ => break
+      }
+      for call in engine.take_calls() {
+        tasks[call.id] = g.spawn(allow_failure=true, () => {
+          run_call(live, call)
+          tasks.remove(call.id)
+        })
+      }
+      stop(engine.ended_streams())
+      if engine.closing() || engine.goaway_received() {
+        leaving = true
+      } else if draining() && engine.active_streams() == 0 {
+        send_frames(live, engine.goaway(engine.highest_stream())) catch {
+          _ => ()
+        }
+        leaving = true
+      }
     }
-    if draining() && engine.active_streams() == 0 {
-      write_frames(conn, engine.goaway(engine.highest_stream()))
-      break
+    // The connection is over: the clock reader stops, and so does every call still
+    // running on it — a handler waiting on something of its own would otherwise hold the
+    // connection's task group open for ever.
+    ticker.cancel()
+    for _id, task in tasks {
+      task.cancel()
     }
-  }
+  })
 }
 
 ///|
@@ -83,7 +174,7 @@ pub(all) struct GrpcServer {
   // can reach them. A connection removes itself when its driver returns; the engine
   // comes along because a shutdown has to ask whether the connection is between calls
   // before it interrupts.
-  live : Map[Int32, (@tcp.Conn, @moonrpc.H2Server)]
+  live : Map[Int32, Live]
   mut listener : @tcp.Listener?
   mut draining : Bool
   mut next_conn : Int32
@@ -208,6 +299,9 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
   // once one is handed to it.
   e.set_clock(() => @async.now())
   e.set_encoding(self.encoding)
+  // The driver runs each call on its own task, so one slow handler cannot hold up the
+  // other streams on the connection.
+  e.concurrent()
   for path, handler in self.handlers {
     e.register_handler(path, handler)
   }
@@ -261,11 +355,12 @@ pub async fn GrpcServer::serve(
       let engine = self.engine()
       let id = self.next_conn
       self.next_conn = id + 1
-      self.live[id] = (conn, engine)
+      let live = { conn, engine, writes: @async.Mutex::Mutex(), }
+      self.live[id] = live
       g.spawn_bg(allow_failure=true, () => {
         defer conn.close()
         defer self.live.remove(id)
-        drive(conn, engine, () => self.draining) catch {
+        drive(live, () => self.draining) catch {
           _ => ()
         }
       })
@@ -309,10 +404,9 @@ pub async fn GrpcServer::graceful_stop(
   }
   let deadline = @async.now() + grace.to_int64()
   while self.live.length() > 0 && @async.now() < deadline {
-    for l in self.snapshot() {
-      let (conn, engine) = l
-      if engine.active_streams() == 0 {
-        write_frames(conn, engine.goaway(engine.highest_stream())) catch {
+    for live in self.snapshot() {
+      if live.engine.active_streams() == 0 {
+        send_frames(live, live.engine.goaway(live.engine.highest_stream())) catch {
           _ => ()
         }
       }
@@ -325,9 +419,7 @@ pub async fn GrpcServer::graceful_stop(
 /// The live connections as they stand right now. A shutdown suspends while it writes
 /// and sleeps, and a driver that returns in the meantime removes itself, so walking
 /// the map directly would be walking it while it changes.
-fn GrpcServer::snapshot(
-  self : GrpcServer,
-) -> Array[(@tcp.Conn, @moonrpc.H2Server)] {
+fn GrpcServer::snapshot(self : GrpcServer) -> Array[Live] {
   let out = []
   for _id, l in self.live {
     out.push(l)

@@ -112,6 +112,8 @@ pub using @balance {type Attempts}
 
 pub using @stream {type BidiHandler}
 
+pub using @server {type Call}
+
 pub using @server {type CallInfo}
 
 pub using @client {type CallReply}
@@ -179,6 +181,8 @@ pub using @service {type ReflectionRequest}
 pub using @service {type ReflectionResponse}
 
 pub using @service {type ReflectionService}
+
+pub using @stream {type Responder}
 
 pub using @balance {type Retry}
 

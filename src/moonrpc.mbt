@@ -58,6 +58,7 @@ pub using @proto {
 pub using @stream {
   trait Registrar,
   type BidiHandler,
+  type Responder,
   type Handler,
   type RpcContext,
   type Stream,
@@ -107,6 +108,7 @@ pub using @client {
 
 ///|
 pub using @server {
+  type Call,
   type CallInfo,
   type H2Server,
   type SrvStream,

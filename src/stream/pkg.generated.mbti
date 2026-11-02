@@ -36,6 +36,12 @@ pub(all) enum Handler {
   ServerStreaming((RpcContext, Bytes) -> Array[Bytes])
   ClientStreaming((RpcContext, Array[Bytes]) -> Bytes)
   Bidi((RpcContext) -> BidiHandler)
+  Pushed(async (RpcContext, Array[Bytes], Responder) -> Unit)
+}
+
+pub(all) struct Responder {
+  send : async (Array[Bytes]) -> Unit
+  finish : async () -> Unit
 }
 
 pub(all) struct RpcContext {

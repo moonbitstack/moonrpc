@@ -135,6 +135,18 @@ fn SrvStream::retire(self : SrvStream) -> Unit {
 }
 
 ///|
+/// A call a concurrent server hands to its driver: the stream it belongs to, the context
+/// the handler will see, the request messages it carries, and the way to run it. The
+/// driver runs `run` on a task of its own and answers through the `Responder`, which comes
+/// back into the engine as `push` and `end`.
+pub(all) struct Call {
+  id : Int32
+  ctx : @stream.RpcContext
+  requests : Array[Bytes]
+  run : async (@stream.RpcContext, Array[Bytes], @stream.Responder) -> Unit
+}
+
+///|
 /// The server side of one HTTP/2 connection: the HPACK codec pair, the live
 /// streams, the connection-level flow-control windows, and the peer's settings
 /// that bound what we may send. Persistent across the whole connection because
@@ -149,6 +161,14 @@ pub struct H2Server {
   // What this server compresses replies with when the caller accepts it. Identity by
   // default: compression costs CPU on both ends, so it is opted into.
   mut encoding : @wire.Encoding
+  // Whether a finished call is handed to the driver instead of being run inside `feed`.
+  // Off, the engine runs handlers one at a time on the caller's thread — which is all a
+  // pure in-memory engine can do, and what an in-process test wants.
+  mut concurrent : Bool
+  // The calls waiting for the driver, and the streams the engine has ended by deadline or
+  // by a reset, so the driver knows which tasks to stop.
+  mut calls : Array[Call]
+  mut ended : Array[Int32]
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -187,6 +207,9 @@ pub fn H2Server::new() -> H2Server {
     streams: Map([]),
     interceptors: [],
     encoding: @wire.Encoding::Identity,
+    concurrent: false,
+    calls: [],
+    ended: [],
     conn_recv_window: @wire.default_window_size,
     conn_send_window: @wire.default_window_size,
     remote_initial_window: @wire.default_window_size,
@@ -316,6 +339,89 @@ pub fn H2Server::set_encoding(
   encoding : @wire.Encoding,
 ) -> Unit {
   self.encoding = encoding
+}
+
+///|
+/// Dispatch finished calls to the driver instead of running them inside `feed`. A
+/// concurrent server hands every unary, server- and client-streaming call to the driver as
+/// a [`Call`], which runs it on a task of its own, so one slow handler no longer holds up
+/// the other streams on the connection; a pushed handler needs this to run at all. A
+/// bidirectional call stays on the engine's thread, since its handler is answered message
+/// by message as they arrive.
+pub fn H2Server::concurrent(self : H2Server, on~ : Bool = true) -> Unit {
+  self.concurrent = on
+}
+
+///|
+/// Take the calls waiting to be run, emptying the queue. A driver calls this after every
+/// `feed` and starts a task for each.
+pub fn H2Server::take_calls(self : H2Server) -> Array[Call] {
+  let calls = self.calls
+  self.calls = []
+  calls
+}
+
+///|
+/// Append reply messages to a call the driver is running, and frame what the windows now
+/// allow. A call the engine has already ended — its deadline passed, the peer reset it —
+/// takes nothing more.
+pub fn H2Server::push(
+  self : H2Server,
+  id : Int32,
+  messages : Array[Bytes],
+) -> Array[@http2.Frame] {
+  let s = match self.streams.get(id) {
+    Some(s) => s
+    None => return []
+  }
+  if s.trailers_sent || s.state is Closed {
+    return []
+  }
+  for m in messages {
+    self.enqueue(s, m)
+  }
+  self.produce(s) catch {
+    f => self.report(f)
+  }
+}
+
+///|
+/// Close a call the driver was running: its context says how it ended (a handler that
+/// called `ctx.fail` ends it with that status), the body is complete, and the trailers
+/// follow. Nothing is sent for a call the engine has already ended.
+pub fn H2Server::end(self : H2Server, id : Int32) -> Array[@http2.Frame] {
+  let s = match self.streams.get(id) {
+    Some(s) => s
+    None => return []
+  }
+  if s.trailers_sent || s.state is Closed {
+    return []
+  }
+  match s.ctx.status_fail {
+    Some((code, message)) => {
+      s.status_code = code
+      s.status_message = message
+      // Nothing has been written yet, so the status is the whole response.
+      if !s.started_response {
+        s.trailers_only = true
+      }
+    }
+    None => ()
+  }
+  s.started_response = true
+  s.response_ended = true
+  self.produce(s) catch {
+    f => self.report(f)
+  }
+}
+
+///|
+/// The streams the engine has ended since the last call — a deadline that passed, a reset
+/// from the peer — so the driver can stop the tasks behind them. Taking the list clears it.
+pub fn H2Server::ended_streams(self : H2Server) -> Array[Int32] {
+  let ids = self.ended
+  self.ended = []
+  ids
 }
 
 ///|
@@ -717,6 +823,7 @@ fn H2Server::expire(
   s.started = true
   s.finalized = true
   s.response_ended = true
+  self.ended.push(s.id)
   let frames = self.produce(s)
   if !s.end_stream_recv {
     frames.push(RstStream(stream_id=s.id, error_code=@http2.error_no_error))
@@ -981,7 +1088,10 @@ fn H2Server::step(
         )
       }
       match self.streams.get(stream_id) {
-        Some(s) => s.retire()
+        Some(s) => {
+          s.retire()
+          self.ended.push(stream_id)
+        }
         None => ()
       }
       []
@@ -1126,7 +1236,15 @@ fn H2Server::advance(
           s.bidi_processed = s.bidi_processed + 1
         }
         if batch.length() > 0 {
-          for r in self.invoke(s, self.handlers[s.path], batch, all=false) {
+          for
+            r in self.invoke(
+              s.path,
+              s.ctx,
+              s.bidi,
+              self.handlers[s.path],
+              batch,
+              all=false,
+            ) {
             self.enqueue(s, r)
           }
         }
@@ -1170,41 +1288,43 @@ fn H2Server::enqueue(self : H2Server, s : SrvStream, msg : Bytes) -> Unit {
 /// produce their answers — and a bidi batch that is not collects its replies as it goes.
 fn H2Server::invoke(
   self : H2Server,
-  s : SrvStream,
+  path : String,
+  ctx : @stream.RpcContext,
+  bidi : @stream.BidiHandler?,
   handler : @stream.Handler,
   requests : Array[Bytes],
   all~ : Bool,
 ) -> Array[Bytes] {
-  let info = handler.info(s.path)
+  let info = handler.info(path)
   match handler {
     Unary(h) =>
       if all {
-        self.intercepted(info, s.ctx, requests, reqs => {
+        self.intercepted(info, ctx, requests, reqs => {
           let request = if reqs.length() > 0 { reqs[0] } else { b"" }
-          [h(s.ctx, request)]
+          [h(ctx, request)]
         })
       } else {
         []
       }
     ServerStreaming(h) =>
       if all {
-        self.intercepted(info, s.ctx, requests, reqs => {
+        self.intercepted(info, ctx, requests, reqs => {
           let request = if reqs.length() > 0 { reqs[0] } else { b"" }
-          h(s.ctx, request)
+          h(ctx, request)
         })
       } else {
         []
       }
     ClientStreaming(h) =>
       if all {
-        self.intercepted(info, s.ctx, requests, reqs => [h(s.ctx, reqs)])
+        self.intercepted(info, ctx, requests, reqs => [h(ctx, reqs)])
       } else {
         []
       }
     Bidi(_) =>
-      match s.bidi {
+      match bidi {
         Some(bh) =>
-          self.intercepted(info, s.ctx, requests, reqs => {
+          self.intercepted(info, ctx, requests, reqs => {
             let out : Array[Bytes] = []
             for m in reqs {
               for r in (bh.on_message)(m) {
@@ -1220,26 +1340,96 @@ fn H2Server::invoke(
           })
         None => []
       }
+    // A pushed handler answers through the responder it is given, not with a return
+    // value, so it never comes through here.
+    Pushed(_) => []
   }
 }
 
 ///|
+/// Hand a finished call to the driver instead of running it here. The engine is pure and
+/// synchronous, so it cannot await a handler — and running one inline is what holds up
+/// every other stream on the connection. A concurrent server queues the call, the driver
+/// runs it on a task of its own, and the replies come back through `push` and `end`.
+fn H2Server::queue(self : H2Server, s : SrvStream) -> Unit {
+  let handler = match self.handlers.get(s.path) {
+    Some(handler) => handler
+    None => return
+  }
+  let path = s.path
+  let ctx = s.ctx
+  let bidi = s.bidi
+  let requests : Array[Bytes] = []
+  for i = s.bidi_processed; i < s.req_msgs.length(); i = i + 1 {
+    requests.push(s.req_msgs[i])
+  }
+  let run : async (@stream.RpcContext, Array[Bytes], @stream.Responder) -> Unit = (
+    ctx,
+    messages,
+    out,
+  ) => {
+    match handler {
+      Pushed(h) => h(ctx, messages, out)
+      _ => {
+        let replies = self.invoke(path, ctx, bidi, handler, messages, all=true)
+        // A handler that ended the call through its context sends no body: the status is
+        // the whole response, and pushing a reply first would commit the call.
+        if ctx.status_fail is None && replies.length() > 0 {
+          (out.send)(replies)
+        }
+        (out.finish)()
+      }
+    }
+  }
+  self.calls.push({ id: s.id, ctx, requests, run, })
+}
+
+///|
 /// Run the resolved handler at half-close, enqueue its reply message(s), and mark
-/// the response body complete so the trailers follow once the body drains.
+/// the response body complete so the trailers follow once the body drains. A concurrent
+/// server queues the call for the driver instead, and the stream stays open until the
+/// driver's answer comes back through `push` and `end`.
 fn H2Server::finalize(self : H2Server, s : SrvStream) -> Unit {
   match self.handlers.get(s.path) {
-    // A bidirectional call has already answered the messages that arrived before the
-    // half-close, so only the last batch is left for it, plus `on_end`.
+    Some(@stream.Pushed(_)) =>
+      if self.concurrent {
+        self.queue(s)
+        return
+      } else {
+        // No driver to await it: answering UNIMPLEMENTED is honest, where running it
+        // inline would hold the connection until the handler chose to finish.
+        s.trailers_only = true
+        s.status_code = @wire.Status::code(Unimplemented)
+        s.status_message = "a pushed handler needs a concurrent server"
+        s.started_response = true
+        s.response_ended = true
+        return
+      }
     Some(@stream.Bidi(_) as handler) => {
+      // A bidirectional call is answered by a live object as its messages arrive, so it
+      // stays on the engine's own thread even when everything else is dispatched: there
+      // is no request-stream abstraction to hand a task. It has already answered what
+      // arrived before the half-close, so only the last batch is left, plus `on_end`.
       let rest : Array[Bytes] = []
       for i = s.bidi_processed; i < s.req_msgs.length(); i = i + 1 {
         rest.push(s.req_msgs[i])
       }
       s.bidi_processed = s.req_msgs.length()
-      self.deliver(s, self.invoke(s, handler, rest, all=true))
+      self.deliver(
+        s,
+        self.invoke(s.path, s.ctx, s.bidi, handler, rest, all=true),
+      )
     }
     Some(handler) =>
-      self.deliver(s, self.invoke(s, handler, s.req_msgs, all=true))
+      if self.concurrent {
+        self.queue(s)
+        return
+      } else {
+        self.deliver(
+          s,
+          self.invoke(s.path, s.ctx, s.bidi, handler, s.req_msgs, all=true),
+        )
+      }
     None => ()
   }
   s.started_response = true

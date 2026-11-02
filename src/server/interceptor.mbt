@@ -126,5 +126,8 @@ fn @stream.Handler::info(self : @stream.Handler, path : String) -> CallInfo {
     ClientStreaming(_) =>
       { path, client_streaming: true, server_streaming: false, }
     Bidi(_) => { path, client_streaming: true, server_streaming: true, }
+    // A pushed method answers over time, so it is the server side that streams; how many
+    // request messages it took is whatever the call sent.
+    Pushed(_) => { path, client_streaming: false, server_streaming: true, }
   }
 }

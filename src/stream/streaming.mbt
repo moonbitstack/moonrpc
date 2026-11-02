@@ -110,14 +110,29 @@ pub(all) struct BidiHandler {
 }
 
 ///|
+/// The reply side of a call that answers as it goes: hand it messages as they happen with
+/// `send`, and close the call with `finish` (its status being whatever the context says,
+/// `OK` unless `ctx.fail` was called).
+pub(all) struct Responder {
+  send : async (Array[Bytes]) -> Unit
+  finish : async () -> Unit
+}
+
+///|
 /// A registered method, in one of gRPC's four cardinalities. The reply shape
 /// mirrors the request shape: streaming handlers produce an ordered `Array[Bytes]`
 /// of messages, each framed as its own length-prefixed gRPC message on the wire.
+///
+/// `Pushed` is the shape for a method that owns its response stream: it is handed the
+/// call's request messages and a [`Responder`], and answers over time — a subscription
+/// such as health `Watch`. Running one needs a driver that can await the handler, so a
+/// pure engine left eager answers it `UNIMPLEMENTED` rather than hanging the connection.
 pub(all) enum Handler {
   Unary((RpcContext, Bytes) -> Bytes)
   ServerStreaming((RpcContext, Bytes) -> Array[Bytes])
   ClientStreaming((RpcContext, Array[Bytes]) -> Bytes)
   Bidi((RpcContext) -> BidiHandler)
+  Pushed(async (RpcContext, Array[Bytes], Responder) -> Unit)
 }
 
 ///|

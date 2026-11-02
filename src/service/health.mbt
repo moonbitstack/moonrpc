@@ -164,9 +164,18 @@ pub fn HealthService::check(
 pub fn HealthService::handlers(
   self : HealthService,
 ) -> Array[(String, @stream.Handler)] {
-  let check : @stream.Handler = Unary((_ctx, req) => {
+  let check : @stream.Handler = Unary((ctx, req) => {
     let service = @utf8.decode_lossy(decode_health_request(req))
-    encode_health_response(self.check(service))
+    match self.check(service) {
+      // gRPC's health-checking document: a check for a service the server does not know
+      // answers NOT_FOUND, which is a status a probe can act on, where SERVICE_UNKNOWN is
+      // a message the probe would have to decode and interpret itself.
+      ServiceUnknown => {
+        ctx.fail(@wire.Status::code(NotFound), "unknown service " + service)
+        b""
+      }
+      status => encode_health_response(status)
+    }
   })
   let watch : @stream.Handler = ServerStreaming((_ctx, req) => {
     let service = @utf8.decode_lossy(decode_health_request(req))
