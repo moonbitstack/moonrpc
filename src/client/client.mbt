@@ -138,6 +138,9 @@ pub struct H2Client {
   // it were never seen by the server, so they are safe to re-issue on a fresh
   // connection. Mirrors `H2Server::last_client_stream`.
   mut goaway_last_stream_id : Int32
+  // What this client compresses request messages with, and what it names in
+  // `grpc-encoding`. Identity by default.
+  mut encoding : @wire.Encoding
   // @header.Header blocks arriving for streams this client no longer tracks. They still
   // have to reach the decoder — HPACK's table is per-connection — so they are
   // accumulated here and dropped once complete.
@@ -217,6 +220,7 @@ pub fn H2Client::new() -> H2Client {
     remote_max_frame: @wire.default_max_frame_size,
     goaway_received: false,
     goaway_last_stream_id: 0,
+    encoding: @wire.Encoding::Identity,
     orphan_blocks: Map([]),
   }
 }
@@ -228,6 +232,16 @@ pub fn H2Client::new() -> H2Client {
 pub fn H2Client::preface(self : H2Client) -> Array[@http2.Frame] {
   ignore(self)
   [Settings(params=[(@http2.settings_enable_push, 0)], ack=false)]
+}
+
+///|
+/// Compress request messages with `encoding`, and name it in `grpc-encoding`. Replies are
+/// decoded in whatever encoding the server names, whichever this is.
+pub fn H2Client::set_encoding(
+  self : H2Client,
+  encoding : @wire.Encoding,
+) -> Unit {
+  self.encoding = encoding
 }
 
 ///|
@@ -279,7 +293,14 @@ pub fn H2Client::send(
 ) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
-      c.out = c.out + @wire.encode_message(message)
+      match self.encoding {
+        @wire.Encoding::Identity =>
+          c.out = c.out + @wire.encode_message(message)
+        encoding => {
+          let body = encoding.encode(message[:])
+          c.out = c.out + @wire.encode_message(body, compressed=true)
+        }
+      }
       if end {
         c.req_ended = true
       }
@@ -336,7 +357,19 @@ fn H2Client::produce_request(
       { name: b":authority", value: c.authority, },
       { name: b"te", value: b"trailers", },
       { name: b"content-type", value: b"application/grpc", },
+      {
+        name: b"grpc-accept-encoding",
+        value: @utf8.encode(@wire.accept_encodings),
+      },
     ]
+    match self.encoding {
+      @wire.Encoding::Identity => ()
+      encoding =>
+        headers.push({
+          name: b"grpc-encoding",
+          value: @utf8.encode(encoding.code()),
+        })
+    }
     match c.timeout {
       Some(t) => headers.push({ name: b"grpc-timeout", value: t, })
       None => ()
@@ -788,13 +821,17 @@ fn drain_call_messages(c : ClientCall) -> Unit {
     // with INTERNAL rather than handing the caller the raw compressed bytes as if they
     // were the message (gRPC's answer for an undecodable reply).
     if compressed {
-      if c.resp_encoding == b"gzip" {
-        match (Some(@gzip.gunzip(body[:])) catch { _ => None }) {
-          Some(m) => c.messages.push(m)
-          None => c.decode_failed = true
-        }
-      } else {
-        c.decode_failed = true
+      // A reply the server says is compressed under an encoding we do not decode, or one
+      // that will not inflate, fails the call rather than reaching the caller as bytes.
+      match @wire.Encoding::of(c.resp_encoding[:]) {
+        // A compressed flag under `identity` is a contradiction: the body cannot be both.
+        Some(@wire.Encoding::Identity) => c.decode_failed = true
+        Some(encoding) =>
+          match encoding.decode(body[:]) {
+            Some(m) => c.messages.push(m)
+            None => c.decode_failed = true
+          }
+        None => c.decode_failed = true
       }
     } else {
       c.messages.push(body)

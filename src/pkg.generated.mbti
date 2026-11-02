@@ -13,6 +13,8 @@ import {
 }
 
 // Values
+pub let accept_encodings : String
+
 pub fn[I : @proto.Message, O : @proto.Message] bidi((@stream.RpcContext, Array[I]) -> Array[O] raise) -> @stream.Handler
 
 pub fn[I : @proto.Message, O : @proto.Message] bidi_each((@stream.RpcContext, I) -> Array[O] raise, end? : (@stream.RpcContext) -> Array[O] raise) -> @stream.Handler
@@ -77,6 +79,8 @@ pub fn metadata_value_from_wire(Bytes, Bytes) -> Bytes
 
 pub fn metadata_value_to_wire(Bytes, Bytes) -> Bytes
 
+pub fn negotiated(@wire.Encoding, BytesView) -> @wire.Encoding
+
 pub fn parse_grpc_timeout(Bytes) -> Int32?
 
 pub fn percent_decode(Bytes) -> String
@@ -121,6 +125,8 @@ pub using @balance {type ConnectivityState}
 pub using @balance {type DnsRecord}
 
 pub using @balance {type DnsResponse}
+
+pub using @wire {type Encoding}
 
 pub using @proto {type EnumDescriptor}
 

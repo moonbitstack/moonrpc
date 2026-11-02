@@ -9,7 +9,6 @@ import {
   "moonbitstack/moonurl",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonhttp/header",
-  "moonbitstack/moonzip/gzip",
   "moonbitlang/core/buffer",
   "moonbitlang/core/encoding/utf8",
 }

@@ -30,6 +30,7 @@ pub async fn MuxChannel::connect(
   port : Int32,
   tls? : @tls.Client,
   interceptors? : Array[@client.Interceptor],
+  encoding? : @moonrpc.Encoding,
 ) -> MuxChannel {
   let conn = @tcp.dial(host, port~, tls?)
   // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
@@ -49,6 +50,10 @@ pub async fn MuxChannel::connect(
     gone: false,
     reader: None,
     interceptors: interceptors.unwrap_or([]),
+  }
+  match encoding {
+    Some(e) => engine.set_encoding(e)
+    None => ()
   }
   ch.write_locked(engine.preface())
   ch

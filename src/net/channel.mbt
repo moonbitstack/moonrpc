@@ -41,6 +41,7 @@ pub async fn Channel::connect(
   rand? : () -> Double,
   tls? : @tls.Client,
   interceptors? : Array[@client.Interceptor],
+  encoding? : @moonrpc.Encoding,
 ) -> Channel {
   let conn = @tcp.dial(host, port~, tls?)
   // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
@@ -50,6 +51,10 @@ pub async fn Channel::connect(
     raise @io.ReaderClosed
   }
   let engine = @moonrpc.H2Client::new()
+  match encoding {
+    Some(e) => engine.set_encoding(e)
+    None => ()
+  }
   conn.write(@http2.preface)
   write_frames(conn, engine.preface())
   {

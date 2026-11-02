@@ -87,6 +87,9 @@ pub(all) struct GrpcServer {
   mut listener : @tcp.Listener?
   mut draining : Bool
   mut next_conn : Int32
+  // What replies are compressed with, when the caller accepts it. Identity unless a
+  // server opts in, so a program that does not care pays nothing for compression.
+  mut encoding : @moonrpc.Encoding
 }
 
 ///|
@@ -98,7 +101,18 @@ pub fn GrpcServer::new() -> GrpcServer {
     listener: None,
     draining: false,
     next_conn: 0,
+    encoding: @moonrpc.Encoding::Identity,
   }
+}
+
+///|
+/// Compress replies with `encoding` whenever the caller's `grpc-accept-encoding` lists it;
+/// a caller that did not ask for it still gets identity.
+pub fn GrpcServer::set_encoding(
+  self : GrpcServer,
+  encoding : @moonrpc.Encoding,
+) -> Unit {
+  self.encoding = encoding
 }
 
 ///|
@@ -193,6 +207,7 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
   // The engine is pure and has no clock, so `grpc-timeout` deadlines only mean anything
   // once one is handed to it.
   e.set_clock(() => @async.now())
+  e.set_encoding(self.encoding)
   for path, handler in self.handlers {
     e.register_handler(path, handler)
   }

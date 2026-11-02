@@ -13,10 +13,12 @@ pub using @header {type Header}
 
 ///|
 pub using @wire {
+  type Encoding,
   type Keepalive,
   type StatusError,
   type Method,
   type Status,
+  accept_encodings,
   decode_message,
   default_max_frame_size,
   default_window_size,
@@ -25,6 +27,7 @@ pub using @wire {
   max_header_list_size,
   max_message_size,
   message_len,
+  negotiated,
   metadata_value_from_wire,
   metadata_value_to_wire,
   split_messages,

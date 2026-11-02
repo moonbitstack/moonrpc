@@ -18,6 +18,8 @@ pub struct ManagedChannel {
   tls : @tls.Client?
   // The client interceptor chain every call goes through, outermost first.
   interceptors : Array[@client.Interceptor]
+  // What every sub-connection compresses its requests with, if anything.
+  encoding : @moonrpc.Encoding?
 }
 
 ///|
@@ -60,6 +62,7 @@ pub async fn ManagedChannel::connect(
   rand? : () -> Double,
   tls? : @tls.Client,
   interceptors? : Array[@client.Interceptor],
+  encoding? : @moonrpc.Encoding,
 ) -> ManagedChannel {
   let keys = targets.map(t => t.0 + ":" + t.1.to_string())
   let pool = @moonrpc.ConnectionPool::new(keys, policy~)
@@ -69,7 +72,7 @@ pub async fn ManagedChannel::connect(
     guard pool.subconn(key) is Some(sc) else { continue }
     sc.connect()
     try {
-      let ch = Channel::connect(t.0, t.1, tls?)
+      let ch = Channel::connect(t.0, t.1, tls?, encoding?)
       channels[key] = ch
       sc.on_connected()
     } catch {
@@ -84,6 +87,7 @@ pub async fn ManagedChannel::connect(
     roll: rand.unwrap_or(system_roll()),
     tls,
     interceptors: interceptors.unwrap_or([]),
+    encoding,
   }
 }
 
@@ -102,6 +106,7 @@ pub async fn ManagedChannel::dns_connect(
   rand? : () -> Double,
   tls? : @tls.Client,
   interceptors? : Array[@client.Interceptor],
+  encoding? : @moonrpc.Encoding,
 ) -> ManagedChannel {
   let addrs = resolve_a(dns_server, dns_port, name, id~)
   ManagedChannel::connect(
@@ -111,6 +116,7 @@ pub async fn ManagedChannel::dns_connect(
     rand?,
     tls?,
     interceptors?,
+    encoding?,
   )
 }
 

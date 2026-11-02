@@ -5,5 +5,7 @@ import {
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonvar/fixed",
   "moonbitstack/moonbase/base64",
+  "moonbitstack/moonzip/gzip",
+  "moonbitstack/moonzip/deflate",
   "moonbitlang/core/encoding/utf8",
 }

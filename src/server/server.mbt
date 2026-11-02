@@ -60,6 +60,12 @@ pub(all) struct SrvStream {
   // message under `gzip` is inflated in-place; under any other encoding the call is
   // answered with UNIMPLEMENTED rather than misreading the compressed bytes.
   mut req_encoding : Bytes
+  // What the caller said it will decode (`grpc-accept-encoding`), consulted once the
+  // request headers are in, so the replies go out in an encoding it can read.
+  mut accept_encodings : Bytes
+  // The encoding the replies actually go out under: the server's choice when the caller
+  // listed it, identity otherwise.
+  mut resp_encoding : @wire.Encoding
   // A compressed request arrived under an encoding we cannot decode (or a gzip member
   // that failed to inflate). Answered with UNIMPLEMENTED, since we could not recover
   // the message the handler was meant to see.
@@ -102,6 +108,8 @@ fn SrvStream::new(id : Int32, send_window : Int32) -> SrvStream {
     status_code: 0,
     status_message: "",
     req_encoding: b"",
+    accept_encodings: b"",
+    resp_encoding: @wire.Encoding::Identity,
     compressed_unsupported: false,
     oversize: false,
     headers_sent: false,
@@ -138,6 +146,9 @@ pub struct H2Server {
   streams : Map[Int32, SrvStream]
   // The interceptor chain every call goes through, whatever its kind, outermost first.
   interceptors : Array[Interceptor]
+  // What this server compresses replies with when the caller accepts it. Identity by
+  // default: compression costs CPU on both ends, so it is opted into.
+  mut encoding : @wire.Encoding
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -175,6 +186,7 @@ pub fn H2Server::new() -> H2Server {
     decoder: @hpack.Decoder::new(),
     streams: Map([]),
     interceptors: [],
+    encoding: @wire.Encoding::Identity,
     conn_recv_window: @wire.default_window_size,
     conn_send_window: @wire.default_window_size,
     remote_initial_window: @wire.default_window_size,
@@ -293,6 +305,17 @@ pub fn H2Server::preface(self : H2Server) -> Array[@http2.Frame] {
 /// `@http2.preface` and the peer is told exactly what it will be held to.
 pub fn H2Server::set_max_streams(self : H2Server, n : Int32) -> Unit {
   self.max_streams = n
+}
+
+///|
+/// Compress replies with `encoding` whenever the caller's `grpc-accept-encoding` lists it;
+/// a caller that did not ask for it gets identity, as gRPC requires. A server left alone
+/// sends identity, since compressing costs both ends CPU.
+pub fn H2Server::set_encoding(
+  self : H2Server,
+  encoding : @wire.Encoding,
+) -> Unit {
+  self.encoding = encoding
 }
 
 ///|
@@ -510,14 +533,18 @@ fn drain_messages(s : SrvStream) -> Unit {
     // handler as if the compressed bytes were the message.
     if compressed {
       let body = all[off + 5:off + 5 + len].to_owned()
-      if s.req_encoding == b"gzip" {
-        let plain = Some(@gzip.gunzip(body[:])) catch { _ => None }
-        match plain {
-          Some(m) => s.req_msgs.push(m)
-          None => s.compressed_unsupported = true
-        }
-      } else {
-        s.compressed_unsupported = true
+      match @wire.Encoding::of(s.req_encoding[:]) {
+        // The flag says the body is compressed, so `identity` is a contradiction: the
+        // body cannot be both compressed and not.
+        Some(@wire.Encoding::Identity) => s.compressed_unsupported = true
+        // A body that will not decode is flagged rather than handed to the handler as
+        // if the compressed bytes were the message.
+        Some(encoding) =>
+          match encoding.decode(body[:]) {
+            Some(m) => s.req_msgs.push(m)
+            None => s.compressed_unsupported = true
+          }
+        None => s.compressed_unsupported = true
       }
     } else {
       s.req_msgs.push(all[off + 5:off + 5 + len].to_owned())
@@ -1023,6 +1050,11 @@ fn H2Server::complete_headers(
     Some(v) => v
     None => b""
   }
+  s.accept_encodings = match header_value(headers, b"grpc-accept-encoding") {
+    Some(v) => v
+    None => b""
+  }
+  s.resp_encoding = @wire.negotiated(self.encoding, s.accept_encodings[:])
   s.ctx = {
     path: s.path,
     metadata,
@@ -1072,7 +1104,8 @@ fn H2Server::advance(
     if s.compressed_unsupported && !s.response_ended {
       s.trailers_only = true
       s.status_code = @wire.Status::code(Unimplemented)
-      s.status_message = "grpc-encoding not supported; server accepts identity, gzip"
+      s.status_message = "grpc-encoding not supported; server accepts " +
+        @wire.accept_encodings
       s.response_ended = true
       return self.produce(s)
     }
@@ -1118,7 +1151,15 @@ fn H2Server::advance(
 /// mark that a normal response has begun (so its initial HEADERS get sent).
 fn H2Server::enqueue(self : H2Server, s : SrvStream, msg : Bytes) -> Unit {
   ignore(self)
-  s.out = s.out + @wire.encode_message(msg)
+  match s.resp_encoding {
+    @wire.Encoding::Identity => s.out = s.out + @wire.encode_message(msg)
+    encoding => {
+      // The compression flag on the frame is what tells the caller this body is
+      // compressed; the encoding itself was named once, in the response headers.
+      let body = encoding.encode(msg[:])
+      s.out = s.out + @wire.encode_message(body, compressed=true)
+    }
+  }
   s.started_response = true
 }
 
@@ -1247,7 +1288,10 @@ fn H2Server::produce(
       let tr : Array[@header.Header] = [
         { name: b":status", value: @utf8.encode(s.http_status.to_string()), },
         { name: b"content-type", value: b"application/grpc", },
-        { name: b"grpc-accept-encoding", value: b"identity,gzip", },
+        {
+          name: b"grpc-accept-encoding",
+          value: @utf8.encode(@wire.accept_encodings),
+        },
         {
           name: b"grpc-status",
           value: @utf8.encode(s.status_code.to_string()),
@@ -1288,8 +1332,11 @@ fn H2Server::produce(
     let headers : Array[@header.Header] = [
       { name: b":status", value: b"200", },
       { name: b"content-type", value: b"application/grpc", },
-      { name: b"grpc-encoding", value: b"identity", },
-      { name: b"grpc-accept-encoding", value: b"identity,gzip", },
+      { name: b"grpc-encoding", value: @utf8.encode(s.resp_encoding.code()), },
+      {
+        name: b"grpc-accept-encoding",
+        value: @utf8.encode(@wire.accept_encodings),
+      },
     ]
     for h in s.ctx.resp_headers {
       headers.push({

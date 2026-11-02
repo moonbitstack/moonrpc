@@ -6,6 +6,7 @@ import {
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/wire",
 }
 
 // Values
@@ -26,6 +27,7 @@ pub struct H2Server {
   decoder : @hpack.Decoder
   streams : Map[Int32, SrvStream]
   interceptors : Array[(CallInfo, @stream.RpcContext, Array[Bytes], (Array[Bytes]) -> Array[Bytes]) -> Array[Bytes]]
+  mut encoding : @wire.Encoding
   mut conn_recv_window : Int32
   mut conn_send_window : Int32
   mut remote_initial_window : Int32
@@ -57,6 +59,7 @@ pub fn H2Server::register_server_streaming(Self, String, (@stream.RpcContext, By
 pub fn H2Server::register_unary(Self, String, (@stream.RpcContext, Bytes) -> Bytes) -> Unit
 pub fn H2Server::release(Self, Int32) -> Unit
 pub fn H2Server::set_clock(Self, () -> Int64) -> Unit
+pub fn H2Server::set_encoding(Self, @wire.Encoding) -> Unit
 pub fn H2Server::set_max_streams(Self, Int32) -> Unit
 pub fn H2Server::stream_state(Self, Int32) -> @stream.StreamState
 pub fn H2Server::tick(Self) -> Array[@http2.Frame]
@@ -89,6 +92,8 @@ pub(all) struct SrvStream {
   mut status_code : Int32
   mut status_message : String
   mut req_encoding : Bytes
+  mut accept_encodings : Bytes
+  mut resp_encoding : @wire.Encoding
   mut compressed_unsupported : Bool
   mut oversize : Bool
   mut headers_sent : Bool
