@@ -1,11 +1,14 @@
-// A greeter declared with `#rpc` annotations, served over moonrpc's own h2c
-// stack for grpcurl, and a client mode that calls it through the generated
-// client.
+// A greeter declared with `#rpc` annotations, served over moonrpc's own stack for
+// grpcurl in the clear or over TLS, and a client mode that calls it through the
+// generated client.
 import {
   "moonbitstack/moonrpc",
   "moonbitstack/moonrpc/net",
   "moonbitstack/moonrpc/wire",
+  "moonbitstack/moontls/tls",
+  "moonbitstack/mooncred/x509",
   "moonbitlang/async",
+  "moonbitlang/async/fs",
   "moonbitlang/core/env",
   "moonbitlang/core/string",
 }

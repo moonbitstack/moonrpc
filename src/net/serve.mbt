@@ -1,8 +1,9 @@
-// The native HTTP/2 (h2c) socket driver: it pumps bytes between a real
-// `@socket.Tcp` connection and the pure `@moonrpc.H2Server` engine. All protocol
-// logic lives in the engine; this file only reads whole frames off the socket,
-// feeds them in, and writes the engine's replies back. Native-only, because real
-// sockets and `moonbitlang/async` have no JS/Wasm backend (`supported_targets`).
+// The native HTTP/2 socket driver: it pumps bytes between a real connection and the pure
+// `@moonrpc.H2Server` engine. All protocol logic lives in the engine; this file only reads
+// whole frames off the socket, feeds them in, and writes the engine's replies back. The
+// connection is `@tcp.Conn`, which reads and writes the same whether TLS sits under it or
+// not. Native-only, because real sockets and `moonbitlang/async` have no JS/Wasm backend
+// (`supported_targets`).
 
 ///|
 /// Read exactly one HTTP/2 frame off a byte reader — the 9-octet header, then its
@@ -39,7 +40,7 @@ async fn write_frames(conn : &@io.Writer, frames : Array[@http2.Frame]) -> Unit 
 /// the connection, a GOAWAY is seen, the engine reports a connection error, or the
 /// server is shutting down and this connection has finished its last call.
 async fn drive(
-  conn : @socket.Tcp,
+  conn : @tcp.Conn,
   engine : @moonrpc.H2Server,
   draining : () -> Bool,
 ) -> Unit {
@@ -73,17 +74,17 @@ async fn drive(
 
 ///|
 /// A gRPC server: a registry of handlers keyed by `/pkg.Service/Method` path,
-/// served over the self-built HTTP/2 (h2c) transport. Handlers may be any of the
-/// four gRPC call kinds. Each accepted connection gets its own `@moonrpc.H2Server`
-/// engine (HPACK and flow control are per-connection state).
+/// served over the self-built HTTP/2 transport — h2c, or TLS with ALPN `h2`. Handlers
+/// may be any of the four gRPC call kinds. Each accepted connection gets its own
+/// `@moonrpc.H2Server` engine (HPACK and flow control are per-connection state).
 pub(all) struct GrpcServer {
   handlers : Map[String, @moonrpc.Handler]
   // The connections being served right now, keyed by a serial number, so that a shutdown
   // can reach them. A connection removes itself when its driver returns; the engine
   // comes along because a shutdown has to ask whether the connection is between calls
   // before it interrupts.
-  live : Map[Int32, (@socket.Tcp, @moonrpc.H2Server)]
-  mut listener : @socket.TcpServer?
+  live : Map[Int32, (@tcp.Conn, @moonrpc.H2Server)]
+  mut listener : @tcp.Listener?
   mut draining : Bool
   mut next_conn : Int32
 }
@@ -207,18 +208,17 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
 pub let port : Int32 = 12000
 
 ///|
-/// Serve gRPC over h2c on `host:port`, blocking in the accept loop until the running
-/// task is cancelled or `graceful_stop` drains the server. Each connection is driven
-/// by `drive`; a failure on one connection is isolated and does not stop the server.
+/// Serve gRPC on `host:port` — h2c, or over TLS when `tls` is given, in which case every
+/// accepted connection must have settled on ALPN `h2` — blocking in the accept loop until
+/// the running task is cancelled or `graceful_stop` drains the server. Each connection is
+/// driven by `drive`; a failure on one connection is isolated and does not stop the server.
 pub async fn GrpcServer::serve(
   self : GrpcServer,
   host~ : String = "127.0.0.1",
   port~ : Int32 = port,
+  tls? : @tls.Server,
 ) -> Unit {
-  let server = @socket.TcpServer::TcpServer(
-    @socket.Addr::parse(host + ":" + port.to_string()),
-    reuse_addr=true,
-  )
+  let server = @tcp.listen(host~, port~, tls?)
   self.listener = Some(server)
   self.draining = false
   // The listener is closed from this task and nowhere else. Closing a socket that
@@ -228,10 +228,20 @@ pub async fn GrpcServer::serve(
   defer self.shut(server)
   @async.with_task_group(g => {
     for ;; {
-      let (conn, _addr) = server.accept()
+      // A connection whose handshake fails — a client offering no protocol we speak, a
+      // certificate it will not accept — is a refused peer, not a broken server: the
+      // accept loop goes on, or one bad client takes the listener with it.
+      let (conn, _addr) = server.accept() catch { _ => continue }
       if self.draining {
         conn.close()
         break
+      }
+      // A handshake that did not settle on h2 leaves nothing to say in HTTP/2, so the
+      // socket is closed rather than spoken to in a version it did not agree to
+      // (RFC 9113 §3.2).
+      if unnegotiated(conn) {
+        conn.close()
+        continue
       }
       let engine = self.engine()
       let id = self.next_conn
@@ -250,7 +260,7 @@ pub async fn GrpcServer::serve(
 
 ///|
 /// Release the listening socket and forget it. Only `serve` calls this, on its way out.
-fn GrpcServer::shut(self : GrpcServer, server : @socket.TcpServer) -> Unit {
+fn GrpcServer::shut(self : GrpcServer, server : @tcp.Listener) -> Unit {
   server.close()
   self.listener = None
 }
@@ -275,7 +285,7 @@ pub async fn GrpcServer::graceful_stop(
   match self.listener {
     Some(l) =>
       try {
-        let knock = @socket.Tcp::connect(l.addr)
+        let knock = @socket.Tcp::connect(l.addr())
         knock.close()
       } catch {
         _ => ()
@@ -302,7 +312,7 @@ pub async fn GrpcServer::graceful_stop(
 /// the map directly would be walking it while it changes.
 fn GrpcServer::snapshot(
   self : GrpcServer,
-) -> Array[(@socket.Tcp, @moonrpc.H2Server)] {
+) -> Array[(@tcp.Conn, @moonrpc.H2Server)] {
   let out = []
   for _id, l in self.live {
     out.push(l)

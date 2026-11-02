@@ -14,6 +14,8 @@ pub struct ManagedChannel {
   channels : Map[String, Channel]
   throttle : @moonrpc.Throttle?
   roll : () -> Double
+  // The TLS configuration every sub-connection dials with; `None` for h2c.
+  tls : @tls.Client?
 }
 
 ///|
@@ -44,6 +46,7 @@ pub async fn ManagedChannel::connect(
   policy~ : @moonrpc.LbPolicy = PickFirst,
   throttling? : @moonrpc.Throttling,
   rand? : () -> Double,
+  tls? : @tls.Client,
 ) -> ManagedChannel {
   let keys = targets.map(t => t.0 + ":" + t.1.to_string())
   let pool = @moonrpc.ConnectionPool::new(keys, policy~)
@@ -53,7 +56,7 @@ pub async fn ManagedChannel::connect(
     guard pool.subconn(key) is Some(sc) else { continue }
     sc.connect()
     try {
-      let ch = Channel::connect(t.0, t.1)
+      let ch = Channel::connect(t.0, t.1, tls?)
       channels[key] = ch
       sc.on_connected()
     } catch {
@@ -66,6 +69,7 @@ pub async fn ManagedChannel::connect(
     channels,
     throttle: throttling.map(@moonrpc.Throttle::new),
     roll: rand.unwrap_or(system_roll()),
+    tls,
   }
 }
 
@@ -82,6 +86,7 @@ pub async fn ManagedChannel::dns_connect(
   id~ : Int32 = 0x2a2a,
   throttling? : @moonrpc.Throttling,
   rand? : () -> Double,
+  tls? : @tls.Client,
 ) -> ManagedChannel {
   let addrs = resolve_a(dns_server, dns_port, name, id~)
   ManagedChannel::connect(
@@ -89,6 +94,7 @@ pub async fn ManagedChannel::dns_connect(
     policy~,
     throttling?,
     rand?,
+    tls?,
   )
 }
 
@@ -166,7 +172,11 @@ async fn ManagedChannel::redial(self : ManagedChannel) -> Unit {
     guard self.pool.subconn(address) is Some(sc) else { continue }
     sc.connect()
     try {
-      self.channels[address] = Channel::connect(target.0, target.1)
+      self.channels[address] = Channel::connect(
+        target.0,
+        target.1,
+        tls?=self.tls,
+      )
       sc.on_connected()
     } catch {
       _ => sc.on_failure()

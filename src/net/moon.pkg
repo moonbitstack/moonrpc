@@ -5,6 +5,9 @@ import {
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonnet/tcp",
+  "moonbitstack/moontls/tls",
+  "moonbitstack/mooncred/x509",
   "moonbitlang/async",
   "moonbitlang/async/io",
   "moonbitlang/async/socket",
@@ -16,5 +19,7 @@ import {
 
 import {
   "moonbitstack/moondate",
+  "moonbitstack/mooncrypt/sign/ecdsa",
+  "moonbitstack/moonseed",
   "moonbitlang/core/encoding/utf8",
 } for "wbtest"

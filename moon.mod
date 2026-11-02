@@ -23,6 +23,11 @@ import {
   "moonbitstack/moonward@0.2.0",
   "moonbitstack/moonast@0.2.3",
   "moonbitlang/parser@0.4.6",
+  "moonbitstack/moonnet@0.1.8",
+  "moonbitstack/moontls@0.9.11",
+  "moonbitstack/mooncred@0.6.7",
+  "moonbitstack/mooncrypt@0.4.7",
+  "moonbitstack/moonseed@0.1.0",
 }
 
 source = "src"

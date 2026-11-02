@@ -11,7 +11,7 @@
 /// `inboxes` wakes a waiting call when its stream is done, and `write_lock` serializes
 /// frame writes across concurrent callers.
 pub struct MuxChannel {
-  conn : @socket.Tcp
+  conn : @tcp.Conn
   engine : @moonrpc.H2Client
   write_lock : @async.Mutex
   inboxes : Map[Int32, @aqueue.Queue[Unit]]
@@ -23,10 +23,18 @@ pub struct MuxChannel {
 ///|
 /// Open a multiplexed channel to `host:port`: connect and send the @http2.preface and client
 /// SETTINGS. Spawn `read_pump` into a task group to drive it before making calls.
-pub async fn MuxChannel::connect(host : String, port : Int32) -> MuxChannel {
-  let conn = @socket.Tcp::connect(
-    @socket.Addr::parse(host + ":" + port.to_string()),
-  )
+pub async fn MuxChannel::connect(
+  host : String,
+  port : Int32,
+  tls? : @tls.Client,
+) -> MuxChannel {
+  let conn = @tcp.dial(host, port~, tls?)
+  // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
+  // is closed rather than spoken to in a version the peer did not agree to.
+  if unnegotiated(conn) {
+    conn.close()
+    raise @io.ReaderClosed
+  }
   let engine = @moonrpc.H2Client::new()
   conn.write(@http2.preface)
   let ch = {

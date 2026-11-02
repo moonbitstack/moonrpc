@@ -1,19 +1,19 @@
-// The native gRPC Channel client: a long-lived, multiplexed h2c connection over a
-// real `@socket.Tcp`, driven by the pure `@moonrpc.H2Client` engine. The engine
-// allocates stream ids, builds request HEADERS + DATA, and reassembles replies;
-// this file only pumps bytes — write the engine's request frames, read response
-// frames off the socket, feed them back — and enforces the client-side deadline by
-// racing the read loop against a timer.
+// The native gRPC Channel client: a long-lived, multiplexed connection over a real
+// `@tcp.Conn` — TLS with ALPN `h2`, or h2c — driven by the pure `@moonrpc.H2Client` engine.
+// The engine allocates stream ids, builds request HEADERS + DATA, and reassembles replies;
+// this file only pumps bytes — write the engine's request frames, read response frames off
+// the socket, feed them back — and enforces the client-side deadline by racing the read
+// loop against a timer.
 //
 // There is no background task: a call that finds the socket unread reads it for every
 // call, so a channel needs no task group and any number of tasks may share one.
 
 ///|
-/// A connected gRPC channel. One TCP connection carries every call, each on its own
+/// A connected gRPC channel. One connection carries every call, each on its own
 /// client-allocated (odd) stream id, so calls multiplex over the shared HPACK and
 /// flow-control state the engine keeps.
 pub struct Channel {
-  conn : @socket.Tcp
+  conn : @tcp.Conn
   engine : @moonrpc.H2Client
   throttle : @moonrpc.Throttle?
   roll : () -> Double
@@ -23,9 +23,10 @@ pub struct Channel {
 }
 
 ///|
-/// Open a channel to `host:port`: connect, send the 24-octet connection preface and
-/// the client SETTINGS. The server's SETTINGS are read and acknowledged lazily on
-/// the first call.
+/// Open a channel to `host:port`: connect, then send the 24-octet connection preface and
+/// the client SETTINGS. With `tls` the connection is a TLS one, and the handshake must
+/// have settled on ALPN `h2` before a frame is sent. The server's SETTINGS are read and
+/// acknowledged lazily on the first call.
 ///
 /// `throttling` turns on A6 retry throttling for every call on the channel, which is
 /// one server name. `rand` draws the backoff jitter from `[0, 1)`; without it the
@@ -35,10 +36,15 @@ pub async fn Channel::connect(
   port : Int32,
   throttling? : @moonrpc.Throttling,
   rand? : () -> Double,
+  tls? : @tls.Client,
 ) -> Channel {
-  let conn = @socket.Tcp::connect(
-    @socket.Addr::parse(host + ":" + port.to_string()),
-  )
+  let conn = @tcp.dial(host, port~, tls?)
+  // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
+  // is closed rather than spoken to in a version the peer did not agree to.
+  if unnegotiated(conn) {
+    conn.close()
+    raise @io.ReaderClosed
+  }
   let engine = @moonrpc.H2Client::new()
   conn.write(@http2.preface)
   write_frames(conn, engine.preface())
@@ -74,7 +80,7 @@ async fn[T] Channel::sending(self : Channel, body : async () -> T) -> T {
 ///|
 /// Read one frame. A cancel lands only between frames: one inside a frame would leave the next
 /// reader partway through it, and every call on the channel after that would fail.
-async fn read_whole_frame(conn : @socket.Tcp) -> @http2.Frame {
+async fn read_whole_frame(conn : @tcp.Conn) -> @http2.Frame {
   let first : FixedArray[Byte] = FixedArray::make(1, 0)
   if conn.read(first) == 0 {
     raise @io.ReaderClosed

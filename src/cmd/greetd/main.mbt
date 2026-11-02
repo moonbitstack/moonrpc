@@ -1,19 +1,54 @@
-// A runnable gRPC server over moonrpc's own h2c stack, declared with `#rpc`
+// A runnable gRPC server over moonrpc's own stack, declared with `#rpc`
 // annotations (`greet.g.mbt` comes from `cmd/rpc`), so a real client checks
 // both the transport and what the generator writes: grpcurl lists, describes
-// and calls it through Server Reflection.
+// and calls it through Server Reflection, in the clear or over TLS.
 //
-//     greetd [port]          serve on 127.0.0.1
-//     greetd check [port]    call a running greetd through the generated client
+//     greetd [port]                     serve h2c on 127.0.0.1
+//     greetd [port] <cert> <key>        serve over TLS, ALPN h2
+//     greetd check [port]               call a running greetd, generated client
+//     greetd check [port] <ca>          the same over TLS
 
 ///|
-async fn serve(port : Int32) -> Unit {
+async fn serve(port : Int32, tls : @tls.Server?) -> Unit {
   let server = @net.GrpcServer::new()
   Greeter::{ }.register(server)
   let reflection = @moonrpc.ReflectionService::new()
   reflection.add_file(descriptor())
   server.register_reflection(reflection)
-  server.serve(host="127.0.0.1", port~)
+  match tls {
+    Some(config) => server.serve(host="127.0.0.1", port~, tls=config)
+    None => server.serve(host="127.0.0.1", port~)
+  }
+}
+
+///|
+/// The text of a file the command line named, or a complaint: a certificate the
+/// process cannot read is a configuration mistake, not a call to serve without TLS.
+async fn text_of(path : String) -> String {
+  @fs.read_file(path).text() catch {
+    _ => abort("cannot read \{path}")
+  }
+}
+
+///|
+/// A server TLS configuration from a PEM chain and a PEM key.
+async fn read_server_tls(cert_path : String, key_path : String) -> @tls.Server {
+  @net.server_tls(
+    @x509.pems(text_of(cert_path)),
+    @x509.PrivateKey::pem(text_of(key_path)),
+  ) catch {
+    e => abort("bad TLS configuration: \{e}")
+  }
+}
+
+///|
+/// A client TLS configuration trusting the PEM bundle at `ca_path`, offering `h2`.
+async fn read_client_tls(ca_path : String) -> @tls.Client {
+  @net.client_tls(
+    @x509.Roots::pem(text_of(ca_path)) catch {
+      e => abort("bad CA bundle: \{e}")
+    },
+  )
 }
 
 ///|
@@ -41,8 +76,12 @@ fn[T : @moonrpc.Message] bytes_of(messages : Array[T]) -> String {
 ///|
 /// Every method once through `GreeterClient` and once as raw bytes on the
 /// same `Channel`: the replies and statuses must agree.
-async fn check(port : Int32) -> Unit {
-  let channel = @net.Channel::connect("127.0.0.1", port)
+async fn check(port : Int32, ca : String?) -> Unit {
+  let channel = match ca {
+    Some(path) =>
+      @net.Channel::connect("127.0.0.1", port, tls=read_client_tls(path))
+    None => @net.Channel::connect("127.0.0.1", port)
+  }
   defer channel.close()
   let client = GreeterClient::new(channel)
   let request : HelloRequest = {
@@ -101,5 +140,19 @@ fn main {
     [p, ..] => @string.parse_int(p[:]) catch { _ => @net.port }
     [] => @net.port
   }
-  @async.run_async_main(() => if checking { check(port) } else { serve(port) })
+  // A certificate and its key, or a CA bundle, follow the port when the run is over TLS.
+  let files = if rest.length() > 1 { rest[1:] } else { [] }
+  @async.run_async_main(() => {
+    if checking {
+      let ca = if files.length() > 0 { Some(files[0]) } else { None }
+      check(port, ca)
+    } else {
+      let tls = if files.length() > 1 {
+        Some(read_server_tls(files[0], files[1]))
+      } else {
+        None
+      }
+      serve(port, tls)
+    }
+  })
 }

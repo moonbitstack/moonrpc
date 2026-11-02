@@ -151,3 +151,84 @@ jobs:
           grep -q 'InvalidArgument' /tmp/err.txt
           grep -q 'name is required' /tmp/err.txt
           echo "grpcurl interop OK"
+
+  # The same server over TLS: a CA-signed certificate, ALPN `h2`, and a real grpcurl
+  # and the generated client both verifying the chain against the CA. A server that
+  # negotiated no ALPN, or the wrong one, fails the greetd start-up handshake here.
+  tls-interop:
+    name: real gRPC interop over TLS (grpcurl)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - name: install grpcurl
+        run: go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+
+      - name: build the greeter server
+        run: moon build --target native
+
+      - name: a CA and a certificate for it
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tls"
+          cd "$RUNNER_TEMP/tls"
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout ca-key.pem -out ca.pem -days 2 -nodes -subj "/CN=moonrpc test CA" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
+          openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout key.pem -out server.csr -nodes -subj "/CN=localhost"
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\n' > ext.cnf
+          openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial \
+            -out cert.pem -days 2 -extfile ext.cnf
+
+      - name: grpcurl and the generated client over TLS
+        run: |
+          set -euo pipefail
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          TLS="$RUNNER_TEMP/tls"
+          ./_build/native/debug/build/cmd/greetd/greetd.exe 12001 "$TLS/cert.pem" "$TLS/key.pem" &
+          SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if grpcurl -cacert "$TLS/ca.pem" -max-time 2 127.0.0.1:12001 list >/dev/null 2>&1; then
+              echo "server ready after ${i}s"; break
+            fi
+            sleep 1
+          done
+          echo "== list over TLS =="
+          grpcurl -cacert "$TLS/ca.pem" -max-time 10 127.0.0.1:12001 list | tee /tmp/tls-list.txt
+          grep -q '^greet.Greeter$' /tmp/tls-list.txt
+          echo "== unary call over TLS =="
+          grpcurl -cacert "$TLS/ca.pem" -max-time 10 \
+            -d '{"name":"world","mood":"MOOD_GLAD","extras":{"a":"2","b":"40"}}' \
+            127.0.0.1:12001 greet.Greeter/SayHello | tee /tmp/tls-call.txt
+          grep -q 'Hello, world' /tmp/tls-call.txt
+          grep -q '"total": "42"' /tmp/tls-call.txt
+          echo "== server streaming over TLS =="
+          grpcurl -cacert "$TLS/ca.pem" -max-time 10 -d '{"n":3}' \
+            127.0.0.1:12001 greet.Greeter/CountTo | tee /tmp/tls-up.txt
+          test "$(grep -c '"value"' /tmp/tls-up.txt)" = 3
+          echo "== the generated client over TLS =="
+          ./_build/native/debug/build/cmd/greetd/greetd.exe check 12001 "$TLS/ca.pem" | tee /tmp/tls-check.txt
+          grep -q 'client and channel agree' /tmp/tls-check.txt
+          echo "== a client that does not offer h2 is refused =="
+          set +e
+          printf 'GET / HTTP/1.1\r\nhost: 127.0.0.1\r\n\r\n' | \
+            timeout 5 openssl s_client -connect 127.0.0.1:12001 -alpn http/1.1 \
+              -CAfile "$TLS/ca.pem" 2>&1 | tee /tmp/tls-alpn.txt
+          set -e
+          grep -q 'no application protocol\|alert' /tmp/tls-alpn.txt
+          echo "TLS interop OK"
