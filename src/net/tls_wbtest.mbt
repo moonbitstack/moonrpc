@@ -118,3 +118,60 @@ async test "TLS: a ManagedChannel dials a TLS backend" {
     task.cancel()
   })
 }
+
+///|
+async test "TLS: a handshake that settles on http/1.1 carries no gRPC call" {
+  @async.with_task_group(g => {
+    let (cert, key) = self_signed_pair()
+    let server = GrpcServer::new()
+    server.register("/echo.Echo/Say", req => req)
+    let task = g.spawn(() => {
+      server.serve(
+        port=18271,
+        tls=server_tls([cert], key, protocols=["http/1.1"]),
+      )
+    })
+    @async.sleep(300)
+    let served = try {
+      let chan = Channel::connect(
+        "127.0.0.1",
+        18271,
+        tls=trusting_tls(protocols=[alpn_h2, "http/1.1"]),
+      )
+      let reply = chan.unary("/echo.Echo/Say", b"x")
+      chan.close()
+      reply.grpc_status == 0
+    } catch {
+      _ => false
+    }
+    assert_eq(served, false)
+    task.cancel()
+  })
+}
+
+///|
+async test "TLS: a client that names no protocol carries no gRPC call" {
+  @async.with_task_group(g => {
+    let (cert, key) = self_signed_pair()
+    let server = GrpcServer::new()
+    server.register("/echo.Echo/Say", req => req)
+    let task = g.spawn(() => {
+      server.serve(port=18272, tls=server_tls([cert], key))
+    })
+    @async.sleep(300)
+    let served = try {
+      let chan = Channel::connect(
+        "127.0.0.1",
+        18272,
+        tls=trusting_tls(protocols=[]),
+      )
+      let reply = chan.unary("/echo.Echo/Say", b"x")
+      chan.close()
+      reply.grpc_status == 0
+    } catch {
+      _ => false
+    }
+    assert_eq(served, false)
+    task.cancel()
+  })
+}
