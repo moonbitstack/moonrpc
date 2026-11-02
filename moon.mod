@@ -1,6 +1,6 @@
 name = "moonbitstack/moonrpc"
 
-version = "0.21.7"
+version = "0.21.8"
 
 readme = "README.md"
 

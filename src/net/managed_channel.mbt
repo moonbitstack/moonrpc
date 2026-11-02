@@ -10,6 +10,7 @@
 /// that dialed successfully.
 pub struct ManagedChannel {
   pool : @moonrpc.ConnectionPool
+  targets : Array[(String, Int32)]
   channels : Map[String, Channel]
   throttle : @moonrpc.Throttle?
   roll : () -> Double
@@ -61,6 +62,7 @@ pub async fn ManagedChannel::connect(
   }
   {
     pool,
+    targets,
     channels,
     throttle: throttling.map(@moonrpc.Throttle::new),
     roll: rand.unwrap_or(system_roll()),
@@ -94,15 +96,15 @@ pub async fn ManagedChannel::dns_connect(
 /// The live `Channel` for the next attempt, chosen by the pool's picker over the
 /// READY sub-connections. A connection that has received GOAWAY opens no stream, so
 /// the next live one stands in for it. `None` when nothing is reachable.
-fn ManagedChannel::pick(self : ManagedChannel) -> Channel? {
+fn ManagedChannel::pick(self : ManagedChannel) -> (String, Channel)? {
   if self.pool.pick() is Some(address) &&
     self.channels.get(address) is Some(ch) &&
     !ch.engine.goaway_received() {
-    return Some(ch)
+    return Some((address, ch))
   }
   for address in self.pool.ready_addresses() {
     if self.channels.get(address) is Some(ch) && !ch.engine.goaway_received() {
-      return Some(ch)
+      return Some((address, ch))
     }
   }
   None
@@ -142,9 +144,42 @@ pub fn ManagedChannel::ready_addresses(self : ManagedChannel) -> Array[String] {
 }
 
 ///|
+/// Take `address` out of rotation: its connection failed, so the next call goes elsewhere.
+fn ManagedChannel::lost(self : ManagedChannel, address : String) -> Unit {
+  if self.channels.get(address) is Some(ch) {
+    ch.close()
+  }
+  self.channels.remove(address)
+  if self.pool.subconn(address) is Some(sc) {
+    sc.on_failure()
+  }
+}
+
+///|
+/// Dial every backend that has no connection, for when no backend is left to pick.
+async fn ManagedChannel::redial(self : ManagedChannel) -> Unit {
+  for target in self.targets {
+    let address = target.0 + ":" + target.1.to_string()
+    if self.channels.contains(address) {
+      continue
+    }
+    guard self.pool.subconn(address) is Some(sc) else { continue }
+    sc.connect()
+    try {
+      self.channels[address] = Channel::connect(target.0, target.1)
+      sc.on_connected()
+    } catch {
+      _ => sc.on_failure()
+    }
+  }
+}
+
+///|
 /// Run a call's attempts, each on a backend picked for it, so a retry can land on a
-/// different backend from the attempt that failed (gRPC A6). No READY backend is an
-/// `UNAVAILABLE` attempt, which a policy that retries it waits out.
+/// different backend from the attempt that failed (gRPC A6). A connection that fails under
+/// an attempt takes its backend out of rotation and makes the attempt `UNAVAILABLE`, whether
+/// or not the server ran the call, so only a policy written for that retries it. With no
+/// READY backend the channel dials again; if none answers, the attempt is `UNAVAILABLE` too.
 async fn ManagedChannel::call(
   self : ManagedChannel,
   metadata : Array[@header.Header],
@@ -154,8 +189,22 @@ async fn ManagedChannel::call(
 ) -> @moonrpc.CallReply {
   let attempts = @moonrpc.Attempts::new(retry?, throttle?=self.throttle)
   attempting(attempts, self.roll, metadata, timeout_millis, (md, ms) => {
-    match self.pick() {
-      Some(ch) => send(ch, md, ms)
+    // Picking advances a round robin, so it happens once per attempt that has a backend.
+    let picked = match self.pick() {
+      Some(_) as found => found
+      None => {
+        self.redial()
+        self.pick()
+      }
+    }
+    match picked {
+      Some((address, ch)) =>
+        send(ch, md, ms) catch {
+          _ => {
+            self.lost(address)
+            unavailable_reply()
+          }
+        }
       None => unavailable_reply()
     }
   })

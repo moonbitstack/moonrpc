@@ -139,3 +139,76 @@ async test "managed channel: a backend that fails to dial is skipped; calls rout
     ta.cancel()
   })
 }
+
+///|
+async test "managed channel: a backend that dies is left, and a call goes to the next" {
+  @async.with_task_group(g => {
+    let first = GrpcServer::new()
+    first.register("/echo.E/Say", req => b"first:" + req)
+    let second = GrpcServer::new()
+    second.register("/echo.E/Say", req => b"second:" + req)
+    let dying = g.spawn(() => first.serve(port=18221))
+    let surviving = g.spawn(() => second.serve(port=18222))
+    @async.sleep(300)
+    let chan = ManagedChannel::connect([
+      ("127.0.0.1", 18221),
+      ("127.0.0.1", 18222),
+    ])
+    assert_eq(chan.unary("/echo.E/Say", b"a").messages[0], b"first:a")
+    dying.cancel()
+    @async.sleep(200)
+    let failed = chan.unary("/echo.E/Say", b"b")
+    assert_eq(failed.grpc_status, @moonrpc.Status::code(Unavailable))
+    assert_eq(chan.unary("/echo.E/Say", b"c").messages[0], b"second:c")
+    assert_eq(chan.ready_addresses(), ["127.0.0.1:18222"])
+    surviving.cancel()
+  })
+}
+
+///|
+async test "managed channel: a retry policy reaches the next backend within one call" {
+  @async.with_task_group(g => {
+    let first = GrpcServer::new()
+    first.register("/echo.E/Say", req => b"first:" + req)
+    let second = GrpcServer::new()
+    second.register("/echo.E/Say", req => b"second:" + req)
+    let dying = g.spawn(() => first.serve(port=18223))
+    let surviving = g.spawn(() => second.serve(port=18224))
+    @async.sleep(300)
+    let chan = ManagedChannel::connect([
+      ("127.0.0.1", 18223),
+      ("127.0.0.1", 18224),
+    ])
+    assert_eq(chan.unary("/echo.E/Say", b"a").messages[0], b"first:a")
+    dying.cancel()
+    @async.sleep(200)
+    let reply = chan.unary("/echo.E/Say", b"b", retry=quick(3, 1))
+    assert_eq(reply.grpc_status, 0)
+    assert_eq(reply.messages[0], b"second:b")
+    surviving.cancel()
+  })
+}
+
+///|
+async test "managed channel: with every backend gone it dials again" {
+  @async.with_task_group(g => {
+    let first = GrpcServer::new()
+    first.register("/echo.E/Say", req => b"one:" + req)
+    let gone = g.spawn(() => first.serve(port=18225))
+    @async.sleep(300)
+    let chan = ManagedChannel::connect([("127.0.0.1", 18225)])
+    assert_eq(chan.unary("/echo.E/Say", b"a").messages[0], b"one:a")
+    gone.cancel()
+    @async.sleep(200)
+    let down = chan.unary("/echo.E/Say", b"b")
+    assert_eq(down.grpc_status, @moonrpc.Status::code(Unavailable))
+    let still = chan.unary("/echo.E/Say", b"c")
+    assert_eq(still.grpc_status, @moonrpc.Status::code(Unavailable))
+    let again = GrpcServer::new()
+    again.register("/echo.E/Say", req => b"two:" + req)
+    let back = g.spawn(() => again.serve(port=18225))
+    @async.sleep(300)
+    assert_eq(chan.unary("/echo.E/Say", b"d").messages[0], b"two:d")
+    back.cancel()
+  })
+}
