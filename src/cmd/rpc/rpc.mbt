@@ -145,7 +145,7 @@ fn composite_name(out : Out, base : Base) -> String {
 /// `Outer` out of `Outer.Inner`, or `None` at the top of the file.
 fn parent_of(proto : String) -> String? {
   match proto.rev_find(".") {
-    Some(i) => Some(proto.view(end_offset=i).to_owned())
+    Some(i) => Some(proto.exact_view(end=i).to_owned())
     None => None
   }
 }
@@ -153,7 +153,7 @@ fn parent_of(proto : String) -> String? {
 ///|
 fn simple_of(proto : String) -> String {
   match proto.rev_find(".") {
-    Some(i) => proto.view(start_offset=i + 1).to_owned()
+    Some(i) => proto.exact_view(start=i + 1).to_owned()
     None => proto
   }
 }
@@ -788,8 +788,8 @@ impl @gen.Generator for Rpc with fn generate(_, decls) {
     )
   }
   let stem = source_file
-    .view(
-      end_offset=if source_file.has_suffix(".mbt") {
+    .exact_view(
+      end=if source_file.has_suffix(".mbt") {
         source_file.length() - 4
       } else {
         source_file.length()
@@ -797,7 +797,7 @@ impl @gen.Generator for Rpc with fn generate(_, decls) {
     )
     .to_owned()
   let stem = match stem.rev_find("/") {
-    Some(i) => stem.view(start_offset=i + 1).to_owned()
+    Some(i) => stem.exact_view(start=i + 1).to_owned()
     None => stem
   }
   let messages = out.message_order

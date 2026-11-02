@@ -667,7 +667,7 @@ fn write_message(
   for f in m.fields {
     let entry = if f.label is LabelRepeated && f.type_ is TypeMessage {
       let short = match f.type_name.rev_find(".") {
-        Some(i) => f.type_name.view(start_offset=i + 1).to_owned()
+        Some(i) => f.type_name.exact_view(start=i + 1).to_owned()
         None => f.type_name
       }
       entries.get(short)

@@ -55,7 +55,7 @@ fn inside(ty : StringView, name : String) -> String? {
   if ty.has_prefix(open) && ty.has_suffix("]") {
     Some(
       ty
-      .view(start_offset=open.length(), end_offset=ty.length() - 1)
+      .exact_view(start=open.length(), end=ty.length() - 1)
       .trim(chars=" ")
       .to_owned(),
     )
@@ -96,7 +96,7 @@ fn field_of(
 ) -> (Base, Card, String)? {
   let ty = ty.trim(chars=" ").to_owned()
   let (inner, card) = if ty.has_suffix("?") {
-    (ty.view(end_offset=ty.length() - 1).trim(chars=" ").to_owned(), Optional)
+    (ty.exact_view(end=ty.length() - 1).trim(chars=" ").to_owned(), Optional)
   } else if inside(ty, "Option") is Some(t) {
     (t, Optional)
   } else if inside(ty, "Array") is Some(t) {
