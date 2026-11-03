@@ -44,10 +44,11 @@ SECTIONS = [
      "in-process registry: top channels, servers, server sockets, and one channel, "
      "subchannel or socket by id, with the oneofs and well-known imports grpcurl and "
      "grpcdebug expect."),
-    ("thrift", "thrift", "thrift — the binary protocol",
-     "TBinaryProtocol over TFramedTransport, independent of gRPC: a strict message "
-     "header, the primitive types, structs, lists and maps, a processor that dispatches "
-     "by method name, and a client request. The native framed driver is in net."),
+    ("thrift", "thrift", "thrift — the binary and compact protocols",
+     "TBinaryProtocol and TCompactProtocol over TFramedTransport, independent of gRPC. "
+     "Protocol is the contract; the processor, the client request and the shared skip "
+     "are written once against it. The protocols cover the strict message header, the "
+     "primitive types, structs, lists and maps. The native framed driver is in net."),
     ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "

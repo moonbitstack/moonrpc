@@ -1,81 +1,144 @@
-// A Thrift service over TBinaryProtocol and TFramedTransport.
+// A Thrift service over TBinaryProtocol or TCompactProtocol, framed, on one socket.
 //
-//     thriftd [port]          serve on 127.0.0.1 (default 9090)
-//     thriftd check [port]    call it with the same library and print the answers
+//     thriftd [port] [compact]          serve on 127.0.0.1 (default 9090)
+//     thriftd check [port] [compact]    call it with the same library
+//
+// The handlers below only see `Protocol`, so the same service answers in either
+// protocol; the flag picks the bytes on the wire, not the service.
 
 ///|
 fn processor() -> @thrift.Processor {
   let processor = @thrift.Processor::new()
-  processor.add("ping", (reader, writer) => {
-    let (_, _) = reader.read_field_begin()
-    let text = reader.read_string()
-    ignore(reader.read_field_begin())
-    writer.write_field_begin(@thrift.type_string, 0)
-    writer.write_string("pong:" + text)
+  processor.add("ping", proto => {
+    ignore(proto.read_field_begin())
+    let text = proto.read_string()
+    ignore(proto.read_field_begin())
+    proto.write_field_begin(@thrift.type_string, 0)
+    proto.write_string("pong:" + text)
   })
-  processor.add("add", (reader, writer) => {
-    ignore(reader.read_field_begin())
-    let a = reader.read_i32()
-    ignore(reader.read_field_begin())
-    let b = reader.read_i32()
-    ignore(reader.read_field_begin())
-    writer.write_field_begin(@thrift.type_i32, 0)
-    writer.write_i32(a + b)
+  processor.add("add", proto => {
+    ignore(proto.read_field_begin())
+    let a = proto.read_i32()
+    ignore(proto.read_field_begin())
+    let b = proto.read_i32()
+    ignore(proto.read_field_begin())
+    proto.write_field_begin(@thrift.type_i32, 0)
+    proto.write_i32(a + b)
+  })
+  // A double is the one value the two protocols spell differently: eight bytes
+  // big-endian in binary, little-endian in compact.
+  processor.add("double", proto => {
+    ignore(proto.read_field_begin())
+    let x = proto.read_double()
+    ignore(proto.read_field_begin())
+    proto.write_field_begin(@thrift.type_double, 0)
+    proto.write_double(x * 2.0)
   })
   processor
 }
 
 ///|
-async fn check(port : Int32) -> Unit {
-  let client = @net.ThriftClient::connect("127.0.0.1", port)
+fn binary_protocol() -> &@thrift.Protocol {
+  @thrift.Binary::new(b"")
+}
+
+///|
+fn compact_protocol() -> &@thrift.Protocol {
+  @thrift.Compact::new(b"")
+}
+
+///|
+fn protocol_of(compact : Bool) -> &@thrift.Protocol {
+  if compact {
+    compact_protocol()
+  } else {
+    binary_protocol()
+  }
+}
+
+///|
+async fn check(port : Int32, compact : Bool) -> Unit {
+  let proto = protocol_of(compact)
+  let client = @net.ThriftClient::connect("127.0.0.1", port, proto)
   defer client.close()
   let pong = @thrift.call(
     client,
+    proto,
     "ping",
     1,
-    writer => {
-      writer.write_field_begin(@thrift.type_string, 1)
-      writer.write_string("moonrpc")
+    proto => {
+      proto.write_field_begin(@thrift.type_string, 1)
+      proto.write_string("moonrpc")
     },
-    reader => reader.read_string(),
+    proto => proto.read_string(),
   ) catch {
     e => abort("ping failed: \{e}")
   }
   println("ping  \{pong}")
   let sum = @thrift.call(
     client,
+    proto,
     "add",
     2,
-    writer => {
-      writer.write_field_begin(@thrift.type_i32, 1)
-      writer.write_i32(20)
-      writer.write_field_begin(@thrift.type_i32, 2)
-      writer.write_i32(22)
+    proto => {
+      proto.write_field_begin(@thrift.type_i32, 1)
+      proto.write_i32(20)
+      proto.write_field_begin(@thrift.type_i32, 2)
+      proto.write_i32(22)
     },
-    reader => reader.read_i32(),
+    proto => proto.read_i32(),
   ) catch {
     e => abort("add failed: \{e}")
   }
   println("add   \{sum}")
+  let scaled = @thrift.call(
+    client,
+    proto,
+    "double",
+    3,
+    proto => {
+      proto.write_field_begin(@thrift.type_double, 1)
+      proto.write_double(1.5)
+    },
+    proto => proto.read_double(),
+  ) catch {
+    e => abort("double failed: \{e}")
+  }
+  println("double \{scaled}")
 }
 
 ///|
 fn main {
-  let (checking, port_text) = match @env.args() {
-    [_, "check", p, ..] => (true, Some(p))
-    [_, p, ..] => (false, Some(p))
-    _ => (false, None)
-  }
-  let port = match port_text {
-    Some(text) => @string.parse_int(text[:]) catch { _ => 9090 }
-    None => 9090
+  let mut checking = false
+  let mut compact = false
+  let mut port = 9090
+  let args = @env.args()
+  for i in 1..<args.length() {
+    let arg = args[i]
+    if arg == "check" {
+      checking = true
+    } else if arg == "compact" {
+      compact = true
+    } else {
+      port = @string.parse_int(arg[:]) catch { _ => port }
+    }
   }
   @async.run_async_main(() => {
     if checking {
-      check(port)
+      check(port, compact)
     } else {
-      println("thrift serving on 127.0.0.1:\{port}")
-      @net.serve_thrift(host="127.0.0.1", port~, processor())
+      println(
+        "thrift serving on 127.0.0.1:\{port} (\{if compact { "compact" } else { "binary" }})",
+      )
+      if compact {
+        @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
+          @thrift.Compact::new(b"")
+        })
+      } else {
+        @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
+          @thrift.Binary::new(b"")
+        })
+      }
     }
   })
 }

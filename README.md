@@ -301,8 +301,8 @@ against independent peers in plaintext and over TLS:
 | `grpcurl` (grpc-go) | client | reflection `list`／`describe`, all four | `gzip` | — | yes | pass |
 | grpc-go | client | all four | `gzip` | client chain | yes | pass |
 | grpc-go | server | all four, through the generated `GreeterClient` | identity | server chain | yes | pass |
-| Apache Thrift (Go) | client | `ping`, `add` | identity | — | no | pass |
-| Apache Thrift (Go) | server | `ping`, `add`, through `thriftd check` | identity | — | no | pass |
+| Apache Thrift (Go) | client | `ping`, `add`, `double`, binary and compact | identity | — | no | pass |
+| Apache Thrift (Go) | server | `ping`, `add`, `double`, through `thriftd check` | identity | — | no | pass |
 
 `cmd/greetd` is the server the first two call; the third runs the same generated client
 against a grpc-go server and requires the two answers to match byte for byte. The
@@ -388,36 +388,45 @@ call can turn it on with `wait_for_ready~` whether or not a config names it.
 ## Thrift
 
 A second protocol stack sits beside the gRPC one and shares only the socket layer:
-Thrift's TBinaryProtocol over TFramedTransport, with a processor that dispatches by
-method name and a client that sends a CALL and reads a REPLY. Nothing in `thrift/`
-imports HTTP/2, HPACK or protobuf.
+TFramedTransport, a processor that dispatches by method name, and a client that sends a
+CALL and reads a REPLY. Nothing in `thrift/` imports HTTP/2, HPACK or protobuf.
+
+The wire format is a choice rather than a copy. `Protocol` is the contract; `Binary` and
+`Compact` are two implementations of it — fixed-width big-endian numbers with fixed field
+ids, or zigzag varints with field-id deltas and a double written little-endian. The
+processor, the client request and a service's handlers are written once, against the
+trait, so a service answers either protocol without knowing which one it got.
 
 ```moonbit
 import "moonbitstack/moonrpc/thrift"   // @thrift
 
 let processor = @thrift.Processor::new()
-processor.add("ping", (reader, writer) => {
-  ignore(reader.read_field_begin())          // field 1: the argument
-  let text = reader.read_string()
-  ignore(reader.read_field_begin())          // STOP
-  writer.write_field_begin(@thrift.type_string, 0)   // field 0: the result
-  writer.write_string("pong:" + text)
+processor.add("ping", proto => {
+  ignore(proto.read_field_begin())                 // field 1: the argument
+  let text = proto.read_string()
+  ignore(proto.read_field_begin())                 // STOP
+  proto.write_field_begin(@thrift.type_string, 0)  // field 0: the result
+  proto.write_string("pong:" + text)
 })
-@net.serve_thrift(host="127.0.0.1", port=9090, processor)
+@net.serve_thrift(
+  host="127.0.0.1", port=9090, processor, () => @thrift.Binary::new(b""),
+)
 
-// the client side
-let client = @net.ThriftClient::connect("127.0.0.1", 9090)
-let pong = @thrift.call(client, "ping", 1, writer => {
-  writer.write_field_begin(@thrift.type_string, 1)
-  writer.write_string("moonrpc")
-}, reader => reader.read_string())
+// the client side, in the compact protocol
+let proto : &@thrift.Protocol = @thrift.Compact::new(b"")
+let client = @net.ThriftClient::connect("127.0.0.1", 9090, proto)
+let pong = @thrift.call(client, proto, "ping", 1, proto => {
+  proto.write_field_begin(@thrift.type_string, 1)
+  proto.write_string("moonrpc")
+}, proto => proto.read_string())
 ```
 
-[`cmd/thriftd`](src/cmd/thriftd/) serves `ping` and `add`; `thriftd check` calls them.
-CI runs an Apache Thrift Go client against it and the moonrpc client against an Apache
-Thrift Go server. The protocol covers the strict message header, `bool`, `byte`, `i16`,
-`i32`, `i64`, `string`, structs, lists, sets and maps, with a depth guard on `skip`.
-TCompactProtocol and an IDL compiler are not part of this layer.
+[`cmd/thriftd`](src/cmd/thriftd/) serves `ping`, `add` and `double`; `thriftd check`
+calls them, and a `compact` argument picks the protocol on either side. CI runs an Apache
+Thrift Go client against it and the moonrpc client against an Apache Thrift Go server, in
+the binary and in the compact protocol. Both cover the strict message header, `bool`,
+`byte`, `i16`, `i32`, `i64`, `double`, `string`, structs, lists, sets and maps, with a
+depth guard on `skip`. An IDL compiler is not part of this layer.
 
 ## Concurrency on a connection
 

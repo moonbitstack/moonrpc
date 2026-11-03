@@ -8,3 +8,4 @@ examples/*/pkg.generated.mbti
 src/examples/browser/**/pkg.generated.mbti
 docs/engine/
 src/examples/guide/**/pkg.generated.mbti
+scripts/interop/bin/

@@ -6,7 +6,7 @@ import {
 }
 
 // Values
-pub async fn[T : Transport, R] call(T, String, Int32, (TWriter) -> Unit raise ThriftError, (TReader) -> R raise ThriftError) -> R raise ThriftError
+pub async fn[T : Transport, R] call(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError, (&Protocol) -> R raise ThriftError) -> R raise ThriftError
 
 pub fn frame(Bytes) -> Bytes
 
@@ -24,9 +24,11 @@ pub let message_oneway : Int32
 
 pub let message_reply : Int32
 
-pub fn[R] read_success(TReader, (TReader) -> R raise ThriftError) -> R raise ThriftError
+pub fn[R] read_success(&Protocol, (&Protocol) -> R raise ThriftError) -> R raise ThriftError
 
-pub async fn[T : Transport] request(T, String, Int32, (TWriter) -> Unit raise ThriftError) -> TReader raise ThriftError
+pub async fn[T : Transport] request(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError) -> Unit raise ThriftError
+
+pub fn skip(&Protocol, Int32) -> Unit raise ThriftError
 
 pub let type_bool : Int32
 
@@ -66,54 +68,130 @@ pub fn ThriftError::to_string(Self) -> String
 pub impl Show for ThriftError
 
 // Types and methods
-pub(all) struct Processor {
-  methods : Map[String, (TReader, TWriter) -> Unit raise ThriftError]
-}
-pub fn Processor::add(Self, String, (TReader, TWriter) -> Unit raise ThriftError) -> Unit
-pub fn Processor::new() -> Self
-pub fn Processor::process(Self, Bytes) -> Bytes raise ThriftError
-
-pub struct TReader {
-  data : Bytes
+pub struct Binary {
+  mut data : Bytes
   mut off : Int32
-  mut depth : Int32
+  mut out : @buffer.Buffer
 }
-pub fn TReader::eof(Self) -> Bool
-pub fn TReader::new(Bytes) -> Self
-pub fn TReader::read_bool(Self) -> Bool raise ThriftError
-pub fn TReader::read_byte(Self) -> Int32 raise ThriftError
-pub fn TReader::read_field_begin(Self) -> (Int32, Int32) raise ThriftError
-pub fn TReader::read_i16(Self) -> Int32 raise ThriftError
-pub fn TReader::read_i32(Self) -> Int32 raise ThriftError
-pub fn TReader::read_i64(Self) -> Int64 raise ThriftError
-pub fn TReader::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
-pub fn TReader::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
-pub fn TReader::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
-pub fn TReader::read_string(Self) -> String raise ThriftError
-pub fn TReader::skip(Self, Int32) -> Unit raise ThriftError
+pub fn Binary::eof(Self) -> Bool
+pub fn Binary::new(Bytes) -> Self
+pub fn Binary::output(Self) -> Bytes
+pub fn Binary::read_bool(Self) -> Bool raise ThriftError
+pub fn Binary::read_byte(Self) -> Int32 raise ThriftError
+pub fn Binary::read_double(Self) -> Double raise ThriftError
+pub fn Binary::read_field_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Binary::read_i16(Self) -> Int32 raise ThriftError
+pub fn Binary::read_i32(Self) -> Int32 raise ThriftError
+pub fn Binary::read_i64(Self) -> Int64 raise ThriftError
+pub fn Binary::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Binary::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
+pub fn Binary::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Binary::read_string(Self) -> String raise ThriftError
+pub fn Binary::read_struct_begin(Self) -> Unit
+pub fn Binary::read_struct_end(Self) -> Unit
+pub fn Binary::reset(Self, Bytes) -> Unit
+pub fn Binary::write_bool(Self, Bool) -> Unit
+pub fn Binary::write_byte(Self, Int32) -> Unit
+pub fn Binary::write_double(Self, Double) -> Unit
+pub fn Binary::write_field_begin(Self, Int32, Int32) -> Unit
+pub fn Binary::write_field_stop(Self) -> Unit
+pub fn Binary::write_i16(Self, Int32) -> Unit
+pub fn Binary::write_i32(Self, Int32) -> Unit
+pub fn Binary::write_i64(Self, Int64) -> Unit
+pub fn Binary::write_list_begin(Self, Int32, Int32) -> Unit
+pub fn Binary::write_map_begin(Self, Int32, Int32, Int32) -> Unit
+pub fn Binary::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Binary::write_string(Self, String) -> Unit
+pub fn Binary::write_struct_begin(Self, String) -> Unit
+pub fn Binary::write_struct_end(Self) -> Unit
+pub impl Protocol for Binary
 
-pub struct TWriter {
-  buf : @buffer.Buffer
+pub struct Compact {
+  mut data : Bytes
+  mut off : Int32
+  mut out : @buffer.Buffer
+  mut last_field : Int32
+  mut field_stack : Array[Int32]
+  mut pending_field : Bool
+  mut pending_id : Int32
+  mut bool_value : Bool
+  mut bool_ready : Bool
 }
-pub fn TWriter::new() -> Self
-pub fn TWriter::to_bytes(Self) -> Bytes
-pub fn TWriter::write_bool(Self, Bool) -> Unit
-pub fn TWriter::write_byte(Self, Int32) -> Unit
-pub fn TWriter::write_field_begin(Self, Int32, Int32) -> Unit
-pub fn TWriter::write_field_stop(Self) -> Unit
-pub fn TWriter::write_i16(Self, Int32) -> Unit
-pub fn TWriter::write_i32(Self, Int32) -> Unit
-pub fn TWriter::write_i64(Self, Int64) -> Unit
-pub fn TWriter::write_list_begin(Self, Int32, Int32) -> Unit
-pub fn TWriter::write_map_begin(Self, Int32, Int32, Int32) -> Unit
-pub fn TWriter::write_message_begin(Self, String, Int32, Int32) -> Unit
-pub fn TWriter::write_raw(Self, Bytes) -> Unit
-pub fn TWriter::write_string(Self, String) -> Unit
+pub fn Compact::new(Bytes) -> Self
+pub fn Compact::output(Self) -> Bytes
+pub fn Compact::read_bool(Self) -> Bool raise ThriftError
+pub fn Compact::read_byte(Self) -> Int32 raise ThriftError
+pub fn Compact::read_double(Self) -> Double raise ThriftError
+pub fn Compact::read_field_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Compact::read_i16(Self) -> Int32 raise ThriftError
+pub fn Compact::read_i32(Self) -> Int32 raise ThriftError
+pub fn Compact::read_i64(Self) -> Int64 raise ThriftError
+pub fn Compact::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Compact::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
+pub fn Compact::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Compact::read_string(Self) -> String raise ThriftError
+pub fn Compact::read_struct_begin(Self) -> Unit
+pub fn Compact::read_struct_end(Self) -> Unit
+pub fn Compact::reset(Self, Bytes) -> Unit
+pub fn Compact::write_bool(Self, Bool) -> Unit
+pub fn Compact::write_byte(Self, Int32) -> Unit
+pub fn Compact::write_double(Self, Double) -> Unit
+pub fn Compact::write_field_begin(Self, Int32, Int32) -> Unit
+pub fn Compact::write_field_stop(Self) -> Unit
+pub fn Compact::write_i16(Self, Int32) -> Unit
+pub fn Compact::write_i32(Self, Int32) -> Unit
+pub fn Compact::write_i64(Self, Int64) -> Unit
+pub fn Compact::write_list_begin(Self, Int32, Int32) -> Unit
+pub fn Compact::write_map_begin(Self, Int32, Int32, Int32) -> Unit
+pub fn Compact::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Compact::write_string(Self, String) -> Unit
+pub fn Compact::write_struct_begin(Self, String) -> Unit
+pub fn Compact::write_struct_end(Self) -> Unit
+pub impl Protocol for Compact
+
+pub(all) struct Processor {
+  methods : Map[String, (&Protocol) -> Unit raise ThriftError]
+}
+pub fn Processor::add(Self, String, (&Protocol) -> Unit raise ThriftError) -> Unit
+pub fn Processor::new() -> Self
+pub fn Processor::process(Self, &Protocol, Bytes) -> Bytes raise ThriftError
 
 // Type aliases
-pub type Method = (TReader, TWriter) -> Unit raise ThriftError
+pub type Method = (&Protocol) -> Unit raise ThriftError
 
 // Traits
+pub(open) trait Protocol {
+  fn reset(Self, Bytes) -> Unit
+  fn output(Self) -> Bytes
+  fn read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+  fn write_message_begin(Self, String, Int32, Int32) -> Unit
+  fn read_struct_begin(Self) -> Unit
+  fn read_struct_end(Self) -> Unit
+  fn write_struct_begin(Self, String) -> Unit
+  fn write_struct_end(Self) -> Unit
+  fn read_field_begin(Self) -> (Int32, Int32) raise ThriftError
+  fn write_field_begin(Self, Int32, Int32) -> Unit
+  fn write_field_stop(Self) -> Unit
+  fn read_bool(Self) -> Bool raise ThriftError
+  fn read_byte(Self) -> Int32 raise ThriftError
+  fn read_i16(Self) -> Int32 raise ThriftError
+  fn read_i32(Self) -> Int32 raise ThriftError
+  fn read_i64(Self) -> Int64 raise ThriftError
+  fn read_double(Self) -> Double raise ThriftError
+  fn read_string(Self) -> String raise ThriftError
+  fn read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+  fn read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
+  fn write_bool(Self, Bool) -> Unit
+  fn write_byte(Self, Int32) -> Unit
+  fn write_i16(Self, Int32) -> Unit
+  fn write_i32(Self, Int32) -> Unit
+  fn write_i64(Self, Int64) -> Unit
+  fn write_double(Self, Double) -> Unit
+  fn write_string(Self, String) -> Unit
+  fn write_list_begin(Self, Int32, Int32) -> Unit
+  fn write_map_begin(Self, Int32, Int32, Int32) -> Unit
+}
+
 pub(open) trait Transport {
   async fn round_trip(Self, Bytes) -> Bytes raise ThriftError
 }

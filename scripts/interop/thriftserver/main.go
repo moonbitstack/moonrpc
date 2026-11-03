@@ -46,6 +46,12 @@ func (processor) Process(ctx context.Context, in, out thrift.TProtocol) (bool, t
 				return false, thrift.WrapTException(err)
 			}
 			values[fid] = v
+		case thrift.DOUBLE:
+			v, err := in.ReadDouble(ctx)
+			if err != nil {
+				return false, thrift.WrapTException(err)
+			}
+			values[fid] = v
 		default:
 			if err := in.Skip(ctx, ftype); err != nil {
 				return false, thrift.WrapTException(err)
@@ -70,6 +76,13 @@ func (processor) Process(ctx context.Context, in, out thrift.TProtocol) (bool, t
 			return false, thrift.WrapTException(err)
 		}
 		if err := out.WriteString(ctx, "pong:"+values[1].(string)); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+	case "double":
+		if err := out.WriteFieldBegin(ctx, "success", thrift.DOUBLE, 0); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteDouble(ctx, 2*values[1].(float64)); err != nil {
 			return false, thrift.WrapTException(err)
 		}
 	case "add":
@@ -106,13 +119,17 @@ func (processor) AddToProcessorMap(string, thrift.TProcessorFunction) {}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9091", "listen address")
+	compact := flag.Bool("compact", false, "speak TCompactProtocol instead of TBinaryProtocol")
 	flag.Parse()
 	socket, err := thrift.NewTServerSocket(*addr)
 	if err != nil {
 		log.Fatalf("socket: %v", err)
 	}
 	transportFactory := thrift.NewTFramedTransportFactoryConf(thrift.NewTTransportFactory(), &thrift.TConfiguration{})
-	protocolFactory := thrift.NewTBinaryProtocolFactoryConf(&thrift.TConfiguration{})
+	var protocolFactory thrift.TProtocolFactory = thrift.NewTBinaryProtocolFactoryConf(&thrift.TConfiguration{})
+	if *compact {
+		protocolFactory = thrift.NewTCompactProtocolFactoryConf(&thrift.TConfiguration{})
+	}
 	server := thrift.NewTSimpleServer4(processor{}, socket, transportFactory, protocolFactory)
 	fmt.Printf("apache thrift greeter listening on %s\n", *addr)
 	if err := server.Serve(); err != nil {

@@ -24,12 +24,15 @@ func expect(ok bool, what string) {
 	fmt.Printf("ok  %s\n", what)
 }
 
-func dial(addr string) (thrift.TTransport, thrift.TProtocol) {
+func dial(addr string, compact bool) (thrift.TTransport, thrift.TProtocol) {
 	conf := &thrift.TConfiguration{}
 	socket := thrift.NewTSocketConf(addr, conf)
 	trans := thrift.NewTFramedTransportConf(socket, conf)
 	if err := trans.Open(); err != nil {
 		fail("open: %v", err)
+	}
+	if compact {
+		return trans, thrift.NewTCompactProtocolConf(trans, conf)
 	}
 	return trans, thrift.NewTBinaryProtocolConf(trans, conf)
 }
@@ -81,6 +84,8 @@ func call(ctx context.Context, trans thrift.TTransport, p thrift.TProtocol, name
 				result, err = p.ReadString(ctx)
 			case thrift.I32:
 				result, err = p.ReadI32(ctx)
+			case thrift.DOUBLE:
+				result, err = p.ReadDouble(ctx)
 			}
 			if err != nil {
 				fail("%s result value: %v", name, err)
@@ -99,8 +104,9 @@ func call(ctx context.Context, trans thrift.TTransport, p thrift.TProtocol, name
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9090", "thrift address")
+	compact := flag.Bool("compact", false, "speak TCompactProtocol instead of TBinaryProtocol")
 	flag.Parse()
-	trans, p := dial(*addr)
+	trans, p := dial(*addr, *compact)
 	defer trans.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -135,6 +141,17 @@ func main() {
 		return p.WriteFieldEnd(ctx)
 	}, thrift.I32)
 	expect(sum == int32(42), "add returns 42")
+
+	scaled := call(ctx, trans, p, "double", 3, func() error {
+		if err := p.WriteFieldBegin(ctx, "x", thrift.DOUBLE, 1); err != nil {
+			return err
+		}
+		if err := p.WriteDouble(ctx, 1.5); err != nil {
+			return err
+		}
+		return p.WriteFieldEnd(ctx)
+	}, thrift.DOUBLE)
+	expect(scaled == float64(3), "double returns 3")
 
 	fmt.Println("apache thrift client interop OK")
 }
