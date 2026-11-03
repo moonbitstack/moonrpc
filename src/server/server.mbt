@@ -190,7 +190,7 @@ pub struct H2Server {
   mut max_recv : Int32
   mut max_send : Int32
   // Where this connection reports call and connection events, once a caller sets one.
-  mut stats : @wire.Handler?
+  mut stats : @wire.StatsHandler?
   // A dynamic table size the peer asked for that no header block has announced yet: HPACK
   // wants the encoder to say the new size before it is used (RFC 7541 §6.3).
   mut size_update : Int32?
@@ -407,7 +407,7 @@ pub fn H2Server::set_encoding(
 /// receives them: begin, each header and payload that moves, and how the call ended.
 pub fn H2Server::set_stats_handler(
   self : H2Server,
-  handler : @wire.Handler,
+  handler : @wire.StatsHandler,
 ) -> Unit {
   self.stats = Some(handler)
 }
