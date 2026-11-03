@@ -1,0 +1,15 @@
+// A gRPC server exposing grpc.channelz.v1.Channelz over its own registry, so a real
+// channelz client (grpcurl, grpcdebug) can list, describe and call it.
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/net",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

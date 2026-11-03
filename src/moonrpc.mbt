@@ -157,3 +157,15 @@ pub using @service {
   bidi,
   bidi_each,
 }
+
+///|
+pub using @channelz {
+  type ChannelzService,
+  top_channels_path,
+  servers_path,
+  server_path,
+  server_sockets_path,
+  channel_path,
+  subchannel_path,
+  socket_path,
+}

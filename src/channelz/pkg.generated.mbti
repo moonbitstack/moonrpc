@@ -1,0 +1,223 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/channelz"
+
+import {
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/service",
+  "moonbitstack/moonrpc/stream",
+}
+
+// Values
+pub fn any_file() -> @proto.FileDescriptor
+
+pub let channel_path : String
+
+pub fn descriptor() -> @proto.FileDescriptor
+
+pub fn duration_file() -> @proto.FileDescriptor
+
+pub let server_path : String
+
+pub let server_sockets_path : String
+
+pub let servers_path : String
+
+pub let socket_path : String
+
+pub let subchannel_path : String
+
+pub fn timestamp_file() -> @proto.FileDescriptor
+
+pub let top_channels_path : String
+
+pub fn well_known_files() -> Array[@proto.FileDescriptor]
+
+pub fn wrappers_file() -> @proto.FileDescriptor
+
+// Errors
+
+// Types and methods
+pub(all) struct Channel {
+  reference : ChannelRef
+  state : Int32
+  target : String
+  calls_started : Int64
+  calls_succeeded : Int64
+  calls_failed : Int64
+  last_call_ms : Int64?
+  channel_refs : Array[ChannelRef]
+  subchannel_refs : Array[SubchannelRef]
+  socket_refs : Array[SocketRef]
+}
+pub fn Channel::empty() -> Self
+
+pub(all) struct ChannelRef {
+  id : Int64
+  name : String
+}
+
+pub(all) struct ChannelzService {
+  registry : @service.Registry
+}
+pub fn ChannelzService::add_to_reflection(Self, @service.ReflectionService) -> Unit
+pub fn[R : @stream.Registrar] ChannelzService::install(Self, R) -> Unit
+pub fn ChannelzService::new(@service.Registry) -> Self
+
+pub(all) struct GetChannelRequest {
+  channel_id : Int64
+}
+pub fn GetChannelRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetChannelRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetChannelRequest
+
+pub(all) struct GetChannelResponse {
+  channel : Channel
+}
+pub fn GetChannelResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetChannelResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetChannelResponse
+
+pub(all) struct GetServerRequest {
+  server_id : Int64
+}
+pub fn GetServerRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetServerRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetServerRequest
+
+pub(all) struct GetServerResponse {
+  server : Server
+}
+pub fn GetServerResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetServerResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetServerResponse
+
+pub(all) struct GetServerSocketsRequest {
+  server_id : Int64
+  start_socket_id : Int64
+  max_results : Int64
+}
+pub fn GetServerSocketsRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetServerSocketsRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetServerSocketsRequest
+
+pub(all) struct GetServerSocketsResponse {
+  socket_ref : Array[SocketRef]
+  is_end : Bool
+}
+pub fn GetServerSocketsResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetServerSocketsResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetServerSocketsResponse
+
+pub(all) struct GetServersRequest {
+  start_server_id : Int64
+  max_results : Int64
+}
+pub fn GetServersRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetServersRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetServersRequest
+
+pub(all) struct GetServersResponse {
+  server : Array[Server]
+  is_end : Bool
+}
+pub fn GetServersResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetServersResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetServersResponse
+
+pub(all) struct GetSocketRequest {
+  socket_id : Int64
+  summary : Bool
+}
+pub fn GetSocketRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetSocketRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetSocketRequest
+
+pub(all) struct GetSocketResponse {
+  socket : Socket
+}
+pub fn GetSocketResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetSocketResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetSocketResponse
+
+pub(all) struct GetSubchannelRequest {
+  subchannel_id : Int64
+}
+pub fn GetSubchannelRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetSubchannelRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetSubchannelRequest
+
+pub(all) struct GetSubchannelResponse {
+  subchannel : Subchannel
+}
+pub fn GetSubchannelResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetSubchannelResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetSubchannelResponse
+
+pub(all) struct GetTopChannelsRequest {
+  start_channel_id : Int64
+  max_results : Int64
+}
+pub fn GetTopChannelsRequest::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetTopChannelsRequest::encode(Self) -> Bytes
+pub impl @proto.Message for GetTopChannelsRequest
+
+pub(all) struct GetTopChannelsResponse {
+  channel : Array[Channel]
+  is_end : Bool
+}
+pub fn GetTopChannelsResponse::decode(Bytes) -> Self raise @proto.PbError
+pub fn GetTopChannelsResponse::encode(Self) -> Bytes
+pub impl @proto.Message for GetTopChannelsResponse
+
+pub(all) struct Server {
+  reference : ServerRef
+  calls_started : Int64
+  calls_succeeded : Int64
+  calls_failed : Int64
+  last_call_ms : Int64?
+  listen_sockets : Array[SocketRef]
+}
+pub fn Server::empty() -> Self
+
+pub(all) struct ServerRef {
+  id : Int64
+  name : String
+}
+
+pub(all) struct Socket {
+  reference : SocketRef
+  address : String
+  streams_started : Int64
+  streams_succeeded : Int64
+  streams_failed : Int64
+  messages_sent : Int64
+  messages_received : Int64
+}
+pub fn Socket::empty() -> Self
+
+pub(all) struct SocketRef {
+  id : Int64
+  name : String
+}
+
+pub(all) struct Subchannel {
+  reference : SubchannelRef
+  state : Int32
+  target : String
+  calls_started : Int64
+  calls_succeeded : Int64
+  calls_failed : Int64
+  channel_refs : Array[ChannelRef]
+  subchannel_refs : Array[SubchannelRef]
+  socket_refs : Array[SocketRef]
+}
+pub fn Subchannel::empty() -> Self
+
+pub(all) struct SubchannelRef {
+  id : Int64
+  name : String
+}
+
+// Type aliases
+
+// Traits

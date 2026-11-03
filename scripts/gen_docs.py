@@ -39,6 +39,11 @@ SECTIONS = [
     ("service", "service", "service — health and reflection",
      "grpc.health.v1.Health (Check and Watch) and grpc.reflection.v1 ServerReflection "
      "(and its v1alpha alias), so grpcurl can list and describe a service."),
+    ("channelz", "channelz", "channelz — the wire service",
+     "The canonical grpc.channelz.v1.Channelz descriptor and its seven RPCs over the "
+     "in-process registry: top channels, servers, server sockets, and one channel, "
+     "subchannel or socket by id, with the oneofs and well-known imports grpcurl and "
+     "grpcdebug expect."),
     ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "

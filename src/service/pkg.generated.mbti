@@ -51,6 +51,7 @@ pub(all) struct ChannelNode {
   mut state : String
   mut messages_sent : Int64
   mut messages_received : Int64
+  sockets : Array[Int32]
 }
 
 pub(all) struct Counters {
@@ -106,11 +107,15 @@ pub fn ReflectionService::new() -> Self
 
 pub(all) struct Registry {
   channels : Map[Int32, ChannelNode]
+  subchannels : Map[Int32, SubchannelNode]
+  sockets : Map[Int32, SocketNode]
   servers : Map[Int32, ServerNode]
   mut next : Int32
 }
 pub fn Registry::add_channel(Self, String) -> Int32
 pub fn Registry::add_server(Self) -> Int32
+pub fn Registry::add_server_socket(Self, Int32, String) -> Int32
+pub fn Registry::add_subchannel(Self, Int32, String) -> Int32
 pub fn Registry::channel(Self, Int32) -> ChannelNode?
 pub fn Registry::channel_handler(Self, Int32) -> @wire.StatsHandler
 pub fn Registry::channels(Self) -> Array[ChannelNode]
@@ -118,10 +123,17 @@ pub fn Registry::new() -> Self
 pub fn Registry::server(Self, Int32) -> ServerNode?
 pub fn Registry::server_handler(Self, Int32) -> @wire.StatsHandler
 pub fn Registry::servers(Self) -> Array[ServerNode]
+pub fn Registry::socket(Self, Int32) -> SocketNode?
+pub fn Registry::socket_handler(Self, Int32) -> @wire.StatsHandler
+pub fn Registry::sockets(Self) -> Array[SocketNode]
+pub fn Registry::sockets_of(Self, Int32) -> Array[SocketNode]
+pub fn Registry::subchannel(Self, Int32) -> SubchannelNode?
+pub fn Registry::subchannels(Self) -> Array[SubchannelNode]
 
 pub(all) struct ServerNode {
   id : Int32
   calls : Counters
+  listen_sockets : Array[Int32]
 }
 
 #derive(Eq)
@@ -135,6 +147,26 @@ pub fn ServingStatus::code(Self) -> Int32
 pub fn ServingStatus::equal(Self, Self) -> Bool
 pub fn ServingStatus::not_equal(Self, Self) -> Bool
 pub fn ServingStatus::of(Int32) -> Self
+
+pub(all) struct SocketNode {
+  id : Int32
+  address : String
+  parent : Int32
+  streams : Counters
+  mut messages_sent : Int64
+  mut messages_received : Int64
+}
+
+pub(all) struct SubchannelNode {
+  id : Int32
+  address : String
+  parent : Int32
+  calls : Counters
+  mut state : String
+  mut messages_sent : Int64
+  mut messages_received : Int64
+  sockets : Array[Int32]
+}
 
 // Type aliases
 

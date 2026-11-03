@@ -333,6 +333,26 @@ chan.set_stats_handler(registry.channel_handler(id))
 let node = registry.channel(id).unwrap()   // node.calls.succeeded, node.messages_sent
 ```
 
+The same registry backs the canonical `grpc.channelz.v1.Channelz` service.
+`ChannelzService` registers its seven RPCs on any server and adds `channelz.proto` and
+the four well-known files it imports to reflection, so `grpcurl` can list, describe and
+call it — oneofs, nested messages and all:
+
+```moonbit
+let registry = @moonrpc.Registry::new()
+let server_id = registry.add_server()
+ignore(registry.add_server_socket(server_id, "127.0.0.1:12000"))
+let channelz = @moonrpc.ChannelzService::new(registry)
+channelz.install(server)
+let reflection = @moonrpc.ReflectionService::new()
+channelz.add_to_reflection(reflection)
+server.register_reflection(reflection)
+```
+
+[`cmd/channelzd`](src/cmd/channelzd/) is the runnable form; CI calls `GetServers`,
+`GetServer`, `GetServerSockets`, `GetSocket`, `GetTopChannels`, `GetChannel` and
+`GetSubchannel` with `grpcurl` and checks the answers.
+
 ## Service configuration and WaitForReady
 
 A channel parses gRPC's service-config JSON and applies each method's `retryPolicy`,

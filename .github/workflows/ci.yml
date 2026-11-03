@@ -396,3 +396,75 @@ jobs:
           "$CLIENT" check 12003 "$TLS/ca.pem" | tee /tmp/go-tls-check.txt
           grep -q 'client and channel agree' /tmp/go-tls-check.txt
           echo "grpc-go server interop OK"
+
+  # The canonical grpc.channelz.v1.Channelz service, through Server Reflection and a
+  # real grpcurl client. This proves the descriptor (the refs' odd field numbers, the
+  # three oneofs, the well-known imports) and the seven RPCs, not just that the bytes
+  # are self-consistent.
+  channelz-interop:
+    name: channelz over grpcurl
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - name: install grpcurl
+        run: go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+
+      - name: build channelzd
+        run: moon build --target native
+
+      - name: grpcurl list, describe and call channelz
+        run: |
+          set -euo pipefail
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          ./_build/native/debug/build/cmd/channelzd/channelzd.exe 12010 & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if grpcurl -plaintext -max-time 2 127.0.0.1:12010 list >/dev/null 2>&1; then
+              echo "server ready after ${i}s"; break
+            fi
+            sleep 1
+          done
+          G="grpcurl -plaintext -max-time 10"
+          echo "== list =="
+          $G 127.0.0.1:12010 list | tee /tmp/cz-list.txt
+          grep -q '^grpc.channelz.v1.Channelz$' /tmp/cz-list.txt
+          echo "== describe service =="
+          $G 127.0.0.1:12010 describe grpc.channelz.v1.Channelz | tee /tmp/cz-svc.txt
+          grep -q 'rpc GetTopChannels' /tmp/cz-svc.txt
+          grep -q 'rpc GetServerSockets' /tmp/cz-svc.txt
+          echo "== describe a oneof =="
+          $G 127.0.0.1:12010 describe grpc.channelz.v1.Address | tee /tmp/cz-addr.txt
+          grep -q 'oneof address' /tmp/cz-addr.txt
+          echo "== servers =="
+          $G -d '{}' 127.0.0.1:12010 grpc.channelz.v1.Channelz/GetServers | tee /tmp/cz-servers.txt
+          grep -q '"server_id": "1"' /tmp/cz-servers.txt
+          grep -q '"calls_started"' /tmp/cz-servers.txt
+          echo "== server sockets =="
+          $G -d '{"serverId":"1"}' 127.0.0.1:12010 grpc.channelz.v1.Channelz/GetServerSockets | tee /tmp/cz-sockets.txt
+          grep -q '"socket_id": "2"' /tmp/cz-sockets.txt
+          echo "== socket =="
+          $G -d '{"socketId":"2","summary":true}' 127.0.0.1:12010 grpc.channelz.v1.Channelz/GetSocket | tee /tmp/cz-socket.txt
+          grep -q '"tcpip_address"' /tmp/cz-socket.txt
+          grep -q '"port": 12010' /tmp/cz-socket.txt
+          echo "== top channels =="
+          $G -d '{}' 127.0.0.1:12010 grpc.channelz.v1.Channelz/GetTopChannels | tee /tmp/cz-top.txt
+          grep -q '"end": true' /tmp/cz-top.txt
+          echo "== a missing channel is NOT_FOUND =="
+          set +e
+          $G -d '{"channelId":"1"}' 127.0.0.1:12010 grpc.channelz.v1.Channelz/GetChannel 2>/tmp/cz-err.txt
+          set -e
+          grep -q 'NotFound' /tmp/cz-err.txt
+          echo "channelz interop OK"

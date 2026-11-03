@@ -1,0 +1,16 @@
+// The gRPC channelz wire service over the in-process registry: the official
+// grpc.channelz.v1 messages, their descriptor, and the seven RPCs.
+import {
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/service",
+  "moonbitstack/moonrpc/wire",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/string",
+}
+
+import {
+  "moonbitstack/moonrpc/client",
+  "moonbitstack/moonrpc/server",
+  "moonbitstack/moonhttp/http2",
+} for "wbtest"
