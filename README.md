@@ -353,11 +353,13 @@ let config = @moonrpc.ServiceConfig::parse("""
 }
 """) catch { _ => @moonrpc.ServiceConfig::empty() }
 let chan = @net.ManagedChannel::connect(targets, config?=config)
+chan.unary(path, request, wait_for_ready~=true)   // per call, as grpc-go's WaitForReady
 ```
 
 With wait-for-ready, a `ManagedChannel` whose backends are all down holds the call and
 redials until one comes up or the call's deadline passes, instead of failing fast with
-`UNAVAILABLE`.
+`UNAVAILABLE`. It is on by default for a method whose config says `waitForReady`, and a
+call can turn it on with `wait_for_ready~` whether or not a config names it.
 
 ## Concurrency on a connection
 

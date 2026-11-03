@@ -317,6 +317,7 @@ pub async fn ManagedChannel::unary(
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
+  wait_for_ready~ : Bool = false,
 ) -> @moonrpc.CallReply {
   self.call(
     {
@@ -325,7 +326,7 @@ pub async fn ManagedChannel::unary(
       metadata,
       timeout_millis,
       retry,
-      wait_for_ready: false,
+      wait_for_ready,
     },
     (ch, invocation) => {
       let request = if invocation.requests.length() > 0 {
@@ -460,6 +461,7 @@ pub async fn ManagedChannel::server_streaming(
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
+  wait_for_ready~ : Bool = false,
 ) -> @moonrpc.CallReply {
   self.call(
     {
@@ -468,7 +470,7 @@ pub async fn ManagedChannel::server_streaming(
       metadata,
       timeout_millis,
       retry,
-      wait_for_ready: false,
+      wait_for_ready,
     },
     (ch, invocation) => {
       ch.stream_once(
@@ -490,9 +492,10 @@ pub async fn ManagedChannel::client_streaming(
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
+  wait_for_ready~ : Bool = false,
 ) -> @moonrpc.CallReply {
   self.call(
-    { path, requests, metadata, timeout_millis, retry, wait_for_ready: false, },
+    { path, requests, metadata, timeout_millis, retry, wait_for_ready, },
     (ch, invocation) => {
       ch.stream_once(
         invocation.path,
@@ -513,9 +516,10 @@ pub async fn ManagedChannel::bidi(
   metadata~ : Array[@header.Header] = [],
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
+  wait_for_ready~ : Bool = false,
 ) -> @moonrpc.CallReply {
   self.call(
-    { path, requests, metadata, timeout_millis, retry, wait_for_ready: false, },
+    { path, requests, metadata, timeout_millis, retry, wait_for_ready, },
     (ch, invocation) => {
       ch.stream_once(
         invocation.path,
