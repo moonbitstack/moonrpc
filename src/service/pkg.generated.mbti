@@ -5,6 +5,7 @@ import {
   "moonbitstack/moonrpc/proto",
   "moonbitstack/moonrpc/server",
   "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/wire",
 }
 
 // Values
@@ -43,6 +44,23 @@ pub fn[I : @proto.Message, O : @proto.Message] unary((@stream.RpcContext, I) -> 
 // Errors
 
 // Types and methods
+pub(all) struct ChannelNode {
+  id : Int32
+  target : String
+  calls : Counters
+  mut state : String
+  mut messages_sent : Int64
+  mut messages_received : Int64
+}
+
+pub(all) struct Counters {
+  mut started : Int64
+  mut succeeded : Int64
+  mut failed : Int64
+}
+pub fn Counters::new() -> Self
+pub fn Counters::record(Self, @wire.RpcStats) -> Unit
+
 pub struct HealthService {
   statuses : Map[String, ServingStatus]
 }
@@ -85,6 +103,26 @@ pub fn ReflectionService::handle(Self, Bytes) -> Bytes
 pub fn ReflectionService::handler(Self) -> @stream.Handler
 pub fn ReflectionService::install(Self, @server.H2Server) -> Unit
 pub fn ReflectionService::new() -> Self
+
+pub(all) struct Registry {
+  channels : Map[Int32, ChannelNode]
+  servers : Map[Int32, ServerNode]
+  mut next : Int32
+}
+pub fn Registry::add_channel(Self, String) -> Int32
+pub fn Registry::add_server(Self) -> Int32
+pub fn Registry::channel(Self, Int32) -> ChannelNode?
+pub fn Registry::channel_handler(Self, Int32) -> @wire.StatsHandler
+pub fn Registry::channels(Self) -> Array[ChannelNode]
+pub fn Registry::new() -> Self
+pub fn Registry::server(Self, Int32) -> ServerNode?
+pub fn Registry::server_handler(Self, Int32) -> @wire.StatsHandler
+pub fn Registry::servers(Self) -> Array[ServerNode]
+
+pub(all) struct ServerNode {
+  id : Int32
+  calls : Counters
+}
 
 #derive(Eq)
 pub(all) enum ServingStatus {
