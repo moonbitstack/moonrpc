@@ -1,0 +1,7 @@
+// The guide's shared driver: register a service on a pure server, call it, and
+// hand back the reply message. Not part of any guide snippet; it keeps the
+// three style variants down to the lines that differ.
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonhttp/http2",
+}

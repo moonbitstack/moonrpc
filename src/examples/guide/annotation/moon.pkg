@@ -1,0 +1,9 @@
+// The guide's annotation variant: the same greeter service written with `#rpc`.
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/examples/guide/harness",
+}
+
+pkgtype(kind: "executable")
+
+formatter(ignore: [ "service.g.mbt" ])

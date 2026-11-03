@@ -12,7 +12,7 @@
 
 > Moved on mooncakes from `Lfan-ke/moonrpc` to `moonbitstack/moonrpc`.
 
-`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing. The client and server engines are pure functions over frames and run on every backend; only the socket driver in `net` is native.
+`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing, a stats observable and a channelz registry, and service-config driven retries with WaitForReady. The client and server engines are pure functions over frames and run on every backend; only the socket driver in `net` is native.
 
 ```moonbit
 #rpc.message
@@ -134,7 +134,7 @@ against protoc and Python's protobuf runtime (`scripts/gen_protoc_vectors.py`).
 Wire the generator into the build once. In `moon.mod`:
 
 ```
-rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.8 -C \"$mod_dir\" \"$input\" -o \"$output\"")
+rule(name: "rpc", command: "moonx moonbitstack/moonrpc/cmd/rpc@0.21.10 -C \"$mod_dir\" \"$input\" -o \"$output\"")
 ```
 
 and in the `moon.pkg` of the package holding the declarations:
@@ -185,10 +185,10 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 | `moonrpc/wire` | message framing, `Status`, `Method`, metadata rules, keepalive, HTTP/2 defaults | moonhttp, moonvar, moonbase |
 | `moonrpc/proto` | `PbWriter`／`PbReader`, `Message`, the descriptor model and its codec | moonvar |
 | `moonrpc/stream` | the stream state machine, `RpcContext`, the four handler kinds, `Registrar` | moonhttp |
-| `moonrpc/balance` | retry, hedging and throttling after gRPC A6, connectivity states, balancers, DNS, the channel pool | `wire`, moonhttp, moonward, moondate, moonvar |
+| `moonrpc/balance` | retry, hedging and throttling after gRPC A6, the service config, connectivity states, balancers, DNS, the channel pool | `wire`, moonhttp, moonward, moondate, moonvar, json |
 | `moonrpc/client` | `H2Client`, `CallReply` | `wire`, moonhttp, moonzip |
 | `moonrpc/server` | `H2Server`, interceptors | `wire`, `proto`, `stream`, moonhttp, moonzip, moonbase |
-| `moonrpc/service` | health checking, server reflection, and `unary`／`server_streaming`／`client_streaming` over message types | `server`, `stream`, `proto`, `wire`, moonvar |
+| `moonrpc/service` | health checking, server reflection, a channelz registry, and `unary`／`server_streaming`／`client_streaming` over message types | `server`, `stream`, `proto`, `wire`, moonvar |
 | `moonrpc/cmd/rpc` | the generator behind the `#rpc` annotations | moonast |
 | `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP and TLS (native) | the root, moonnet, moontls, moonbitlang/async |
 
@@ -288,6 +288,76 @@ let chan = @net.Channel::connect("127.0.0.1", 12000, encoding=@moonrpc.Encoding:
 ```
 
 A server only compresses for a caller whose `grpc-accept-encoding` lists the encoding; a caller that accepts nothing but `identity` gets identity, because sending a body the far end cannot read is not compression. A message whose flag is set under `identity` — compressed and not compressed at once — is refused on both ends, and a body that will not inflate fails the call rather than reaching the handler as bytes. `wire.Encoding` carries the codecs and the list this library advertises.
+
+## Interoperability
+
+A gRPC implementation is only gRPC if a foreign one agrees on the bytes. CI runs the wire
+against independent peers in plaintext and over TLS:
+
+| Partner | Direction | Calls | Compression | Interceptors | TLS | Result |
+|:--|:--|:--|:--|:--|:--|:--|
+| `grpcurl` (grpc-go) | client | reflection `list`／`describe`, all four | `gzip` | — | yes | pass |
+| grpc-go | client | all four | `gzip` | client chain | yes | pass |
+| grpc-go | server | all four, through the generated `GreeterClient` | identity | server chain | yes | pass |
+
+`cmd/greetd` is the server the first two call; the third runs the same generated client
+against a grpc-go server and requires the two answers to match byte for byte. The
+grpc-go side lives in `scripts/interop`, generated from the same `greet.proto` shape the
+annotations declare.
+
+## Stats and channelz
+
+Both engines report each RPC's life to a `StatsHandler` — begin, every header and payload
+that moves, and the status it ended with — and the same event order on each side:
+
+```moonbit
+let handler = @moonrpc.StatsHandler::new(rpc=event => {
+  match event {
+    @wire.RpcStats::Begin(path~, name~) => println("begin {path} {name}")
+    @wire.RpcStats::End(status~, message~) => println("end {status} {message}")
+    _ => ()
+  }
+})
+chan.set_stats_handler(handler)      // or server.set_stats_handler(handler)
+```
+
+A native `Channel`, `ManagedChannel` and `GrpcServer` forward the handler to every
+connection. A `Registry` turns those events into channelz-style counters: calls started,
+succeeded and failed, messages each way, and a connectivity state that follows the
+connection events.
+
+```moonbit
+let registry = @moonrpc.Registry::new()
+let id = registry.add_channel("127.0.0.1:12000")
+chan.set_stats_handler(registry.channel_handler(id))
+let node = registry.channel(id).unwrap()   // node.calls.succeeded, node.messages_sent
+```
+
+## Service configuration and WaitForReady
+
+A channel parses gRPC's service-config JSON and applies each method's `retryPolicy`,
+`timeout` and `waitForReady`, leaving a setting the caller gave explicitly alone:
+
+```moonbit
+let config = @moonrpc.ServiceConfig::parse("""
+{
+  "methodConfig": [{
+    "name": [{"service": "greet.Greeter", "method": "SayHello"}],
+    "timeout": "1.5s",
+    "waitForReady": true,
+    "retryPolicy": {
+      "maxAttempts": 4, "initialBackoff": "0.1s", "maxBackoff": "1s",
+      "backoffMultiplier": 2, "retryableStatusCodes": ["UNAVAILABLE"]
+    }
+  }]
+}
+""") catch { _ => @moonrpc.ServiceConfig::empty() }
+let chan = @net.ManagedChannel::connect(targets, config?=config)
+```
+
+With wait-for-ready, a `ManagedChannel` whose backends are all down holds the call and
+redials until one comes up or the call's deadline passes, instead of failing fast with
+`UNAVAILABLE`.
 
 ## Concurrency on a connection
 

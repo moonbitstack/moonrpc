@@ -43,3 +43,7 @@ moon run src/examples/07-unary-call
 
 Everything here is pure and runs on every backend (`moon check --target all`); the native
 `@net.Channel` and `@net.GrpcServer` drive these same codecs over a real socket.
+
+The guide's three writing-style variants live in [`guide/`](guide/): `annotation`,
+`functional` and `class`, each runnable and answering the same request the same way.
+`scripts/gen_guide.py` builds the guide page from them and checks it in CI.

@@ -1,0 +1,7 @@
+// The guide's functional variant: handlers registered as functions on a server.
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/examples/guide/harness",
+}
+
+pkgtype(kind: "executable")

@@ -351,3 +351,18 @@ footer a{color:var(--struct)}
   .frame-row .es{grid-column:1/-1}
   .field{grid-template-columns:1fr}
 }
+
+/* Guide: one writing style at a time. The bar sits in the page header; the
+   variant group shows the block whose data-style matches the page's choice. */
+.style-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin-top:1.1rem;font-size:.82rem}
+.style-bar .k{color:var(--faint);text-transform:uppercase;letter-spacing:.14em;margin-right:.35rem}
+.style-bar button{font:inherit;color:var(--ink-2);background:transparent;border:1px solid var(--line-strong);border-radius:0;padding:.28rem .62rem;cursor:pointer}
+.style-bar button:hover{border-color:var(--struct)}
+.style-bar button.on{background:var(--btn-bg);color:var(--btn-fg);border-color:var(--btn-bg)}
+.styles .variant{display:none}
+.styles[data-active="annotation"] .variant[data-style="annotation"],
+.styles[data-active="functional"] .variant[data-style="functional"],
+.styles[data-active="class"] .variant[data-style="class"]{display:block}
+.styles .vhead{font-size:.78rem;text-transform:uppercase;letter-spacing:.14em;color:var(--faint);margin:.2rem 0 .5rem}
+.styles pre.out{margin-top:.6rem;border-left:3px solid var(--ok)}
+@media (width <= 860px){.style-bar{gap:.3rem}.style-bar button{padding:.24rem .5rem}}

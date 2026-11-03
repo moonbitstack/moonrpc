@@ -1,0 +1,7 @@
+// The guide's class variant: a service as a struct with methods and a register.
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/examples/guide/harness",
+}
+
+pkgtype(kind: "executable")

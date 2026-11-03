@@ -45,6 +45,9 @@ jobs:
       - name: regenerate the API reference
         run: python3 scripts/gen_docs.py
 
+      - name: regenerate the guide's writing-style variants
+        run: python3 scripts/gen_guide.py
+
       - name: docs are up to date
         run: git diff --exit-code
 

@@ -85,4 +85,27 @@
       cell("status", "current");
     foot.insertBefore(el, foot.firstChild);
   })();
+
+  // --- guide: one writing style at a time, remembered across pages ---
+  function applyStyle(style) {
+    var groups = document.querySelectorAll("[data-style-group]");
+    for (var i = 0; i < groups.length; i++) {
+      groups[i].setAttribute("data-active", style);
+    }
+    var buttons = document.querySelectorAll("[data-style-bar] button[data-style]");
+    for (var j = 0; j < buttons.length; j++) {
+      buttons[j].classList.toggle("on", buttons[j].getAttribute("data-style") === style);
+    }
+  }
+  var style;
+  try { style = localStorage.getItem("moonrpc-style"); } catch (e) {}
+  if (style !== "functional" && style !== "class") style = "annotation";
+  applyStyle(style);
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-style-bar] button[data-style]");
+    if (!b) return;
+    var s = b.getAttribute("data-style");
+    applyStyle(s);
+    try { localStorage.setItem("moonrpc-style", s); } catch (e) {}
+  });
 })();

@@ -49,6 +49,12 @@
     <a class="btn" href="showcase.html">Try it live</a>
     <a class="btn ghost" href="api.html">Full API</a>
   </p>
+  <div class="style-bar" data-style-bar>
+    <span class="k">writing style</span>
+    <button type="button" data-style="annotation" class="on">Annotation</button>
+    <button type="button" data-style="functional">Functional</button>
+    <button type="button" data-style="class">Class</button>
+  </div>
 </header>
 
 <section class="section wrap">
@@ -282,6 +288,161 @@ greeter.register(server)
 let chan = @net.Channel::connect("127.0.0.1", 12000, encoding=@moonrpc.Encoding::Gzip)
 let reply = chan.unary("/greet.Greeter/SayHello", request)</code></pre>
   <p class="note"><span class="src"></span> A message whose compression flag is set under <code>identity</code> — compressed and not compressed at once — is refused rather than read as plaintext, and a body that will not inflate fails the call with <code>INTERNAL</code>.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">12 · Three ways to write the same service</h2>
+  <p class="lede">moonrpc accepts the same service three ways. The annotations come first: they generate the protobuf codec, the registration and the descriptor reflection serves. The functional form registers handlers directly on the server; the class form keeps state on a struct and registers its methods. All three answer the same request with the same bytes.</p>
+  <p class="note"><span class="src"></span> Switch the style with the bar at the top of the page; the choice is remembered. Each block below is generated from <code>src/examples/guide/</code>, and its output is recorded by running the variant.</p>
+  <!-- BEGIN guide-styles -->
+<div class="styles" data-style-group data-active="annotation">
+<div class="variant" data-style="annotation"><div class="vhead">Annotation</div><pre><code>///|
+/// The guide&#x27;s annotation variant: a message, a service and its method, all
+/// declared with `#rpc`. `cmd/rpc` writes `service.g.mbt` from this file.
+#rpc.message
+pub struct HelloRequest {
+  name : String
+}
+
+///|
+#rpc.message
+pub struct HelloReply {
+  message : String
+}
+
+///|
+#rpc.service(name=&quot;greet.Greeter&quot;)
+pub struct Greeter {}
+
+///|
+#rpc.method
+fn Greeter::say_hello(self : Greeter, req : HelloRequest) -&gt; HelloReply {
+  ignore(self)
+  { message: &quot;Hello, &quot; + req.name, }
+}</code></pre><pre class="out"><code>Hello, Ada</code></pre></div>
+<div class="variant" data-style="functional"><div class="vhead">Functional</div><pre><code>///|
+/// Run the same greeter registered as functions on the server.
+///
+///     moon run src/examples/guide/functional
+fn encode_request(name : String) -&gt; Bytes {
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, name)
+  w.to_bytes()
+}
+
+///|
+fn decode_name(msg : Bytes) -&gt; String {
+  try {
+    let r = @moonrpc.PbReader::new(msg)
+    let _ = r.read_tag()
+    r.read_string()
+  } catch {
+    _ =&gt; &quot;&quot;
+  }
+}
+
+///|
+fn encode_reply(message : String) -&gt; Bytes {
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, message)
+  w.to_bytes()
+}
+
+///|
+fn decode_reply(msg : Bytes) -&gt; String {
+  try {
+    let r = @moonrpc.PbReader::new(msg)
+    let _ = r.read_tag()
+    r.read_string()
+  } catch {
+    _ =&gt; &quot;&quot;
+  }
+}
+
+///|
+fn main {
+  let reply = @harness.round_trip(
+    server =&gt; {
+      server.register_unary(&quot;/greet.Greeter/SayHello&quot;, (_ctx, req) =&gt; {
+        encode_reply(&quot;Hello, &quot; + decode_name(req))
+      })
+    },
+    &quot;/greet.Greeter/SayHello&quot;,
+    encode_request(&quot;Ada&quot;),
+  ) catch {
+    _ =&gt; abort(&quot;the call failed&quot;)
+  }
+  println(decode_reply(reply))
+}</code></pre><pre class="out"><code>Hello, Ada</code></pre></div>
+<div class="variant" data-style="class"><div class="vhead">Class</div><pre><code>///|
+/// Run the same greeter written as a struct with methods.
+///
+///     moon run src/examples/guide/class
+struct Greeter {
+  prefix : String
+}
+
+///|
+fn encode_request(name : String) -&gt; Bytes {
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, name)
+  w.to_bytes()
+}
+
+///|
+fn decode_name(msg : Bytes) -&gt; String {
+  try {
+    let r = @moonrpc.PbReader::new(msg)
+    let _ = r.read_tag()
+    r.read_string()
+  } catch {
+    _ =&gt; &quot;&quot;
+  }
+}
+
+///|
+fn encode_reply(message : String) -&gt; Bytes {
+  let w = @moonrpc.PbWriter::new()
+  w.string_(1, message)
+  w.to_bytes()
+}
+
+///|
+fn decode_reply(msg : Bytes) -&gt; String {
+  try {
+    let r = @moonrpc.PbReader::new(msg)
+    let _ = r.read_tag()
+    r.read_string()
+  } catch {
+    _ =&gt; &quot;&quot;
+  }
+}
+
+///|
+fn Greeter::say_hello(self : Greeter, req : Bytes) -&gt; Bytes {
+  encode_reply(self.prefix + &quot;, &quot; + decode_name(req))
+}
+
+///|
+fn Greeter::register(self : Greeter, server : @moonrpc.H2Server) -&gt; Unit {
+  server.register_unary(&quot;/greet.Greeter/SayHello&quot;, (_ctx, req) =&gt; {
+    self.say_hello(req)
+  })
+}
+
+///|
+fn main {
+  let reply = @harness.round_trip(
+    server =&gt; Greeter::{ prefix: &quot;Hello&quot;, }.register(server),
+    &quot;/greet.Greeter/SayHello&quot;,
+    encode_request(&quot;Ada&quot;),
+  ) catch {
+    _ =&gt; abort(&quot;the call failed&quot;)
+  }
+  println(decode_reply(reply))
+}</code></pre><pre class="out"><code>Hello, Ada</code></pre></div>
+</div>
+<!-- END guide-styles -->
 </section>
 
 <section class="section wrap">
