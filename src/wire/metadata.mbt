@@ -31,9 +31,12 @@ pub fn metadata_value_from_wire(name : Bytes, value : Bytes) -> Bytes {
 ///|
 /// Encode a metadata value for the wire: base64 for a `-bin` key, verbatim
 /// otherwise.
+///
+/// The base64 form carries no `=` padding, as gRPC's own clients send it; the
+/// receiver accepts padded or unpadded alike (§6.1 of the gRPC HTTP/2 spec).
 pub fn metadata_value_to_wire(name : Bytes, value : Bytes) -> Bytes {
   if is_binary_metadata(name) {
-    @base64.encode_bytes(value[:])
+    @base64.encode_bytes(value[:], padding=false)
   } else {
     value
   }

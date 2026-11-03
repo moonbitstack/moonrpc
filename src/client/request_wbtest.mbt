@@ -45,6 +45,24 @@ test "client: a caller's own user-agent replaces the default" {
 }
 
 ///|
+test "client: a never-indexed header decodes and stays out of the dynamic table" {
+  // §6.2.3 never indexed: 4-bit prefix 0x10, a literal name, then the value.
+  let block = Buffer()
+  block.write_byte(b'\x10')
+  block.write_bytes(@hpack.string(b"x-never", huffman=false))
+  block.write_bytes(@hpack.string(b"v", huffman=false))
+  let dec = @hpack.Decoder::new()
+  let headers = dec.decode(block.to_bytes()) catch {
+    _ => abort("bad header block")
+  }
+  assert_eq(headers.length(), 1)
+  assert_eq(headers[0].name, b"x-never")
+  assert_eq(headers[0].value, b"v")
+  // A never-indexed literal must not grow either side's dynamic table (§6.2.3).
+  assert_eq(dec.table.count(), 0)
+}
+
+///|
 test "client: a table size the peer asks for is announced before the next block" {
   let client = H2Client::new()
   let (_id, first) = client.unary("/echo.Echo/Say", b"x")

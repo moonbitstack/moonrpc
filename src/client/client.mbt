@@ -241,7 +241,7 @@ pub fn H2Client::new() -> H2Client {
 ///|
 /// What this client calls itself in `user-agent` unless told otherwise: the library and the
 /// version this source is, which is what a server's access log wants to know.
-pub let user_agent : String = "moonrpc/0.21.8"
+pub let user_agent : String = "moonrpc/0.21.10"
 
 ///|
 /// The client's opening frames (RFC 7540 §3.5): a SETTINGS frame disabling server

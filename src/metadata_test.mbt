@@ -5,8 +5,20 @@
 test "a -bin key travels base64 encoded and comes back whole" {
   let raw = b"\x00\x01\x02\xff\xfe"
   let wire = @moonrpc.metadata_value_to_wire(b"x-bin", raw)
-  assert_eq(wire, b"AAEC//4=")
+  assert_eq(wire, b"AAEC//4")
   assert_eq(@moonrpc.metadata_value_from_wire(b"x-bin", wire), raw)
+}
+
+///|
+test "a -bin value goes out without base64 padding" {
+  // Lengths that would need one or two `=` are all spelled short, as gRPC sends them.
+  for raw in [b"\x00\x01\x02\xff\xfe", b"a", b"ab", b"abc", b"abcd"] {
+    let wire = @moonrpc.metadata_value_to_wire(b"x-bin", raw)
+    for i = 0; i < wire.length(); i = i + 1 {
+      assert_true(wire[i] != b'=')
+    }
+    assert_eq(@moonrpc.metadata_value_from_wire(b"x-bin", wire), raw)
+  }
 }
 
 ///|
