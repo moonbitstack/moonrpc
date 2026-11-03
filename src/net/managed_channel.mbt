@@ -26,7 +26,9 @@ pub struct ManagedChannel {
   // so a backend that moved or a replica that appeared is picked up.
   resolve : (() -> Array[(String, Int32)])?
   // Where every sub-connection reports its calls, applied to each as it dials.
-  mut stats : @wire.Handler?
+  mut stats : @wire.StatsHandler?
+  // The service config whose per-method settings every call falls back on.
+  config : @moonrpc.ServiceConfig?
 }
 
 ///|
@@ -43,7 +45,7 @@ pub fn ManagedChannel::add_interceptor(
 /// Report every call on every sub-connection to `handler`, now and after any redial.
 pub fn ManagedChannel::set_stats_handler(
   self : ManagedChannel,
-  handler : @wire.Handler,
+  handler : @wire.StatsHandler,
 ) -> Unit {
   self.stats = Some(handler)
   for _addr, ch in self.channels {
@@ -84,6 +86,7 @@ pub async fn ManagedChannel::connect(
   encoding? : @moonrpc.Encoding,
   backoff? : @moonrpc.Backoff,
   resolve? : () -> Array[(String, Int32)],
+  config? : @moonrpc.ServiceConfig,
 ) -> ManagedChannel {
   let keys = targets.map(t => t.0 + ":" + t.1.to_string())
   let pool = @moonrpc.ConnectionPool::new(keys, policy~)
@@ -114,6 +117,7 @@ pub async fn ManagedChannel::connect(
     ),
     resolve,
     stats: None,
+    config,
   }
   if channels.length() == 0 {
     // Nothing came up at dial time: the first call waits out one backoff rather than
@@ -254,6 +258,7 @@ async fn ManagedChannel::call(
   send : async (Channel, @client.Invocation) -> @moonrpc.CallReply,
 ) -> @moonrpc.CallReply {
   let chain = @client.intercepted(self.interceptors, invocation => {
+    let invocation = @client.resolve(invocation, self.config)
     let attempts = @moonrpc.Attempts::new(
       retry?=invocation.retry,
       throttle?=self.throttle,
@@ -268,10 +273,24 @@ async fn ManagedChannel::call(
         // backend.
         let picked = match self.pick() {
           Some(_) as found => found
-          None => {
-            self.redial()
-            self.pick()
-          }
+          None =>
+            if invocation.wait_for_ready {
+              // WaitForReady: hold the call until a backend comes up, redialing, rather
+              // than failing fast with UNAVAILABLE. A deadline, when the call has one,
+              // still ends the wait from the outside.
+              let mut found : (String, Channel)? = None
+              while found is None {
+                self.redial()
+                match self.pick() {
+                  Some(_) as f => found = f
+                  None => @async.sleep(20)
+                }
+              }
+              found
+            } else {
+              self.redial()
+              self.pick()
+            }
         }
         match picked {
           Some((address, ch)) =>
@@ -299,22 +318,29 @@ pub async fn ManagedChannel::unary(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests: [request], metadata, timeout_millis, retry, }, (
-    ch,
-    invocation,
-  ) => {
-    let request = if invocation.requests.length() > 0 {
-      invocation.requests[0]
-    } else {
-      b""
-    }
-    ch.unary_once(
-      invocation.path,
-      request,
-      invocation.metadata,
-      invocation.timeout_millis,
-    )
-  })
+  self.call(
+    {
+      path,
+      requests: [request],
+      metadata,
+      timeout_millis,
+      retry,
+      wait_for_ready: false,
+    },
+    (ch, invocation) => {
+      let request = if invocation.requests.length() > 0 {
+        invocation.requests[0]
+      } else {
+        b""
+      }
+      ch.unary_once(
+        invocation.path,
+        request,
+        invocation.metadata,
+        invocation.timeout_millis,
+      )
+    },
+  )
 }
 
 ///|
@@ -435,17 +461,24 @@ pub async fn ManagedChannel::server_streaming(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests: [request], metadata, timeout_millis, retry, }, (
-    ch,
-    invocation,
-  ) => {
-    ch.stream_once(
-      invocation.path,
-      invocation.requests,
-      invocation.metadata,
-      invocation.timeout_millis,
-    )
-  })
+  self.call(
+    {
+      path,
+      requests: [request],
+      metadata,
+      timeout_millis,
+      retry,
+      wait_for_ready: false,
+    },
+    (ch, invocation) => {
+      ch.stream_once(
+        invocation.path,
+        invocation.requests,
+        invocation.metadata,
+        invocation.timeout_millis,
+      )
+    },
+  )
 }
 
 ///|
@@ -458,17 +491,17 @@ pub async fn ManagedChannel::client_streaming(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests, metadata, timeout_millis, retry, }, (
-    ch,
-    invocation,
-  ) => {
-    ch.stream_once(
-      invocation.path,
-      invocation.requests,
-      invocation.metadata,
-      invocation.timeout_millis,
-    )
-  })
+  self.call(
+    { path, requests, metadata, timeout_millis, retry, wait_for_ready: false, },
+    (ch, invocation) => {
+      ch.stream_once(
+        invocation.path,
+        invocation.requests,
+        invocation.metadata,
+        invocation.timeout_millis,
+      )
+    },
+  )
 }
 
 ///|
@@ -481,17 +514,17 @@ pub async fn ManagedChannel::bidi(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests, metadata, timeout_millis, retry, }, (
-    ch,
-    invocation,
-  ) => {
-    ch.stream_once(
-      invocation.path,
-      invocation.requests,
-      invocation.metadata,
-      invocation.timeout_millis,
-    )
-  })
+  self.call(
+    { path, requests, metadata, timeout_millis, retry, wait_for_ready: false, },
+    (ch, invocation) => {
+      ch.stream_once(
+        invocation.path,
+        invocation.requests,
+        invocation.metadata,
+        invocation.timeout_millis,
+      )
+    },
+  )
 }
 
 ///|

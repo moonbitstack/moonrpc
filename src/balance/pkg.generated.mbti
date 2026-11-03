@@ -3,6 +3,7 @@ package "moonbitstack/moonrpc/balance"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "moonbitstack/moondate",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonrpc/wire",
@@ -124,6 +125,16 @@ pub fn LoadBalancer::new(Array[String], policy? : LbPolicy) -> Self
 pub fn LoadBalancer::pick(Self) -> String?
 pub fn LoadBalancer::size(Self) -> Int32
 
+pub(all) struct MethodConfig {
+  service : String?
+  name : String?
+  retry : Retry?
+  hedging : Hedging?
+  timeout : @moondate.Span?
+  wait_for_ready : Bool?
+}
+pub fn MethodConfig::timeout_millis(Self) -> Int32?
+
 #derive(Eq, @debug.Debug)
 pub(all) enum Pushback {
   Absent
@@ -155,6 +166,15 @@ pub fn Retry::equal(Self, Self) -> Bool
 pub fn Retry::new(attempts? : Int32, base? : @moondate.Span, cap? : @moondate.Span, factor? : Double, codes? : Array[@wire.Status]) -> Self
 pub fn Retry::not_equal(Self, Self) -> Bool
 pub fn Retry::to_repr(Self) -> @debug.Repr
+
+pub(all) struct ServiceConfig {
+  methods : Array[MethodConfig]
+  load_balancing : LbPolicy?
+  throttling : Throttling?
+}
+pub fn ServiceConfig::empty() -> Self
+pub fn ServiceConfig::for_method(Self, String) -> MethodConfig?
+pub fn ServiceConfig::parse(String) -> Self raise @json.ParseError
 
 pub struct SubConn {
   address : String

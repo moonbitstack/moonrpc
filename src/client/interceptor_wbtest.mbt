@@ -30,6 +30,7 @@ async test "client interceptors: an empty chain is the call unchanged" {
     metadata: [],
     timeout_millis: None,
     retry: None,
+    wait_for_ready: false,
   })
   assert_eq(reply.grpc_status, 0)
   assert_eq(reply.messages, [b"hi"])
@@ -62,6 +63,7 @@ async test "client interceptors: the first registered is the outermost" {
       metadata: [],
       timeout_millis: None,
       retry: None,
+      wait_for_ready: false,
     }),
   )
   assert_eq(order, ["outer-in", "inner-in", "inner-out", "outer-out"])
@@ -88,6 +90,7 @@ async test "client interceptors: the invocation can be changed on the way in" {
       metadata: [],
       timeout_millis: None,
       retry: None,
+      wait_for_ready: false,
     }),
   )
   assert_eq(seen, ["Bearer t", "250"])
@@ -108,6 +111,7 @@ async test "client interceptors: an interceptor may answer without calling next"
     metadata: [],
     timeout_millis: None,
     retry: None,
+    wait_for_ready: false,
   })
   assert_eq(reply.grpc_status, 16)
   assert_eq(reply.messages, [b"denied"])
@@ -130,6 +134,7 @@ async test "client interceptors: the reply can be changed on the way back" {
     metadata: [],
     timeout_millis: None,
     retry: None,
+    wait_for_ready: false,
   })
   assert_eq(reply.messages, [b"abab"])
 }

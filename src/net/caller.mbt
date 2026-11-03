@@ -48,7 +48,14 @@ pub impl @moonrpc.Caller for MuxChannel with fn invoke(
       "a MuxChannel does not retry; call through a Channel or a ManagedChannel",
     )
   }
-  self.call({ path, requests, metadata, timeout_millis, retry, })
+  self.call({
+    path,
+    requests,
+    metadata,
+    timeout_millis,
+    retry,
+    wait_for_ready: false,
+  })
 }
 
 ///|

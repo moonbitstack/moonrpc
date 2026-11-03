@@ -130,6 +130,8 @@ pub using @client {type CallReply}
 
 pub using @client {type ClientCall}
 
+pub using @wire {type ConnStats}
+
 pub using @balance {type ConnectionPool}
 
 pub using @balance {type ConnectivityState}
@@ -176,6 +178,8 @@ pub using @proto {type MessageDescriptor}
 
 pub using @wire {type Method}
 
+pub using @balance {type MethodConfig}
+
 pub using @proto {type MethodDescriptor}
 
 pub using @proto {type PbError}
@@ -200,11 +204,17 @@ pub using @balance {type Retry}
 
 pub using @stream {type RpcContext}
 
+pub using @wire {type RpcStats}
+
+pub using @balance {type ServiceConfig}
+
 pub using @proto {type ServiceDescriptor}
 
 pub using @service {type ServingStatus}
 
 pub using @server {type SrvStream}
+
+pub using @wire {type StatsHandler}
 
 pub using @wire {type Status}
 

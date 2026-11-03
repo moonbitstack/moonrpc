@@ -18,6 +18,8 @@ pub fn intercepted(Array[async (Invocation, async (Invocation) -> CallReply) -> 
 
 pub fn percent_decode(Bytes) -> String
 
+pub fn resolve(Invocation, @balance.ServiceConfig?) -> Invocation
+
 pub let user_agent : String
 
 // Errors
@@ -87,7 +89,7 @@ pub struct H2Client {
   mut user_agent : Bytes
   mut max_recv : Int32
   mut max_send : Int32
-  mut stats : @wire.Handler?
+  mut stats : @wire.StatsHandler?
   mut size_update : Int32?
   orphan_blocks : Map[Int32, @buffer.Buffer]
 }
@@ -105,7 +107,7 @@ pub fn H2Client::reply(Self, Int32) -> CallReply
 pub fn H2Client::send(Self, Int32, Bytes, end? : Bool) -> Array[@http2.Frame]
 pub fn H2Client::set_encoding(Self, @wire.Encoding) -> Unit
 pub fn H2Client::set_max_message_size(Self, recv? : Int32, send? : Int32) -> Unit
-pub fn H2Client::set_stats_handler(Self, @wire.Handler) -> Unit
+pub fn H2Client::set_stats_handler(Self, @wire.StatsHandler) -> Unit
 pub fn H2Client::set_user_agent(Self, String) -> Unit
 pub fn H2Client::take_messages(Self, Int32) -> Array[Bytes]
 pub fn H2Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], authority? : String, timeout_millis? : Int32) -> (Int32, Array[@http2.Frame])
@@ -117,6 +119,7 @@ pub(all) struct Invocation {
   metadata : Array[@header.Header]
   timeout_millis : Int32?
   retry : @balance.Retry?
+  wait_for_ready : Bool
 }
 
 // Type aliases

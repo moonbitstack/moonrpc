@@ -8,4 +8,5 @@ import {
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonvar/fixed",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/json",
 }

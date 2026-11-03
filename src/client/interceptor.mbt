@@ -14,6 +14,8 @@ pub(all) struct Invocation {
   metadata : Array[@header.Header]
   timeout_millis : Int32?
   retry : @balance.Retry?
+  // Whether a call waits for a backend to become ready instead of failing fast.
+  wait_for_ready : Bool
 }
 
 ///|

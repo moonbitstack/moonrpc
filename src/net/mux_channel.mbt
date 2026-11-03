@@ -173,6 +173,7 @@ pub async fn MuxChannel::unary(
     metadata,
     timeout_millis,
     retry: None,
+    wait_for_ready: false,
   })
 }
 

@@ -163,6 +163,38 @@ pub fn Status::name(self : Status) -> String {
 }
 
 ///|
+/// The status an uppercase name stands for (`"UNAVAILABLE"`), or `None` for a name the
+/// table does not have — the inverse of [`Status::name`], for a service config's
+/// `retryableStatusCodes`.
+pub fn Status::from_name(name : String) -> Status? {
+  for
+    s in [
+      Ok,
+      Cancelled,
+      Unknown,
+      InvalidArgument,
+      DeadlineExceeded,
+      NotFound,
+      AlreadyExists,
+      PermissionDenied,
+      ResourceExhausted,
+      FailedPrecondition,
+      Aborted,
+      OutOfRange,
+      Unimplemented,
+      Internal,
+      Unavailable,
+      DataLoss,
+      Unauthenticated,
+    ] {
+    if s.name() == name {
+      return Some(s)
+    }
+  }
+  None
+}
+
+///|
 /// The status a call ends with when the peer resets its stream instead of sending
 /// trailers, from the RST_STREAM error code (gRPC PROTOCOL-HTTP2, "HTTP2 Error Code →
 /// Status"). A refused stream was never processed, so it is UNAVAILABLE and safe to

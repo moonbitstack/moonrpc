@@ -23,6 +23,9 @@ pub struct Channel {
   // The client interceptor chain every call on this channel goes through, outermost
   // first; empty unless a caller added one.
   interceptors : Array[@client.Interceptor]
+  // The service config whose per-method retry, timeout and wait-for-ready every call
+  // falls back on, when the caller set none.
+  config : @moonrpc.ServiceConfig?
 }
 
 ///|
@@ -42,6 +45,7 @@ pub async fn Channel::connect(
   tls? : @tls.Client,
   interceptors? : Array[@client.Interceptor],
   encoding? : @moonrpc.Encoding,
+  config? : @moonrpc.ServiceConfig,
 ) -> Channel {
   let conn = @tcp.dial(host, port~, tls?)
   // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
@@ -66,6 +70,7 @@ pub async fn Channel::connect(
     turn: @async.CondVar::Cond(),
     reading: false,
     interceptors: interceptors.unwrap_or([]),
+    config,
   }
 }
 
@@ -83,7 +88,7 @@ pub fn Channel::add_interceptor(
 /// Report every call on this channel to `handler`, and the connection's own begin.
 pub fn Channel::set_stats_handler(
   self : Channel,
-  handler : @wire.Handler,
+  handler : @wire.StatsHandler,
 ) -> Unit {
   self.engine.set_stats_handler(handler)
   (handler.conn)(@wire.ConnStats::ConnBegin)
@@ -220,6 +225,8 @@ async fn Channel::call(
   once : async (@client.Invocation) -> @moonrpc.CallReply,
 ) -> @moonrpc.CallReply {
   let chain = @client.intercepted(self.interceptors, invocation => {
+    // The service config fills in whatever the caller left unset for this method.
+    let invocation = @client.resolve(invocation, self.config)
     let attempts = @moonrpc.Attempts::new(
       retry?=invocation.retry,
       throttle?=self.throttle,
@@ -251,10 +258,24 @@ pub async fn Channel::unary(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests: [request], metadata, timeout_millis, retry, }, inv => {
-    let request = if inv.requests.length() > 0 { inv.requests[0] } else { b"" }
-    self.unary_once(inv.path, request, inv.metadata, inv.timeout_millis)
-  })
+  self.call(
+    {
+      path,
+      requests: [request],
+      metadata,
+      timeout_millis,
+      retry,
+      wait_for_ready: false,
+    },
+    inv => {
+      let request = if inv.requests.length() > 0 {
+        inv.requests[0]
+      } else {
+        b""
+      }
+      self.unary_once(inv.path, request, inv.metadata, inv.timeout_millis)
+    },
+  )
 }
 
 ///|
@@ -290,9 +311,19 @@ pub async fn Channel::server_streaming(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests: [request], metadata, timeout_millis, retry, }, inv => {
-    self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
-  })
+  self.call(
+    {
+      path,
+      requests: [request],
+      metadata,
+      timeout_millis,
+      retry,
+      wait_for_ready: false,
+    },
+    inv => {
+      self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
+    },
+  )
 }
 
 ///|
@@ -338,9 +369,12 @@ pub async fn Channel::client_streaming(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests, metadata, timeout_millis, retry, }, inv => {
-    self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
-  })
+  self.call(
+    { path, requests, metadata, timeout_millis, retry, wait_for_ready: false, },
+    inv => {
+      self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
+    },
+  )
 }
 
 ///|
@@ -359,7 +393,10 @@ pub async fn Channel::bidi(
   timeout_millis? : Int32,
   retry? : @moonrpc.Retry,
 ) -> @moonrpc.CallReply {
-  self.call({ path, requests, metadata, timeout_millis, retry, }, inv => {
-    self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
-  })
+  self.call(
+    { path, requests, metadata, timeout_millis, retry, wait_for_ready: false, },
+    inv => {
+      self.stream_once(inv.path, inv.requests, inv.metadata, inv.timeout_millis)
+    },
+  )
 }
