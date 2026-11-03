@@ -48,7 +48,8 @@ SECTIONS = [
      "TBinaryProtocol and TCompactProtocol over TFramedTransport, independent of gRPC. "
      "Protocol is the contract; the processor, the client request and the shared skip "
      "are written once against it. The protocols cover the strict message header, the "
-     "primitive types, structs, lists and maps. The native framed driver is in net."),
+     "primitive types, structs, lists and maps. The native framed driver is in net, "
+     "and cmd/thriftc compiles a .thrift file to these types and codecs."),
     ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "

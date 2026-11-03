@@ -96,6 +96,7 @@ pub(open) trait Protocol {
   fn read_i64(Self) -> Int64 raise ThriftError
   fn read_double(Self) -> Double raise ThriftError
   fn read_string(Self) -> String raise ThriftError
+  fn read_bytes(Self) -> Bytes raise ThriftError
   fn read_list_begin(Self) -> (Int32, Int32) raise ThriftError
   fn read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
   fn write_bool(Self, Bool) -> Unit
@@ -105,6 +106,7 @@ pub(open) trait Protocol {
   fn write_i64(Self, Int64) -> Unit
   fn write_double(Self, Double) -> Unit
   fn write_string(Self, String) -> Unit
+  fn write_bytes(Self, Bytes) -> Unit
   fn write_list_begin(Self, Int32, Int32) -> Unit
   fn write_map_begin(Self, Int32, Int32, Int32) -> Unit
 }
@@ -133,7 +135,7 @@ fn skip_at(
     t if t == type_i32 => ignore(proto.read_i32())
     t if t == type_i64 => ignore(proto.read_i64())
     t if t == type_double => ignore(proto.read_double())
-    t if t == type_string => ignore(proto.read_string())
+    t if t == type_string => ignore(proto.read_bytes())
     t if t == type_struct => {
       proto.read_struct_begin()
       for ;; {

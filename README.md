@@ -190,8 +190,9 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 | `moonrpc/server` | `H2Server`, interceptors | `wire`, `proto`, `stream`, moonhttp, moonzip, moonbase |
 | `moonrpc/service` | health checking, server reflection, a channelz registry, and `unary`／`server_streaming`／`client_streaming` over message types | `server`, `stream`, `proto`, `wire`, moonvar |
 | `moonrpc/channelz` | the canonical `grpc.channelz.v1.Channelz` descriptor and its seven RPCs | `service`, `stream`, `proto`, `wire` |
-| `moonrpc/thrift` | TBinaryProtocol, TFramedTransport, the processor and the client, independent of gRPC | core |
+| `moonrpc/thrift` | the `Protocol` contract, TBinaryProtocol and TCompactProtocol, TFramedTransport, the processor and the client, independent of gRPC | core |
 | `moonrpc/cmd/rpc` | the generator behind the `#rpc` annotations | moonast |
+| `moonrpc/cmd/thriftc` | the `.thrift` IDL compiler: types, codecs, service registration and client | core |
 | `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP and TLS (native) | the root, moonnet, moontls, moonbitlang/async |
 
 A client links nothing of the server and a server nothing of the client; protobuf alone is `proto`.
@@ -426,7 +427,23 @@ calls them, and a `compact` argument picks the protocol on either side. CI runs 
 Thrift Go client against it and the moonrpc client against an Apache Thrift Go server, in
 the binary and in the compact protocol. Both cover the strict message header, `bool`,
 `byte`, `i16`, `i32`, `i64`, `double`, `string`, structs, lists, sets and maps, with a
-depth guard on `skip`. An IDL compiler is not part of this layer.
+depth guard on `skip`.
+
+[`cmd/thriftc`](src/cmd/thriftc/) compiles a `.thrift` file to MoonBit: enums with their
+numbers, structs with a codec and a `default()`, and each service's `register_*` and
+client functions. `optional` becomes `Option`, `binary` becomes `Bytes`, and a struct
+that contains itself by value is refused rather than generating a codec that cannot
+end. [`29-thrift-idl`](src/examples/29-thrift-idl/) is its output, and CI reruns the
+compiler with `--check` so the two cannot drift:
+
+```sh
+moon run src/cmd/thriftc -- greet.thrift -o greet.g.mbt
+```
+
+The compiler reads `struct`, `enum` and `service` over the primitive types, `list`,
+`set` and `map`. `typedef`, `union`, `exception`, `const`, `throws` and `extends` are
+refused with the line they came from instead of being silently dropped, and `include`
+is read and ignored, so a type from another file has to be declared in this one.
 
 ## Concurrency on a connection
 

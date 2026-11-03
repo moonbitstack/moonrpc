@@ -1,0 +1,87 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/cmd/thriftc"
+
+// Values
+pub fn parse(String, String) -> Document raise Refused
+
+pub fn render(String, String) -> String raise Refused
+
+// Errors
+pub(all) suberror Refused {
+  Bad(file~ : String, line~ : Int32, msg~ : String)
+}
+pub fn Refused::output(Self, &Logger) -> Unit
+pub fn Refused::to_string(Self) -> String
+pub impl Show for Refused
+
+// Types and methods
+pub(all) struct Document {
+  structs : Array[Struct]
+  enums : Array[Enum]
+  services : Array[Service]
+}
+
+type Emitter
+
+pub(all) struct Enum {
+  name : String
+  values : Array[(String, Int32)]
+}
+
+pub(all) struct Field {
+  id : Int32
+  name : String
+  ty : TType
+  optional : Bool
+}
+
+pub(all) struct Function {
+  name : String
+  ret : TType?
+  params : Array[Param]
+}
+
+pub(all) struct Param {
+  id : Int32
+  name : String
+  ty : TType
+}
+
+type Parser
+
+pub(all) struct Service {
+  name : String
+  functions : Array[Function]
+}
+
+pub(all) struct Struct {
+  name : String
+  fields : Array[Field]
+}
+
+pub(all) enum TType {
+  Bool
+  Byte
+  I16
+  I32
+  I64
+  Double
+  Str
+  Binary
+  List(TType)
+  Set(TType)
+  Map(TType, TType)
+  Named(String)
+}
+
+pub(all) enum Token {
+  TIdent(String)
+  TStr(String)
+  TNum(Int32)
+  TSym(Char)
+  TEof
+}
+
+// Type aliases
+
+// Traits

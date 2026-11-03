@@ -314,6 +314,24 @@ pub impl Protocol for Compact with fn read_string(self) {
 }
 
 ///|
+pub impl Protocol for Compact with fn write_bytes(self, body) {
+  self.write_varint(body.length().to_int64())
+  self.out.write_bytes(body)
+}
+
+///|
+pub impl Protocol for Compact with fn read_bytes(self) {
+  let n = self.read_varint().to_int()
+  if n < 0 {
+    raise Truncated
+  }
+  self.need(n)
+  let body = self.data[self.off:self.off + n].to_owned()
+  self.off = self.off + n
+  body
+}
+
+///|
 pub impl Protocol for Compact with fn write_field_begin(self, type_, id) {
   if type_ == type_bool {
     self.pending_field = true
@@ -450,6 +468,8 @@ pub impl Protocol for Compact with fn write_struct_end(self) {
 pub extend Compact with Protocol::{
   reset,
   output,
+  read_bytes,
+  write_bytes,
   read_message_begin,
   write_message_begin,
   read_struct_begin,

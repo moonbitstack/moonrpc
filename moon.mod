@@ -36,6 +36,7 @@ keywords = [
   "wait-for-ready",
   "interop",
   "thrift",
+  "idl",
   "grpc-go",
   "wasm",
   "moonbit",

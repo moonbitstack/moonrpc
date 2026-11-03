@@ -58,6 +58,7 @@ jobs:
         run: |
           moon run src/cmd/rpc --target native -- -C . src/examples/21-annotations/greeter.mbt -o src/examples/21-annotations/greeter.g.mbt --check
           moon run src/cmd/rpc --target native -- -C . src/cmd/greetd/greet.mbt -o src/cmd/greetd/greet.g.mbt --check
+          moon run src/cmd/thriftc --target native -- -C . src/examples/29-thrift-idl/greet.thrift -o src/examples/29-thrift-idl/greet.g.mbt --check
 
       - name: the guide is generated from its runnable packages
         if: runner.os == 'Linux'

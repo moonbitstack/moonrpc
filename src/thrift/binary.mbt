@@ -149,6 +149,21 @@ pub impl Protocol for Binary with fn read_string(self) {
 }
 
 ///|
+pub impl Protocol for Binary with fn write_bytes(self, body) {
+  self.write_i32(body.length())
+  self.out.write_bytes(body)
+}
+
+///|
+pub impl Protocol for Binary with fn read_bytes(self) {
+  let n = self.read_i32()
+  self.need(n)
+  let body = self.data[self.off:self.off + n].to_owned()
+  self.off = self.off + n
+  body
+}
+
+///|
 pub impl Protocol for Binary with fn write_field_begin(self, type_, id) {
   self.write_byte(type_)
   self.write_i16(id)
@@ -245,6 +260,8 @@ pub impl Protocol for Binary with fn write_struct_end(self) {
 pub extend Binary with Protocol::{
   reset,
   output,
+  read_bytes,
+  write_bytes,
   read_message_begin,
   write_message_begin,
   read_struct_begin,

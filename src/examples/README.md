@@ -40,6 +40,7 @@ moon run src/examples/07-unary-call
 | 26 | [`protocol-errors`](26-protocol-errors/) | RFC 9113 §5.4 fault scope: a stream error answered with RST_STREAM while the connection serves on, a connection error answered with GOAWAY, and the statuses a client builds from a call that ends without trailers |
 | 27 | [`server-guards`](27-server-guards/) | What a server refuses: a request whose request line is not gRPC's (415 / 405 / 400), a stream over the advertised concurrency limit, DATA past the receive window, a frame interleaved into a field block, and a call that outruns its `grpc-timeout` |
 | 28 | [`retry-hedging`](28-retry-hedging/) | The retry policy's should-retry decisions and backoff schedule, and the hedging policy's start / commit decisions |
+| 29 | [`thrift-idl`](29-thrift-idl/) | A `.thrift` file compiled by `cmd/thriftc`: the enum, the struct with an optional field, a list, a map and bytes, its codec in both Thrift protocols, and the service's registration and client |
 
 Everything here is pure and runs on every backend (`moon check --target all`); the native
 `@net.Channel` and `@net.GrpcServer` drive these same codecs over a real socket.
@@ -47,3 +48,7 @@ Everything here is pure and runs on every backend (`moon check --target all`); t
 The guide's three writing-style variants live in [`guide/`](guide/): `annotation`,
 `functional` and `class`, each runnable and answering the same request the same way.
 `scripts/gen_guide.py` builds the guide page from them and checks it in CI.
+
+[`29-thrift-idl/`](29-thrift-idl/) is generated: `greet.thrift` in, `greet.g.mbt` out,
+by `moon run src/cmd/thriftc`. CI reruns the compiler with `--check`, so the generated
+file cannot drift from the IDL it came from.

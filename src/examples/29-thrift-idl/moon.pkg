@@ -1,0 +1,8 @@
+// The IDL example: greet.thrift compiled to greet.g.mbt by cmd/thriftc.
+import {
+  "moonbitstack/moonrpc/thrift",
+}
+
+pkgtype(kind: "executable")
+
+formatter(ignore: [ "greet.g.mbt" ])

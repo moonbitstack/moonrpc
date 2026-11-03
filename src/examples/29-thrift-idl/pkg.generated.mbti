@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/examples/29-thrift-idl"
+
+import {
+  "moonbitstack/moonrpc/thrift",
+}
+
+// Values
+pub async fn[T : @thrift.Transport] greeter_add(T, &@thrift.Protocol, Int32, Int32) -> Int32 raise @thrift.ThriftError
+
+pub async fn[T : @thrift.Transport] greeter_hello(T, &@thrift.Protocol, Person) -> String raise @thrift.ThriftError
+
+pub async fn[T : @thrift.Transport] greeter_notify(T, &@thrift.Protocol, String) -> Unit raise @thrift.ThriftError
+
+pub fn read_list_string(&@thrift.Protocol) -> Array[String] raise @thrift.ThriftError
+
+pub fn read_map_string_i32(&@thrift.Protocol) -> Map[String, Int32] raise @thrift.ThriftError
+
+pub fn register_greeter(@thrift.Processor, (Person) -> String, (Int32, Int32) -> Int32, (String) -> Unit) -> Unit
+
+pub fn write_list_string(&@thrift.Protocol, Array[String]) -> Unit
+
+pub fn write_map_string_i32(&@thrift.Protocol, Map[String, Int32]) -> Unit
+
+// Errors
+
+// Types and methods
+pub(all) enum Mood {
+  Calm
+  Happy
+}
+pub fn Mood::from_i32(Int32) -> Self raise @thrift.ThriftError
+pub fn Mood::to_i32(Self) -> Int32
+pub impl Eq for Mood
+
+pub(all) struct Person {
+  name : String
+  age : Int32?
+  tags : Array[String]
+  scores : Map[String, Int32]
+  portrait : Bytes
+  mood : Mood
+}
+pub fn Person::decode(&@thrift.Protocol) -> Self raise @thrift.ThriftError
+pub fn Person::default() -> Self
+pub fn Person::encode(Self, &@thrift.Protocol) -> Unit
+
+// Type aliases
+
+// Traits

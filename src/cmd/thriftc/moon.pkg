@@ -1,0 +1,13 @@
+// The Thrift IDL compiler: a .thrift file in, the MoonBit types, codecs and service
+// in. `moon run src/cmd/thriftc -- file.thrift -o out.g.mbt`; CI runs it with --check
+// against the generated file in src/examples/29-thrift-idl.
+supported_targets = "+native+wasm"
+
+pkgtype(kind: "executable")
+
+import {
+  "moonbitlang/async",
+  "moonbitlang/async/fs",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
