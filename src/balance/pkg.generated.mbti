@@ -59,42 +59,46 @@ pub fn ConnectionPool::pick(Self) -> String?
 pub fn ConnectionPool::ready_addresses(Self) -> Array[String]
 pub fn ConnectionPool::subconn(Self, String) -> SubConn?
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ConnectivityState {
   Idle
   Connecting
   Ready
   TransientFailure
   Shutdown
-} derive(Eq, @debug.Debug)
+}
 pub fn ConnectivityState::equal(Self, Self) -> Bool
 pub fn ConnectivityState::not_equal(Self, Self) -> Bool
 pub fn ConnectivityState::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DnsRecord {
   name : String
   rtype : Int32
   ttl : Int32
   address : String
-} derive(Eq, @debug.Debug)
+}
 pub fn DnsRecord::equal(Self, Self) -> Bool
 pub fn DnsRecord::not_equal(Self, Self) -> Bool
 pub fn DnsRecord::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DnsResponse {
   id : Int32
   rcode : Int32
   answers : Array[DnsRecord]
-} derive(Eq, @debug.Debug)
+}
 pub fn DnsResponse::addresses(Self) -> Array[String]
 pub fn DnsResponse::equal(Self, Self) -> Bool
 pub fn DnsResponse::not_equal(Self, Self) -> Bool
 pub fn DnsResponse::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Hedging {
   attempts : Int32
   delay : @moondate.Span
   codes : Array[@wire.Status]
-} derive(Eq, @debug.Debug)
+}
 pub fn Hedging::commits(Self, Int32) -> Bool
 pub fn Hedging::equal(Self, Self) -> Bool
 pub fn Hedging::more(Self, Int32, limit? : Int32) -> Bool
@@ -102,10 +106,11 @@ pub fn Hedging::new(attempts? : Int32, delay? : @moondate.Span, codes? : Array[@
 pub fn Hedging::not_equal(Self, Self) -> Bool
 pub fn Hedging::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum LbPolicy {
   PickFirst
   RoundRobin
-} derive(Eq, @debug.Debug)
+}
 pub fn LbPolicy::equal(Self, Self) -> Bool
 pub fn LbPolicy::not_equal(Self, Self) -> Bool
 pub fn LbPolicy::to_repr(Self) -> @debug.Repr
@@ -119,11 +124,12 @@ pub fn LoadBalancer::new(Array[String], policy? : LbPolicy) -> Self
 pub fn LoadBalancer::pick(Self) -> String?
 pub fn LoadBalancer::size(Self) -> Int32
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Pushback {
   Absent
   After(@moondate.Span)
   Stop
-} derive(Eq, @debug.Debug)
+}
 pub fn Pushback::equal(Self, Self) -> Bool
 pub fn Pushback::not_equal(Self, Self) -> Bool
 pub fn Pushback::read(ArrayView[@header.Header]) -> Self
@@ -140,10 +146,11 @@ pub fn Reconnect::new(backoff? : Backoff, now? : Int64) -> Self
 pub fn Reconnect::succeeded(Self) -> Unit
 pub fn Reconnect::wait_millis(Self, Int64) -> Int64
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Retry {
   backoff : @moonward.Backoff
   codes : Array[@wire.Status]
-} derive(Eq, @debug.Debug)
+}
 pub fn Retry::equal(Self, Self) -> Bool
 pub fn Retry::new(attempts? : Int32, base? : @moondate.Span, cap? : @moondate.Span, factor? : Double, codes? : Array[@wire.Status]) -> Self
 pub fn Retry::not_equal(Self, Self) -> Bool
@@ -170,10 +177,11 @@ pub fn Throttle::new(Throttling) -> Self
 pub fn Throttle::pass(Self) -> Unit
 pub fn Throttle::tokens(Self) -> Double
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Throttling {
   tokens : Int32
   ratio : Double
-} derive(Eq, @debug.Debug)
+}
 pub fn Throttling::equal(Self, Self) -> Bool
 pub fn Throttling::new(tokens~ : Int32, ratio~ : Double) -> Self
 pub fn Throttling::not_equal(Self, Self) -> Bool

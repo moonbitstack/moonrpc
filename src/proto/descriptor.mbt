@@ -12,6 +12,7 @@
 ///|
 /// The `FieldDescriptorProto.Type` enum (proto3's scalar and composite field
 /// types). `TypeGroup` is intentionally absent — groups are removed from proto3.
+#derive(Eq)
 pub(all) enum FieldType {
   TypeDouble
   TypeFloat
@@ -30,7 +31,7 @@ pub(all) enum FieldType {
   TypeSfixed64
   TypeSint32
   TypeSint64
-} derive(Eq)
+}
 
 ///|
 /// The descriptor.proto enum number of a field type.
@@ -108,11 +109,12 @@ pub fn FieldType::keyword(self : FieldType) -> String? {
 ///|
 /// The `FieldDescriptorProto.Label`: proto3 fields are `LabelOptional` unless
 /// `repeated`.
+#derive(Eq)
 pub(all) enum FieldLabel {
   LabelOptional
   LabelRequired
   LabelRepeated
-} derive(Eq)
+}
 
 ///|
 /// The descriptor.proto enum number of a label.
@@ -141,6 +143,7 @@ pub fn FieldLabel::of(n : Int32) -> FieldLabel {
 /// `TypeEnum`, and empty for scalars. `oneof_index` places the field in one of
 /// its message's `oneofs`; a proto3 `optional` field sits alone in a synthetic
 /// one and sets `proto3_optional`.
+#derive(Eq)
 pub(all) struct FieldDescriptor {
   name : String
   number : Int32
@@ -149,7 +152,7 @@ pub(all) struct FieldDescriptor {
   type_name : String
   oneof_index : Int32?
   proto3_optional : Bool
-} derive(Eq)
+}
 
 ///|
 pub fn FieldDescriptor::new(
@@ -212,10 +215,11 @@ pub fn FieldDescriptor::decode(body : Bytes) -> FieldDescriptor raise PbError {
 
 ///|
 /// One value of an enum (`EnumValueDescriptorProto`).
+#derive(Eq)
 pub(all) struct EnumValueDescriptor {
   name : String
   number : Int32
-} derive(Eq)
+}
 
 ///|
 /// Encode an `EnumValueDescriptorProto`.
@@ -246,10 +250,11 @@ pub fn EnumValueDescriptor::decode(
 
 ///|
 /// An enum type (`EnumDescriptorProto`): its simple name and its values.
+#derive(Eq)
 pub(all) struct EnumDescriptor {
   name : String
   values : Array[EnumValueDescriptor]
-} derive(Eq)
+}
 
 ///|
 /// Encode an `EnumDescriptorProto`.
@@ -283,6 +288,7 @@ pub fn EnumDescriptor::decode(body : Bytes) -> EnumDescriptor raise PbError {
 /// A message type (`DescriptorProto`): its simple name, its fields, the
 /// messages and enums declared inside it, the names of its oneofs, and whether
 /// it is the entry type protoc makes for a `map` field.
+#derive(Eq)
 pub(all) struct MessageDescriptor {
   name : String
   fields : Array[FieldDescriptor]
@@ -290,7 +296,7 @@ pub(all) struct MessageDescriptor {
   enums : Array[EnumDescriptor]
   oneofs : Array[String]
   map_entry : Bool
-} derive(Eq)
+}
 
 ///|
 pub fn MessageDescriptor::new(
@@ -379,13 +385,14 @@ pub fn MessageDescriptor::decode(
 /// One RPC method (`MethodDescriptorProto`): its name, the fully-qualified request
 /// and response message names, and the two streaming flags that together pick the
 /// call cardinality.
+#derive(Eq)
 pub(all) struct MethodDescriptor {
   name : String
   input_type : String
   output_type : String
   client_streaming : Bool
   server_streaming : Bool
-} derive(Eq)
+}
 
 ///|
 /// Encode a `MethodDescriptorProto`.
@@ -427,10 +434,11 @@ pub fn MethodDescriptor::decode(body : Bytes) -> MethodDescriptor raise PbError 
 
 ///|
 /// A service (`ServiceDescriptorProto`): its (simple) name and its methods.
+#derive(Eq)
 pub(all) struct ServiceDescriptor {
   name : String
   methods : Array[MethodDescriptor]
-} derive(Eq)
+}
 
 ///|
 /// Encode a `ServiceDescriptorProto`.
@@ -465,6 +473,7 @@ pub fn ServiceDescriptor::decode(
 /// A single `.proto` file (`FileDescriptorProto`): its filename, package, the
 /// files it imports, the messages, enums and services it defines, and the
 /// syntax level. This is the unit Server Reflection returns.
+#derive(Eq)
 pub(all) struct FileDescriptor {
   name : String
   package_ : String
@@ -473,7 +482,7 @@ pub(all) struct FileDescriptor {
   enums : Array[EnumDescriptor]
   services : Array[ServiceDescriptor]
   syntax : String
-} derive(Eq)
+}
 
 ///|
 /// A proto3 file with the given filename and package.

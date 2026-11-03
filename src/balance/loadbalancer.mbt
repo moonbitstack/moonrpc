@@ -6,10 +6,11 @@
 
 ///|
 /// A client-side load-balancing policy (← gRPC `loadBalancingConfig`).
+#derive(Eq, Debug)
 pub(all) enum LbPolicy {
   PickFirst
   RoundRobin
-} derive(Eq, Debug)
+}
 
 ///|
 /// A load balancer over a resolver's addresses, applying an `LbPolicy` to choose the next one.

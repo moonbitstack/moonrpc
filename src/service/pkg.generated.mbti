@@ -52,6 +52,7 @@ pub fn HealthService::install(Self, @server.H2Server) -> Unit
 pub fn HealthService::new() -> Self
 pub fn HealthService::set_status(Self, String, ServingStatus) -> Unit
 
+#derive(Eq)
 pub(all) enum ReflectionRequest {
   ListServices(String)
   FileByFilename(String)
@@ -59,16 +60,17 @@ pub(all) enum ReflectionRequest {
   FileContainingExtension(String, Int32)
   AllExtensionNumbers(String)
   Unsupported
-} derive(Eq)
+}
 pub fn ReflectionRequest::equal(Self, Self) -> Bool
 pub fn ReflectionRequest::not_equal(Self, Self) -> Bool
 
+#derive(Eq)
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
   ExtensionNumbers(String, Array[Int32])
   ReflectionError(Int32, String)
-} derive(Eq)
+}
 pub fn ReflectionResponse::equal(Self, Self) -> Bool
 pub fn ReflectionResponse::not_equal(Self, Self) -> Bool
 
@@ -84,12 +86,13 @@ pub fn ReflectionService::handler(Self) -> @stream.Handler
 pub fn ReflectionService::install(Self, @server.H2Server) -> Unit
 pub fn ReflectionService::new() -> Self
 
+#derive(Eq)
 pub(all) enum ServingStatus {
   StatusUnknown
   Serving
   NotServing
   ServiceUnknown
-} derive(Eq)
+}
 pub fn ServingStatus::code(Self) -> Int32
 pub fn ServingStatus::equal(Self, Self) -> Bool
 pub fn ServingStatus::not_equal(Self, Self) -> Bool

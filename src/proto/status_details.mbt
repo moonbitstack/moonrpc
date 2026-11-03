@@ -5,11 +5,12 @@
 ///|
 /// A `google.rpc.Status` as it arrives in the `grpc-status-details-bin` trailer: the status
 /// code, the message, and the serialized `google.protobuf.Any` details in order.
+#derive(Eq, Debug)
 pub(all) struct StatusDetails {
   code : Int32
   message : String
   details : Array[Bytes]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend StatusDetails with Eq::{not_equal, equal}

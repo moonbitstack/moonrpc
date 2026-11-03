@@ -16,9 +16,10 @@ pub fn stream_is_client_initiated(Int32) -> Bool
 pub fn stream_is_server_initiated(Int32) -> Bool
 
 // Errors
+#derive(Eq)
 pub suberror StreamError {
   InvalidTransition(String)
-} derive(Eq)
+}
 pub fn StreamError::equal(Self, Self) -> Bool
 pub fn StreamError::not_equal(Self, Self) -> Bool
 pub fn StreamError::output(Self, &Logger) -> Unit
@@ -68,15 +69,17 @@ pub fn Stream::new(Int32) -> Self
 pub fn Stream::recv(Self, StreamEvent) -> StreamState raise StreamError
 pub fn Stream::send(Self, StreamEvent) -> StreamState raise StreamError
 
+#derive(Eq)
 pub(all) enum StreamEvent {
   Headers(end_stream~ : Bool)
   Data(end_stream~ : Bool)
   Reserve
   RstStream
-} derive(Eq)
+}
 pub fn StreamEvent::equal(Self, Self) -> Bool
 pub fn StreamEvent::not_equal(Self, Self) -> Bool
 
+#derive(Eq, @debug.Debug)
 pub(all) enum StreamState {
   Idle
   ReservedLocal
@@ -85,7 +88,7 @@ pub(all) enum StreamState {
   HalfClosedLocal
   HalfClosedRemote
   Closed
-} derive(Eq, @debug.Debug)
+}
 pub fn StreamState::equal(Self, Self) -> Bool
 pub fn StreamState::not_equal(Self, Self) -> Bool
 pub fn StreamState::on_recv(Self, StreamEvent) -> Self raise StreamError

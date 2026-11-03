@@ -10,11 +10,12 @@ pub let accept_encodings : String = "identity,gzip,deflate"
 
 ///|
 /// A message compression the gRPC protocol names.
+#derive(Eq, Debug)
 pub(all) enum Encoding {
   Identity
   Gzip
   Deflate
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Encoding with Eq::{not_equal, equal}

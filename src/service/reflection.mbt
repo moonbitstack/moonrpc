@@ -21,6 +21,7 @@ pub let reflection_v1alpha_path : String = "/grpc.reflection.v1alpha.ServerRefle
 /// A decoded `ServerReflectionRequest`, reduced to the one `message_request` oneof
 /// arm that was set. Extension-number queries are surfaced as `Unsupported`, which
 /// the service answers with an `UNIMPLEMENTED` error response.
+#derive(Eq)
 pub(all) enum ReflectionRequest {
   ListServices(String)
   FileByFilename(String)
@@ -32,7 +33,7 @@ pub(all) enum ReflectionRequest {
   // `AllExtensionNumbersOfType`: every extension number declared for a type.
   AllExtensionNumbers(String)
   Unsupported
-} derive(Eq)
+}
 
 ///|
 /// Decode a `ServerReflectionRequest` down to its `message_request` oneof arm.
@@ -90,12 +91,13 @@ pub fn encode_reflection_request(req : ReflectionRequest) -> Bytes {
 
 ///|
 /// A decoded `ServerReflectionResponse`, reduced to the one `message_response` arm.
+#derive(Eq)
 pub(all) enum ReflectionResponse {
   ServiceList(Array[String])
   FileDescriptors(Array[Bytes])
   ExtensionNumbers(String, Array[Int32])
   ReflectionError(Int32, String)
-} derive(Eq)
+}
 
 // -- response builders ------------------------------------------------------
 

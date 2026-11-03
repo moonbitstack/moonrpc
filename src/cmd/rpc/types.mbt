@@ -1,5 +1,6 @@
 ///|
 /// A protobuf scalar a MoonBit type stands for.
+#derive(Eq)
 priv enum Scalar {
   Str
   Raw
@@ -10,7 +11,7 @@ priv enum Scalar {
   U64
   F64
   F32
-} derive(Eq)
+}
 
 ///|
 /// The protobuf type of a value: a scalar, or a message or an enum by its
@@ -24,12 +25,13 @@ priv enum Base {
 ///|
 /// How a field holds its values: once, optionally (proto3 `optional`), as a
 /// list, or as a `map` keyed by a scalar of the given MoonBit type.
+#derive(Eq)
 priv enum Card {
   Single
   Optional
   Repeated
   Keyed(Scalar, String)
-} derive(Eq)
+}
 
 ///|
 fn scalar_of(ty : String) -> Scalar? {

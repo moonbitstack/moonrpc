@@ -5,11 +5,12 @@
 ///|
 /// A method's hedging policy (A6 `hedgingPolicy`): `attempts` is `maxAttempts`,
 /// `delay` is `hedgingDelay`, `codes` is `nonFatalStatusCodes`.
+#derive(Eq, Debug)
 pub(all) struct Hedging {
   attempts : Int32
   delay : @moondate.Span
   codes : Array[@wire.Status]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Hedging with Eq::{equal, not_equal}

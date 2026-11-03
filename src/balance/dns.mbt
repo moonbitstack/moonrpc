@@ -16,21 +16,23 @@ pub let dns_type_aaaa : Int32 = 28
 ///|
 /// One answer resource record, carrying the textual address for A/AAAA records (empty
 /// for other types).
+#derive(Eq, Debug)
 pub(all) struct DnsRecord {
   name : String
   rtype : Int32
   ttl : Int32
   address : String
-} derive(Eq, Debug)
+}
 
 ///|
 /// A decoded DNS response: the transaction id echoed back, the response code (0 =
 /// NOERROR), and the answer records.
+#derive(Eq, Debug)
 pub(all) struct DnsResponse {
   id : Int32
   rcode : Int32
   answers : Array[DnsRecord]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Write a domain name as a sequence of length-prefixed labels terminated by a zero

@@ -11,12 +11,13 @@
 /// The four protobuf wire types carried by a field tag's low three bits. The two
 /// group types (`3` start-group, `4` end-group) are deprecated and unsupported, so
 /// `of` rejects them.
+#derive(Eq)
 pub(all) enum WireType {
   Varint
   Fixed64
   LengthDelim
   Fixed32
-} derive(Eq)
+}
 
 ///|
 /// Prints the wire type by its protobuf name rather than its number.
@@ -59,12 +60,13 @@ pub fn WireType::of(n : Int32) -> WireType? {
 /// A raised protobuf decode failure: `Truncated` when the buffer ends inside a
 /// field, `BadWireType` for a group or unknown wire type, `Overflow` for a varint
 /// longer than ten octets, and `BadUtf8` for an invalid string field.
+#derive(Eq)
 pub suberror PbError {
   Truncated
   BadWireType(Int32)
   Overflow
   BadUtf8
-} derive(Eq)
+}
 
 ///|
 /// Prints the field and offset the decode failed on.

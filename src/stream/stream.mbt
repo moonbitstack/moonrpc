@@ -4,6 +4,7 @@
 
 ///|
 /// The lifecycle state of a single HTTP/2 stream (RFC 7540 §5.1).
+#derive(Eq, Debug)
 pub(all) enum StreamState {
   Idle
   ReservedLocal
@@ -12,7 +13,7 @@ pub(all) enum StreamState {
   HalfClosedLocal
   HalfClosedRemote
   Closed
-} derive(Eq, Debug)
+}
 
 ///|
 /// Prints the RFC 7540 §5.1 state name.
@@ -35,19 +36,21 @@ pub impl Show for StreamState with fn output(self, logger) {
 /// drive §5.1 transitions. `Headers`/`Data` carry the `END_STREAM` flag; `Reserve`
 /// is a PUSH_PROMISE reserving this (promised) stream. Frames that never change
 /// stream state (PRIORITY, WINDOW_UPDATE, SETTINGS, PING) are intentionally absent.
+#derive(Eq)
 pub(all) enum StreamEvent {
   Headers(end_stream~ : Bool)
   Data(end_stream~ : Bool)
   Reserve
   RstStream
-} derive(Eq)
+}
 
 ///|
 /// An illegal stream transition (RFC 7540 §5.1): a frame not permitted in the
 /// current state (typically a `STREAM_CLOSED` or `PROTOCOL_ERROR` condition).
+#derive(Eq)
 pub suberror StreamError {
   InvalidTransition(String)
-} derive(Eq)
+}
 
 ///|
 /// Prints which transition was refused.

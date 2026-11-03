@@ -6,13 +6,14 @@
 
 ///|
 /// A sub-connection's connectivity state (← gRPC `connectivity.State`).
+#derive(Eq, Debug)
 pub(all) enum ConnectivityState {
   Idle
   Connecting
   Ready
   TransientFailure
   Shutdown
-} derive(Eq, Debug)
+}
 
 ///|
 /// One address the Channel dials, tracking its connectivity state.

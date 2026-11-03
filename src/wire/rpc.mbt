@@ -68,6 +68,7 @@ pub fn split_messages(data : Bytes) -> Array[Bytes] {
 
 ///|
 /// The 17 canonical gRPC status codes (`grpc-status`).
+#derive(Eq, Debug)
 pub(all) enum Status {
   Ok
   Cancelled
@@ -86,7 +87,7 @@ pub(all) enum Status {
   Unavailable
   DataLoss
   Unauthenticated
-} derive(Eq, Debug)
+}
 
 ///|
 /// The numeric `grpc-status` code.

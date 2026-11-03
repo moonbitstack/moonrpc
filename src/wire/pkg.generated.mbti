@@ -43,11 +43,12 @@ pub fn StatusError::to_string(Self) -> String
 pub impl Show for StatusError
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) enum Encoding {
   Identity
   Gzip
   Deflate
-} derive(Eq, @debug.Debug)
+}
 pub fn Encoding::accepted(Self, BytesView) -> Bool
 pub fn Encoding::code(Self) -> String
 pub fn Encoding::decode(Self, BytesView, limit? : Int32) -> Bytes?
@@ -95,6 +96,7 @@ pub(all) struct ServerKeepalive {
 }
 pub fn ServerKeepalive::ping_guard(Self, now? : Int64) -> PingGuard
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Status {
   Ok
   Cancelled
@@ -113,7 +115,7 @@ pub(all) enum Status {
   Unavailable
   DataLoss
   Unauthenticated
-} derive(Eq, @debug.Debug)
+}
 pub fn Status::code(Self) -> Int32
 pub fn Status::equal(Self, Self) -> Bool
 pub fn Status::from_h2_error(Int32) -> Self

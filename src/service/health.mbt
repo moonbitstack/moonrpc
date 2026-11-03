@@ -6,12 +6,13 @@
 
 ///|
 /// The `grpc.health.v1.HealthCheckResponse.ServingStatus` enum.
+#derive(Eq)
 pub(all) enum ServingStatus {
   StatusUnknown
   Serving
   NotServing
   ServiceUnknown
-} derive(Eq)
+}
 
 ///|
 /// The wire value of a serving status (the protobuf enum number).

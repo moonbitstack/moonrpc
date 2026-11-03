@@ -7,10 +7,11 @@
 /// A method's retry policy (A6 `retryPolicy`). `backoff` carries `maxAttempts` as
 /// `attempts`, `initialBackoff` as `base`, `maxBackoff` as `cap` and
 /// `backoffMultiplier` as `factor`; `codes` is `retryableStatusCodes`.
+#derive(Eq, Debug)
 pub(all) struct Retry {
   backoff : @moonward.Backoff
   codes : Array[@wire.Status]
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Retry with Eq::{equal, not_equal}
@@ -46,10 +47,11 @@ pub let limit : Int32 = 5
 ///|
 /// Retry throttling (A6 `retryThrottling`): `tokens` is `maxTokens`, `ratio` is
 /// `tokenRatio`. There is no preset, because a channel without one does not throttle.
+#derive(Eq, Debug)
 pub(all) struct Throttling {
   tokens : Int32
   ratio : Double
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Throttling with Eq::{equal, not_equal}
@@ -109,6 +111,7 @@ pub fn Throttle::tokens(self : Throttle) -> Double {
 
 ///|
 /// What the server said about trying again, in `grpc-retry-pushback-ms`.
+#derive(Eq, Debug)
 pub(all) enum Pushback {
   /// Nothing: the policy decides.
   Absent
@@ -116,7 +119,7 @@ pub(all) enum Pushback {
   After(@moondate.Span)
   /// Do not try again: a negative or unreadable value, or more than one.
   Stop
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Pushback with Eq::{equal, not_equal}
