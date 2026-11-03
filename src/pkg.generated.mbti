@@ -128,6 +128,8 @@ pub using @server {type CallInfo}
 
 pub using @client {type CallReply}
 
+pub using @service {type ChannelNode}
+
 pub using @client {type ClientCall}
 
 pub using @wire {type ConnStats}
@@ -135,6 +137,8 @@ pub using @wire {type ConnStats}
 pub using @balance {type ConnectionPool}
 
 pub using @balance {type ConnectivityState}
+
+pub using @service {type Counters}
 
 pub using @balance {type DnsRecord}
 
@@ -198,6 +202,8 @@ pub using @service {type ReflectionResponse}
 
 pub using @service {type ReflectionService}
 
+pub using @service {type Registry}
+
 pub using @stream {type Responder}
 
 pub using @balance {type Retry}
@@ -205,6 +211,8 @@ pub using @balance {type Retry}
 pub using @stream {type RpcContext}
 
 pub using @wire {type RpcStats}
+
+pub using @service {type ServerNode}
 
 pub using @balance {type ServiceConfig}
 

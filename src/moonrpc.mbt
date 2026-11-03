@@ -131,6 +131,10 @@ pub using @server {
 
 ///|
 pub using @service {
+  type Counters,
+  type ChannelNode,
+  type ServerNode,
+  type Registry,
   type HealthService,
   type ReflectionRequest,
   type ReflectionResponse,
