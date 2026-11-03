@@ -240,8 +240,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--op)}
 .fieldtbl th,.fieldtbl td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
 .fieldtbl th{background:var(--panel-2);color:var(--muted);font-weight:600}
 .fieldtbl td.mono{color:var(--struct)}
-.note{font-size:.78rem;color:var(--faint);margin-top:.6rem;display:flex;align-items:center;gap:.4rem}
-.note .src{width:7px;height:7px;background:var(--ok);flex:none;animation:breathe 3.4s ease-in-out infinite}
+.note{font-size:.78rem;color:var(--faint);margin-top:.6rem;overflow-wrap:anywhere}
+.note .src{display:inline-block;width:7px;height:7px;background:var(--ok);margin-right:.45rem;vertical-align:middle;animation:breathe 3.4s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:.3}50%{opacity:1}}
 
 /* ---- showcase layout ---- */
@@ -366,3 +366,14 @@ footer a{color:var(--struct)}
 .styles .vhead{font-size:.78rem;text-transform:uppercase;letter-spacing:.14em;color:var(--faint);margin:.2rem 0 .5rem}
 .styles pre.out{margin-top:.6rem;border-left:3px solid var(--ok)}
 @media (width <= 860px){.style-bar{gap:.3rem}.style-bar button{padding:.24rem .5rem}}
+
+/* Phone widths: the navigation wraps and the GitHub link keeps only its icon,
+   so every page fits 390px without a horizontal scroll. */
+@media (width <= 520px){
+  .topnav{flex-wrap:wrap;gap:.45rem}
+  .navlinks{margin-left:0;width:100%;gap:.1rem}
+  .navlinks a{padding:.32rem .45rem;font-size:.78rem}
+  .navlinks a.gh{font-size:0}
+  .navlinks a.gh svg{width:18px;height:18px}
+  .navlinks .nav-theme{margin-left:0;padding:.3rem .45rem}
+}
