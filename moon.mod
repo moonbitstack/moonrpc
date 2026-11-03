@@ -35,6 +35,7 @@ keywords = [
   "service-config",
   "wait-for-ready",
   "interop",
+  "thrift",
   "grpc-go",
   "wasm",
   "moonbit",

@@ -1,0 +1,117 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/thrift"
+
+import {
+  "moonbitlang/core/buffer",
+}
+
+// Values
+pub async fn[T : Transport, R] call(T, String, Int32, (TWriter) -> Unit raise ThriftError, (TReader) -> R raise ThriftError) -> R raise ThriftError
+
+pub fn frame(Bytes) -> Bytes
+
+pub fn frame_len(Bytes) -> Int32 raise ThriftError
+
+pub let max_depth : Int32
+
+pub let max_frame : Int32
+
+pub let message_call : Int32
+
+pub let message_exception : Int32
+
+pub let message_oneway : Int32
+
+pub let message_reply : Int32
+
+pub fn[R] read_success(TReader, (TReader) -> R raise ThriftError) -> R raise ThriftError
+
+pub async fn[T : Transport] request(T, String, Int32, (TWriter) -> Unit raise ThriftError) -> TReader raise ThriftError
+
+pub let type_bool : Int32
+
+pub let type_byte : Int32
+
+pub let type_i16 : Int32
+
+pub let type_i32 : Int32
+
+pub let type_i64 : Int32
+
+pub let type_list : Int32
+
+pub let type_map : Int32
+
+pub let type_set : Int32
+
+pub let type_stop : Int32
+
+pub let type_string : Int32
+
+pub let type_struct : Int32
+
+// Errors
+pub(all) suberror ThriftError {
+  BadVersion(Int32)
+  Truncated
+  BadType(Int32)
+  Depth
+  Unsupported(String)
+  Application(String)
+}
+pub fn ThriftError::output(Self, &Logger) -> Unit
+pub fn ThriftError::to_string(Self) -> String
+pub impl Show for ThriftError
+
+// Types and methods
+pub(all) struct Processor {
+  methods : Map[String, (TReader, TWriter) -> Unit raise ThriftError]
+}
+pub fn Processor::add(Self, String, (TReader, TWriter) -> Unit raise ThriftError) -> Unit
+pub fn Processor::new() -> Self
+pub fn Processor::process(Self, Bytes) -> Bytes raise ThriftError
+
+pub struct TReader {
+  data : Bytes
+  mut off : Int32
+  mut depth : Int32
+}
+pub fn TReader::eof(Self) -> Bool
+pub fn TReader::new(Bytes) -> Self
+pub fn TReader::read_bool(Self) -> Bool raise ThriftError
+pub fn TReader::read_byte(Self) -> Int32 raise ThriftError
+pub fn TReader::read_field_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn TReader::read_i16(Self) -> Int32 raise ThriftError
+pub fn TReader::read_i32(Self) -> Int32 raise ThriftError
+pub fn TReader::read_i64(Self) -> Int64 raise ThriftError
+pub fn TReader::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn TReader::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
+pub fn TReader::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn TReader::read_string(Self) -> String raise ThriftError
+pub fn TReader::skip(Self, Int32) -> Unit raise ThriftError
+
+pub struct TWriter {
+  buf : @buffer.Buffer
+}
+pub fn TWriter::new() -> Self
+pub fn TWriter::to_bytes(Self) -> Bytes
+pub fn TWriter::write_bool(Self, Bool) -> Unit
+pub fn TWriter::write_byte(Self, Int32) -> Unit
+pub fn TWriter::write_field_begin(Self, Int32, Int32) -> Unit
+pub fn TWriter::write_field_stop(Self) -> Unit
+pub fn TWriter::write_i16(Self, Int32) -> Unit
+pub fn TWriter::write_i32(Self, Int32) -> Unit
+pub fn TWriter::write_i64(Self, Int64) -> Unit
+pub fn TWriter::write_list_begin(Self, Int32, Int32) -> Unit
+pub fn TWriter::write_map_begin(Self, Int32, Int32, Int32) -> Unit
+pub fn TWriter::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn TWriter::write_raw(Self, Bytes) -> Unit
+pub fn TWriter::write_string(Self, String) -> Unit
+
+// Type aliases
+pub type Method = (TReader, TWriter) -> Unit raise ThriftError
+
+// Traits
+pub(open) trait Transport {
+  async fn round_trip(Self, Bytes) -> Bytes raise ThriftError
+}

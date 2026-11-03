@@ -1,0 +1,7 @@
+// The Thrift binary protocol (TBinaryProtocol) and its framed transport, independent
+// of gRPC: bytes in, bytes out, no HTTP/2 and no protobuf. The native driver lives in
+// `net/`, the same way gRPC's does.
+import {
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/encoding/utf8",
+}

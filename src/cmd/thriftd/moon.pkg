@@ -1,0 +1,16 @@
+// A runnable Thrift server over the binary protocol and framed transport: `ping` and
+// `add`, plus a client mode that calls them, so the two can be checked without a
+// second implementation.
+import {
+  "moonbitstack/moonrpc/thrift",
+  "moonbitstack/moonrpc/net",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

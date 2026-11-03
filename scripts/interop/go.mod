@@ -3,6 +3,7 @@ module moonbitstack/moonrpc-interop
 go 1.24
 
 require (
+	github.com/apache/thrift v0.21.0
 	google.golang.org/grpc v1.75.0
 	google.golang.org/protobuf v1.36.6
 )

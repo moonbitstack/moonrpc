@@ -189,6 +189,8 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 | `moonrpc/client` | `H2Client`, `CallReply` | `wire`, moonhttp, moonzip |
 | `moonrpc/server` | `H2Server`, interceptors | `wire`, `proto`, `stream`, moonhttp, moonzip, moonbase |
 | `moonrpc/service` | health checking, server reflection, a channelz registry, and `unary`／`server_streaming`／`client_streaming` over message types | `server`, `stream`, `proto`, `wire`, moonvar |
+| `moonrpc/channelz` | the canonical `grpc.channelz.v1.Channelz` descriptor and its seven RPCs | `service`, `stream`, `proto`, `wire` |
+| `moonrpc/thrift` | TBinaryProtocol, TFramedTransport, the processor and the client, independent of gRPC | core |
 | `moonrpc/cmd/rpc` | the generator behind the `#rpc` annotations | moonast |
 | `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP and TLS (native) | the root, moonnet, moontls, moonbitlang/async |
 
@@ -299,11 +301,13 @@ against independent peers in plaintext and over TLS:
 | `grpcurl` (grpc-go) | client | reflection `list`／`describe`, all four | `gzip` | — | yes | pass |
 | grpc-go | client | all four | `gzip` | client chain | yes | pass |
 | grpc-go | server | all four, through the generated `GreeterClient` | identity | server chain | yes | pass |
+| Apache Thrift (Go) | client | `ping`, `add` | identity | — | no | pass |
+| Apache Thrift (Go) | server | `ping`, `add`, through `thriftd check` | identity | — | no | pass |
 
 `cmd/greetd` is the server the first two call; the third runs the same generated client
 against a grpc-go server and requires the two answers to match byte for byte. The
 grpc-go side lives in `scripts/interop`, generated from the same `greet.proto` shape the
-annotations declare.
+annotations declare. The last two are the Thrift stack, below.
 
 ## Stats and channelz
 
@@ -380,6 +384,40 @@ With wait-for-ready, a `ManagedChannel` whose backends are all down holds the ca
 redials until one comes up or the call's deadline passes, instead of failing fast with
 `UNAVAILABLE`. It is on by default for a method whose config says `waitForReady`, and a
 call can turn it on with `wait_for_ready~` whether or not a config names it.
+
+## Thrift
+
+A second protocol stack sits beside the gRPC one and shares only the socket layer:
+Thrift's TBinaryProtocol over TFramedTransport, with a processor that dispatches by
+method name and a client that sends a CALL and reads a REPLY. Nothing in `thrift/`
+imports HTTP/2, HPACK or protobuf.
+
+```moonbit
+import "moonbitstack/moonrpc/thrift"   // @thrift
+
+let processor = @thrift.Processor::new()
+processor.add("ping", (reader, writer) => {
+  ignore(reader.read_field_begin())          // field 1: the argument
+  let text = reader.read_string()
+  ignore(reader.read_field_begin())          // STOP
+  writer.write_field_begin(@thrift.type_string, 0)   // field 0: the result
+  writer.write_string("pong:" + text)
+})
+@net.serve_thrift(host="127.0.0.1", port=9090, processor)
+
+// the client side
+let client = @net.ThriftClient::connect("127.0.0.1", 9090)
+let pong = @thrift.call(client, "ping", 1, writer => {
+  writer.write_field_begin(@thrift.type_string, 1)
+  writer.write_string("moonrpc")
+}, reader => reader.read_string())
+```
+
+[`cmd/thriftd`](src/cmd/thriftd/) serves `ping` and `add`; `thriftd check` calls them.
+CI runs an Apache Thrift Go client against it and the moonrpc client against an Apache
+Thrift Go server. The protocol covers the strict message header, `bool`, `byte`, `i16`,
+`i32`, `i64`, `string`, structs, lists, sets and maps, with a depth guard on `skip`.
+TCompactProtocol and an IDL compiler are not part of this layer.
 
 ## Concurrency on a connection
 

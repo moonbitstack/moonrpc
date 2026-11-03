@@ -4,6 +4,7 @@ import {
   "moonbitstack/moonrpc/wire",
   "moonbitstack/moonrpc/client",
   "moonbitstack/moonrpc/server",
+  "moonbitstack/moonrpc/thrift",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonhttp/http2",

@@ -468,3 +468,63 @@ jobs:
           set -e
           grep -q 'NotFound' /tmp/cz-err.txt
           echo "channelz interop OK"
+
+  # Apache Thrift in both directions: a real Thrift Go client calls `thriftd`, and the
+  # moonrpc client (`thriftd check`) calls a real Thrift Go server. TBinaryProtocol over
+  # TFramedTransport, strict message headers, the same two methods each way.
+  thrift-interop:
+    name: Apache Thrift interop (both directions)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: build the Thrift server and the Go peers
+        run: |
+          moon build --target native
+          cd scripts/interop
+          go build -o bin/ ./...
+          cd ../..
+
+      - name: Apache Thrift client, then Apache Thrift server
+        run: |
+          set -euo pipefail
+          THRIFTD=./_build/native/debug/build/cmd/thriftd/thriftd.exe
+          echo "== Go client -> moonrpc server =="
+          "$THRIFTD" 9090 & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/9090) 2>/dev/null; then exec 3>&-; break; fi
+            sleep 1
+          done
+          ./scripts/interop/bin/thriftclient -addr 127.0.0.1:9090 | tee /tmp/thrift-go-client.txt
+          grep -q 'apache thrift client interop OK' /tmp/thrift-go-client.txt
+          kill $SRV 2>/dev/null || true
+          wait $SRV 2>/dev/null || true
+          trap - EXIT
+          echo "== moonrpc client -> Go server =="
+          ./scripts/interop/bin/thriftserver -addr 127.0.0.1:9091 & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/9091) 2>/dev/null; then exec 3>&-; break; fi
+            sleep 1
+          done
+          "$THRIFTD" check 9091 | tee /tmp/thrift-moonbit-client.txt
+          grep -q 'pong:moonrpc' /tmp/thrift-moonbit-client.txt
+          grep -q '42' /tmp/thrift-moonbit-client.txt
+          echo "Apache Thrift interop OK"
