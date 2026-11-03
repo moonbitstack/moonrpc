@@ -80,6 +80,16 @@ pub fn Channel::add_interceptor(
 }
 
 ///|
+/// Report every call on this channel to `handler`, and the connection's own begin.
+pub fn Channel::set_stats_handler(
+  self : Channel,
+  handler : @wire.Handler,
+) -> Unit {
+  self.engine.set_stats_handler(handler)
+  (handler.conn)(@wire.ConnStats::ConnBegin)
+}
+
+///|
 /// Close the underlying connection. Outstanding calls are abandoned.
 pub fn Channel::close(self : Channel) -> Unit {
   self.conn.close()

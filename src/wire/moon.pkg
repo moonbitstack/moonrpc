@@ -3,6 +3,7 @@
 // HTTP/2 defaults client and server share.
 import {
   "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonhttp/header",
   "moonbitstack/moonvar/fixed",
   "moonbitstack/moonbase/base64",
   "moonbitstack/moonzip/gzip",

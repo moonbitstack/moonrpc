@@ -81,6 +81,9 @@ pub(all) struct SrvStream {
   mut oversize : Bool
   mut headers_sent : Bool
   mut trailers_sent : Bool
+  // Whether the response's initial header has been reported to the stats handler,
+  // so it fires once, before the first payload, not again per message.
+  mut stats_header : Bool
   mut bidi : @stream.BidiHandler?
 }
 
@@ -119,6 +122,7 @@ fn SrvStream::new(id : Int32, send_window : Int32) -> SrvStream {
     oversize: false,
     headers_sent: false,
     trailers_sent: false,
+    stats_header: false,
     bidi: None,
   }
 }
@@ -185,6 +189,8 @@ pub struct H2Server {
   // The largest message this server will accept, and the largest it will send.
   mut max_recv : Int32
   mut max_send : Int32
+  // Where this connection reports call and connection events, once a caller sets one.
+  mut stats : @wire.Handler?
   // A dynamic table size the peer asked for that no header block has announced yet: HPACK
   // wants the encoder to say the new size before it is used (RFC 7541 §6.3).
   mut size_update : Int32?
@@ -234,6 +240,7 @@ pub fn H2Server::new() -> H2Server {
     settings_sent_at: None,
     max_recv: @wire.max_message_size,
     max_send: @wire.max_message_size,
+    stats: None,
     size_update: None,
     conn_recv_window: @wire.default_window_size,
     conn_send_window: @wire.default_window_size,
@@ -393,6 +400,30 @@ pub fn H2Server::set_encoding(
   encoding : @wire.Encoding,
 ) -> Unit {
   self.encoding = encoding
+}
+
+///|
+/// Report every call on this connection to `handler`, as grpc-go's `stats.Handler`
+/// receives them: begin, each header and payload that moves, and how the call ended.
+pub fn H2Server::set_stats_handler(
+  self : H2Server,
+  handler : @wire.Handler,
+) -> Unit {
+  self.stats = Some(handler)
+}
+
+///|
+/// The method part of a `/pkg.Service/Method` path.
+fn method_name(path : String) -> String {
+  let mut cut = 0
+  let mut i = 0
+  for ch in path {
+    i = i + 1
+    if ch == '/' {
+      cut = i
+    }
+  }
+  path.exact_view(start=cut, end=path.length()).to_owned()
 }
 
 ///|
@@ -697,7 +728,7 @@ fn request_reject(headers : Array[@header.Header]) -> (Int32, Int32, String)? {
 /// Pull every complete length-prefixed message now buffered on this stream into
 /// `req_msgs`, advancing the read cursor. Partial trailing bytes stay buffered for
 /// a later DATA frame to complete.
-fn drain_messages(s : SrvStream, max~ : Int32) -> Unit {
+fn drain_messages(server : H2Server, s : SrvStream, max~ : Int32) -> Unit {
   let all = s.data.to_bytes()
   let n = all.length()
   let mut off = s.req_off
@@ -727,13 +758,24 @@ fn drain_messages(s : SrvStream, max~ : Int32) -> Unit {
         // if the compressed bytes were the message.
         Some(encoding) =>
           match encoding.decode(body[:]) {
-            Some(m) => s.req_msgs.push(m)
+            Some(m) => {
+              s.req_msgs.push(m)
+              match server.stats {
+                Some(h) => (h.rpc)(@wire.RpcStats::InPayload(length=m.length()))
+                None => ()
+              }
+            }
             None => s.compressed_unsupported = true
           }
         None => s.compressed_unsupported = true
       }
     } else {
-      s.req_msgs.push(all[off + 5:off + 5 + len].to_owned())
+      let body = all[off + 5:off + 5 + len].to_owned()
+      s.req_msgs.push(body)
+      match server.stats {
+        Some(h) => (h.rpc)(@wire.RpcStats::InPayload(length=body.length()))
+        None => ()
+      }
     }
     off = off + 5 + len
   }
@@ -1297,6 +1339,13 @@ fn H2Server::complete_headers(
     status_fail: None,
     error_details: [],
   }
+  match self.stats {
+    Some(h) => {
+      (h.rpc)(@wire.RpcStats::Begin(path=s.path, name=method_name(s.path)))
+      (h.rpc)(@wire.RpcStats::InHeader(metadata~))
+    }
+    None => ()
+  }
 }
 
 ///|
@@ -1330,7 +1379,7 @@ fn H2Server::advance(
     return self.expire(s)
   }
   if !s.trailers_only {
-    drain_messages(s, max=self.max_recv)
+    drain_messages(self, s, max=self.max_recv)
     // A compressed request under an encoding we do not decode ends the call with
     // UNIMPLEMENTED (gRPC's answer for an unsupported message-encoding), rather than
     // running the handler over misread bytes.
@@ -1402,6 +1451,17 @@ fn H2Server::enqueue(self : H2Server, s : SrvStream, msg : Bytes) -> Unit {
     s.started_response = true
     s.response_ended = true
     return
+  }
+  if !s.stats_header {
+    match self.stats {
+      Some(h) => (h.rpc)(@wire.RpcStats::OutHeader(metadata=s.ctx.resp_headers))
+      None => ()
+    }
+    s.stats_header = true
+  }
+  match self.stats {
+    Some(h) => (h.rpc)(@wire.RpcStats::OutPayload(length=msg.length()))
+    None => ()
   }
   match s.resp_encoding {
     @wire.Encoding::Identity => s.out = s.out + @wire.encode_message(msg)
@@ -1661,6 +1721,18 @@ fn H2Server::produce(
           value: @wire.metadata_value_to_wire(h.name, h.value),
         })
       }
+      match self.stats {
+        Some(h) => {
+          (h.rpc)(@wire.RpcStats::OutTrailer(metadata=s.ctx.resp_trailers))
+          (h.rpc)(
+            @wire.RpcStats::End(
+              status=@wire.Status::of(s.status_code),
+              message=s.status_message,
+            ),
+          )
+        }
+        None => ()
+      }
       let block = self.encode_block(tr)
       for f in emit_header_frames(s.id, block, true, self.remote_max_frame) {
         frames.push(f)
@@ -1741,6 +1813,18 @@ fn H2Server::produce(
         name: h.name,
         value: @wire.metadata_value_to_wire(h.name, h.value),
       })
+    }
+    match self.stats {
+      Some(h) => {
+        (h.rpc)(@wire.RpcStats::OutTrailer(metadata=s.ctx.resp_trailers))
+        (h.rpc)(
+          @wire.RpcStats::End(
+            status=@wire.Status::of(s.status_code),
+            message=s.status_message,
+          ),
+        )
+      }
+      None => ()
     }
     let block = self.encode_block(trailers)
     // Split like every other header block: a block over the peer's MAX_FRAME_SIZE is

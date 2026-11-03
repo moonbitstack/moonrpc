@@ -234,3 +234,46 @@ test "health: a Watch call emits the current status as its first streamed messag
   assert_eq(reply.messages.length(), 1)
   assert_eq(@service.decode_health_response(reply.messages[0]) == Serving, true)
 }
+
+///|
+/// The events of a recorded call, as names, for an order comparison.
+fn stats_kinds(events : Array[@wire.RpcStats]) -> Array[String] {
+  let out : Array[String] = []
+  for e in events {
+    out.push(
+      match e {
+        @wire.RpcStats::Begin(..) => "begin"
+        @wire.RpcStats::OutHeader(..) => "out-header"
+        @wire.RpcStats::OutPayload(..) => "out-payload"
+        @wire.RpcStats::InHeader(..) => "in-header"
+        @wire.RpcStats::InPayload(..) => "in-payload"
+        @wire.RpcStats::InTrailer(..) => "in-trailer"
+        @wire.RpcStats::OutTrailer(..) => "out-trailer"
+        @wire.RpcStats::End(..) => "end"
+      },
+    )
+  }
+  out
+}
+
+///|
+test "stats: a unary call reports begin, headers, payloads, trailers and end on both engines" {
+  let server = @server.H2Server::new()
+  server.register("/echo.Echo/Say", req => b"echo:" + req)
+  let server_events : Array[@wire.RpcStats] = []
+  server.set_stats_handler(@wire.Handler::new(rpc=e => server_events.push(e)))
+  let client = @client.H2Client::new()
+  let client_events : Array[@wire.RpcStats] = []
+  client.set_stats_handler(@wire.Handler::new(rpc=e => client_events.push(e)))
+  let (id, frames) = client.unary("/echo.Echo/Say", b"world")
+  drive_pair(server, client, id, frames)
+  assert_eq(client.reply(id).grpc_status, 0)
+  assert_eq(stats_kinds(client_events), [
+    "begin", "out-header", "out-payload", "in-header", "in-payload", "in-trailer",
+    "end",
+  ])
+  assert_eq(stats_kinds(server_events), [
+    "begin", "in-header", "in-payload", "out-header", "out-payload", "out-trailer",
+    "end",
+  ])
+}

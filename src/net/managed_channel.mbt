@@ -25,6 +25,8 @@ pub struct ManagedChannel {
   // Where the address list came from, when it came from a name: re-dialling asks it again,
   // so a backend that moved or a replica that appeared is picked up.
   resolve : (() -> Array[(String, Int32)])?
+  // Where every sub-connection reports its calls, applied to each as it dials.
+  mut stats : @wire.Handler?
 }
 
 ///|
@@ -35,6 +37,18 @@ pub fn ManagedChannel::add_interceptor(
   interceptor : @client.Interceptor,
 ) -> Unit {
   self.interceptors.push(interceptor)
+}
+
+///|
+/// Report every call on every sub-connection to `handler`, now and after any redial.
+pub fn ManagedChannel::set_stats_handler(
+  self : ManagedChannel,
+  handler : @wire.Handler,
+) -> Unit {
+  self.stats = Some(handler)
+  for _addr, ch in self.channels {
+    ch.set_stats_handler(handler)
+  }
 }
 
 ///|
@@ -99,6 +113,7 @@ pub async fn ManagedChannel::connect(
       backoff=backoff.unwrap_or(@moonrpc.backoff),
     ),
     resolve,
+    stats: None,
   }
   if channels.length() == 0 {
     // Nothing came up at dial time: the first call waits out one backoff rather than
@@ -214,11 +229,12 @@ async fn ManagedChannel::redial(self : ManagedChannel) -> Unit {
     guard self.pool.subconn(address) is Some(sc) else { continue }
     sc.connect()
     try {
-      self.channels[address] = Channel::connect(
-        target.0,
-        target.1,
-        tls?=self.tls,
-      )
+      let ch = Channel::connect(target.0, target.1, tls?=self.tls)
+      match self.stats {
+        Some(handler) => ch.set_stats_handler(handler)
+        None => ()
+      }
+      self.channels[address] = ch
       sc.on_connected()
     } catch {
       _ => sc.on_failure()

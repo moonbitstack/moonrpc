@@ -54,6 +54,9 @@ pub(all) struct ClientCall {
   // Response-Headers arrived ahead of the trailers (A6's committed call).
   mut committed : Bool
   mut done : Bool
+  // Whether this call's end has already been reported to the stats handler, so a
+  // second `reply` does not report it again.
+  mut stats_ended : Bool
 }
 
 ///|
@@ -95,6 +98,7 @@ fn ClientCall::new(
     unprocessed: false,
     committed: false,
     done: false,
+    stats_ended: false,
   }
 }
 
@@ -147,6 +151,8 @@ pub struct H2Client {
   // The largest message this client will accept, and the largest it will send.
   mut max_recv : Int32
   mut max_send : Int32
+  // Where this connection reports call and connection events, once a caller sets one.
+  mut stats : @wire.Handler?
   // A dynamic table size the peer asked for that has not been announced in a header block
   // yet: HPACK requires the encoder to say the new size before it uses it (RFC 7541 §6.3).
   mut size_update : Int32?
@@ -233,6 +239,7 @@ pub fn H2Client::new() -> H2Client {
     user_agent: @utf8.encode(user_agent),
     max_recv: @wire.max_message_size,
     max_send: @wire.max_message_size,
+    stats: None,
     size_update: None,
     orphan_blocks: Map([]),
   }
@@ -267,6 +274,30 @@ pub fn H2Client::set_encoding(
 /// an application name of its own to add.
 pub fn H2Client::set_user_agent(self : H2Client, user_agent : String) -> Unit {
   self.user_agent = @utf8.encode(user_agent)
+}
+
+///|
+/// Report every call on this connection to `handler`, as grpc-go's `stats.Handler`
+/// receives them: begin, each header and payload that moves, and how the call ended.
+pub fn H2Client::set_stats_handler(
+  self : H2Client,
+  handler : @wire.Handler,
+) -> Unit {
+  self.stats = Some(handler)
+}
+
+///|
+/// The method part of a `/pkg.Service/Method` path.
+fn method_of(path : String) -> String {
+  let mut cut = 0
+  let mut i = 0
+  for ch in path {
+    i = i + 1
+    if ch == '/' {
+      cut = i
+    }
+  }
+  path.exact_view(start=cut, end=path.length()).to_owned()
 }
 
 ///|
@@ -316,6 +347,13 @@ pub fn H2Client::open(
     self.remote_initial_window,
   )
   self.calls[id] = call
+  match self.stats {
+    Some(h) => {
+      (h.rpc)(@wire.RpcStats::Begin(path~, name=method_of(path)))
+      (h.rpc)(@wire.RpcStats::OutHeader(metadata~))
+    }
+    None => ()
+  }
   id
 }
 
@@ -331,6 +369,10 @@ pub fn H2Client::send(
 ) -> Array[@http2.Frame] {
   match self.calls.get(id) {
     Some(c) => {
+      match self.stats {
+        Some(h) => (h.rpc)(@wire.RpcStats::OutPayload(length=message.length()))
+        None => ()
+      }
       match self.encoding {
         @wire.Encoding::Identity =>
           c.out = c.out + @wire.encode_message(message)
@@ -555,7 +597,7 @@ pub fn H2Client::feed(
           self.conn_recv_window = self.conn_recv_window - flow
           c.recv_window = c.recv_window - flow
           c.data.write_bytes(data)
-          drain_call_messages(c)
+          drain_call_messages(c, self.stats)
           if end_stream {
             c.done = true
           }
@@ -659,6 +701,15 @@ fn H2Client::deliver_headers(self : H2Client, c : ClientCall) -> Unit raise {
         value: @wire.metadata_value_from_wire(h.name, h.value),
       })
     }
+  }
+  match self.stats {
+    Some(h) =>
+      if initial {
+        (h.rpc)(@wire.RpcStats::InHeader(metadata=c.resp_headers))
+      } else {
+        (h.rpc)(@wire.RpcStats::InTrailer(metadata=c.resp_trailers))
+      }
+    None => ()
   }
   c.headers_seen = true
   c.header_block.reset()
@@ -803,6 +854,19 @@ pub fn H2Client::reply(self : H2Client, id : Int32) -> CallReply {
           }
         }
       }
+      if !c.stats_ended {
+        match self.stats {
+          Some(h) =>
+            (h.rpc)(
+              @wire.RpcStats::End(
+                status=@wire.Status::of(grpc),
+                message=c.grpc_message,
+              ),
+            )
+          None => ()
+        }
+        c.stats_ended = true
+      }
       {
         status: c.status,
         grpc_status: grpc,
@@ -855,7 +919,7 @@ pub fn H2Client::take_messages(self : H2Client, id : Int32) -> Array[Bytes] {
 ///|
 /// Pull every complete length-prefixed reply message now buffered on a call into
 /// `messages`, advancing the read cursor; partial trailing bytes stay buffered.
-fn drain_call_messages(c : ClientCall) -> Unit {
+fn drain_call_messages(c : ClientCall, stats : @wire.Handler?) -> Unit {
   let all = c.data.to_bytes()
   let n = all.length()
   let mut off = c.data_off
@@ -886,13 +950,23 @@ fn drain_call_messages(c : ClientCall) -> Unit {
         Some(@wire.Encoding::Identity) => c.decode_failed = true
         Some(encoding) =>
           match encoding.decode(body[:]) {
-            Some(m) => c.messages.push(m)
+            Some(m) => {
+              c.messages.push(m)
+              match stats {
+                Some(h) => (h.rpc)(@wire.RpcStats::InPayload(length=m.length()))
+                None => ()
+              }
+            }
             None => c.decode_failed = true
           }
         None => c.decode_failed = true
       }
     } else {
       c.messages.push(body)
+      match stats {
+        Some(h) => (h.rpc)(@wire.RpcStats::InPayload(length=body.length()))
+        None => ()
+      }
     }
     off = off + 5 + len
   }

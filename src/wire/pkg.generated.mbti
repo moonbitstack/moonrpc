@@ -3,6 +3,7 @@ package "moonbitstack/moonrpc/wire"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitstack/moonhttp/header",
 }
 
 // Values
@@ -43,6 +44,11 @@ pub fn StatusError::to_string(Self) -> String
 pub impl Show for StatusError
 
 // Types and methods
+pub(all) enum ConnStats {
+  ConnBegin
+  ConnEnd
+}
+
 #derive(Eq, @debug.Debug)
 pub(all) enum Encoding {
   Identity
@@ -57,6 +63,12 @@ pub fn Encoding::equal(Self, Self) -> Bool
 pub fn Encoding::not_equal(Self, Self) -> Bool
 pub fn Encoding::of(BytesView) -> Self?
 pub fn Encoding::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Handler {
+  rpc : (RpcStats) -> Unit
+  conn : (ConnStats) -> Unit
+}
+pub fn Handler::new(rpc~ : (RpcStats) -> Unit, conn? : (ConnStats) -> Unit) -> Self
 
 pub struct Keepalive {
   keepalive_time : Int64
@@ -86,6 +98,17 @@ pub(all) struct PingGuard {
 }
 pub fn PingGuard::new(min_interval~ : Int64, max_strikes~ : Int32, now? : Int64) -> Self
 pub fn PingGuard::observe(Self, Int64) -> Bool
+
+pub(all) enum RpcStats {
+  Begin(path~ : String, name~ : String)
+  InHeader(metadata~ : Array[@header.Header])
+  OutHeader(metadata~ : Array[@header.Header])
+  InPayload(length~ : Int32)
+  OutPayload(length~ : Int32)
+  InTrailer(metadata~ : Array[@header.Header])
+  OutTrailer(metadata~ : Array[@header.Header])
+  End(status~ : Status, message~ : String)
+}
 
 pub(all) struct ServerKeepalive {
   time : Int64

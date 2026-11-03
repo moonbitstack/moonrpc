@@ -217,6 +217,8 @@ pub(all) struct GrpcServer {
   mut max_recv : Int32
   mut max_send : Int32
   mut keepalive : @wire.ServerKeepalive?
+  // Where every connection's engine reports its calls.
+  mut stats : @wire.Handler?
 }
 
 ///|
@@ -233,6 +235,7 @@ pub fn GrpcServer::new() -> GrpcServer {
     max_recv: @wire.max_message_size,
     max_send: @wire.max_message_size,
     keepalive: None,
+    stats: None,
   }
 }
 
@@ -275,6 +278,15 @@ pub fn GrpcServer::set_encoding(
   encoding : @moonrpc.Encoding,
 ) -> Unit {
   self.encoding = encoding
+}
+
+///|
+/// Report every call on every connection to `handler`, as grpc-go's stats handler does.
+pub fn GrpcServer::set_stats_handler(
+  self : GrpcServer,
+  handler : @wire.Handler,
+) -> Unit {
+  self.stats = Some(handler)
 }
 
 ///|
@@ -371,6 +383,10 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
   e.set_clock(() => @async.now())
   e.set_encoding(self.encoding)
   e.set_max_message_size(recv=self.max_recv, send=self.max_send)
+  match self.stats {
+    Some(handler) => e.set_stats_handler(handler)
+    None => ()
+  }
   match self.keepalive {
     Some(policy) => e.set_keepalive(policy)
     None => ()
