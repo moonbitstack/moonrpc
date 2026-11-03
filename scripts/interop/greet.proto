@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package greet;
+
+option go_package = "moonbitstack/moonrpc-interop/greetpb";
+
+enum Mood {
+  MOOD_CALM = 0;
+  MOOD_GLAD = 1;
+}
+
+message HelloRequest {
+  string name = 1;
+  Mood mood = 2;
+  map<string, int64> extras = 3;
+}
+
+message HelloReply {
+  string message = 1;
+  Mood mood = 2;
+  int64 total = 3;
+}
+
+message Upto {
+  int32 n = 1;
+}
+
+message Number {
+  int32 value = 1;
+}
+
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+  rpc CountTo (Upto) returns (stream Number);
+  rpc Sum (stream Number) returns (Number);
+  rpc Echo (stream Number) returns (stream Number);
+}

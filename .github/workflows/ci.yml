@@ -241,3 +241,154 @@ jobs:
           set -e
           grep -q 'no application protocol\|alert' /tmp/tls-alpn.txt
           echo "TLS interop OK"
+
+  # A genuine grpc-go client calling the moonrpc server: all four cardinalities, an
+  # interceptor chain, gzip, and plaintext and TLS. grpcurl already proves the wire;
+  # this proves the same wire to a hand-written Go program using the full call API.
+  grpc-go-client-interop:
+    name: real gRPC interop (grpc-go client)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: build the greeter server and the grpc-go client
+        run: |
+          moon build --target native
+          cd scripts/interop
+          go build -o bin/ ./...
+          cd ../..
+
+      - name: a CA and a certificate for it
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tls"
+          cd "$RUNNER_TEMP/tls"
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout ca-key.pem -out ca.pem -days 2 -nodes -subj "/CN=moonrpc test CA" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
+          openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout key.pem -out server.csr -nodes -subj "/CN=localhost"
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\n' > ext.cnf
+          openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial \
+            -out cert.pem -days 2 -extfile ext.cnf
+
+      - name: grpc-go client, plaintext then gzip then TLS
+        run: |
+          set -euo pipefail
+          SERVER=./_build/native/debug/build/cmd/greetd/greetd
+          TLS="$RUNNER_TEMP/tls"
+          echo "== plaintext =="
+          "$SERVER" 12000 & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/12000) 2>/dev/null; then exec 3>&-; break; fi
+            sleep 1
+          done
+          ./scripts/interop/bin/client -addr 127.0.0.1:12000
+          echo "== gzip =="
+          ./scripts/interop/bin/client -addr 127.0.0.1:12000 -gzip
+          kill $SRV 2>/dev/null || true
+          wait $SRV 2>/dev/null || true
+          trap - EXIT
+          echo "== TLS =="
+          "$SERVER" 12001 "$TLS/cert.pem" "$TLS/key.pem" & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/12001) 2>/dev/null; then exec 3>&-; break; fi
+            sleep 1
+          done
+          ./scripts/interop/bin/client -addr 127.0.0.1:12001 -ca "$TLS/ca.pem"
+          echo "grpc-go client interop OK"
+
+  # The other direction: a real grpc-go server, and the moonrpc generated client
+  # (`greetd check`) against it, plaintext and TLS. Both answers must match byte for
+  # byte, which is what `client and channel agree` asserts.
+  grpc-go-server-interop:
+    name: real gRPC interop (grpc-go server)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: build the greeter client and the grpc-go server
+        run: |
+          moon build --target native
+          cd scripts/interop
+          go build -o bin/ ./...
+          cd ../..
+
+      - name: a CA and a certificate for it
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tls"
+          cd "$RUNNER_TEMP/tls"
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout ca-key.pem -out ca.pem -days 2 -nodes -subj "/CN=moonrpc test CA" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,keyCertSign,cRLSign"
+          openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+            -keyout key.pem -out server.csr -nodes -subj "/CN=localhost"
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\n' > ext.cnf
+          openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial \
+            -out cert.pem -days 2 -extfile ext.cnf
+
+      - name: the moonrpc generated client against the grpc-go server
+        run: |
+          set -euo pipefail
+          CLIENT=./_build/native/debug/build/cmd/greetd/greetd
+          TLS="$RUNNER_TEMP/tls"
+          echo "== plaintext =="
+          ./scripts/interop/bin/server -addr 127.0.0.1:12002 & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/12002) 2>/dev/null; then exec 3>&-; break; fi
+            sleep 1
+          done
+          "$CLIENT" check 12002 | tee /tmp/go-check.txt
+          grep -q 'client and channel agree' /tmp/go-check.txt
+          kill $SRV 2>/dev/null || true
+          wait $SRV 2>/dev/null || true
+          trap - EXIT
+          echo "== TLS =="
+          ./scripts/interop/bin/server -addr 127.0.0.1:12003 \
+            -cert "$TLS/cert.pem" -key "$TLS/key.pem" & SRV=$!
+          trap 'kill $SRV 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/12003) 2>/dev/null; then exec 3>&-; break; fi
+            sleep 1
+          done
+          "$CLIENT" check 12003 "$TLS/ca.pem" | tee /tmp/go-tls-check.txt
+          grep -q 'client and channel agree' /tmp/go-tls-check.txt
+          echo "grpc-go server interop OK"
