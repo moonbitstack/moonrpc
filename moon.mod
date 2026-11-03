@@ -30,6 +30,12 @@ keywords = [
   "retry",
   "keepalive",
   "annotations",
+  "stats",
+  "channelz",
+  "service-config",
+  "wait-for-ready",
+  "interop",
+  "grpc-go",
   "wasm",
   "moonbit",
 ]
