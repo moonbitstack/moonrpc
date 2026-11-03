@@ -296,7 +296,7 @@ jobs:
       - name: grpc-go client, plaintext then gzip then TLS
         run: |
           set -euo pipefail
-          SERVER=./_build/native/debug/build/cmd/greetd/greetd
+          SERVER=./_build/native/debug/build/cmd/greetd/greetd.exe
           TLS="$RUNNER_TEMP/tls"
           echo "== plaintext =="
           "$SERVER" 12000 & SRV=$!
@@ -371,7 +371,7 @@ jobs:
       - name: the moonrpc generated client against the grpc-go server
         run: |
           set -euo pipefail
-          CLIENT=./_build/native/debug/build/cmd/greetd/greetd
+          CLIENT=./_build/native/debug/build/cmd/greetd/greetd.exe
           TLS="$RUNNER_TEMP/tls"
           echo "== plaintext =="
           ./scripts/interop/bin/server -addr 127.0.0.1:12002 & SRV=$!
