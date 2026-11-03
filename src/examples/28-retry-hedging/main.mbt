@@ -3,7 +3,7 @@
 // and how the throttle shared by one server's calls cuts retries off. The channel
 // does the sending and the sleeping.
 //
-//     moon run src/examples/21-retry-hedging
+//     moon run src/examples/28-retry-hedging
 
 ///|
 fn wait(span : @moondate.Span?) -> String {
