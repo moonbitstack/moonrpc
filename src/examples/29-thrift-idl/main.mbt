@@ -12,6 +12,7 @@ fn sample() -> Person {
     scores: Map([("math", 10)]),
     portrait: b"\x01\x02",
     mood: Happy,
+    stamped: SharedStamp::{ at: 1L, },
   }
 }
 
@@ -26,9 +27,13 @@ fn probe(proto : &@thrift.Protocol) -> Unit raise {
   proto.write_struct_end()
 
   let processor = @thrift.Processor::new()
-  register_greeter(processor, who => "Hello, \{who.name}!", (a, b) => a + b, text => {
-    println("  notify: \{text}")
-  })
+  register_greeter(
+    processor,
+    who => "Hello, \{who.name}!",
+    (a, b) => a + b,
+    text => println("  notify: \{text}"),
+    () => "pong",
+  )
   let reply = processor.process(proto, proto.output())
   // The same protocol reads what it just wrote: `reset` points it at the reply.
   proto.reset(reply)

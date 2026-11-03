@@ -441,9 +441,15 @@ moon run src/cmd/thriftc -- greet.thrift -o greet.g.mbt
 ```
 
 The compiler reads `struct`, `enum` and `service` over the primitive types, `list`,
-`set` and `map`. `typedef`, `union`, `exception`, `const`, `throws` and `extends` are
-refused with the line they came from instead of being silently dropped, and `include`
-is read and ignored, so a type from another file has to be declared in this one.
+`set` and `map`. `typedef`, `union`, `exception`, `const` and `throws` are refused with
+the line they came from instead of being silently dropped.
+
+`include "shared.thrift"` folds that file's types into the output, under the name the
+include gives them: `shared.Person` becomes `SharedPerson`, so one package holds both
+without a clash. Nested includes are read once each, and two included files with the
+same basename are refused rather than merged silently. `service Child extends Base`
+carries the base's methods into `register_child` and the child's client — the base's
+own registration stays with the base's file.
 
 ## Concurrency on a connection
 

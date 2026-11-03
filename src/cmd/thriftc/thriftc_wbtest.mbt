@@ -122,3 +122,151 @@ test "thriftc: an enum keeps the numbers the file gives it" {
   // The next value follows the one before it, as Thrift does.
   assert_true(code.contains("Happy => 6"))
 }
+
+// ---------------------------------------------------------------- includes
+
+///|
+/// How many times `needle` occurs in `haystack`.
+fn count_of(haystack : String, needle : String) -> Int32 {
+  let mut count = 0
+  let mut at = 0
+  while at + needle.length() <= haystack.length() {
+    if haystack[at:at + needle.length()].to_owned() == needle {
+      count = count + 1
+      at = at + needle.length()
+    } else {
+      at = at + 1
+    }
+  }
+  count
+}
+
+///|
+fn loader(files : Map[String, String]) -> Loader {
+  path => files.get(path)
+}
+
+///|
+test "thriftc: an included file's types are folded in under a prefix" {
+  let files : Map[String, String] = Map([
+    ("shared.thrift", "struct Stamp { 1: i64 at }"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"shared.thrift\"\nstruct A { 1: shared.Stamp s }",
+    loader(files),
+  )
+  assert_true(code.contains("pub(all) struct SharedStamp"))
+  assert_true(code.contains("s : SharedStamp"))
+  assert_true(code.contains("proto.write_field_begin(@thrift.type_struct, 1)"))
+}
+
+///|
+test "thriftc: an include that cannot be read is refused with its path" {
+  let raised = try {
+    ignore(render("main.thrift", "include \"gone.thrift\""))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("cannot read the included file")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: two included files with the same name are refused" {
+  let files : Map[String, String] = Map([
+    ("a/shared.thrift", "struct A { 1: i32 x }"),
+    ("b/shared.thrift", "struct B { 1: i32 y }"),
+  ])
+  let raised = try {
+    ignore(
+      render_with(
+        "main.thrift",
+        "include \"a/shared.thrift\"\ninclude \"b/shared.thrift\"",
+        loader(files),
+      ),
+    )
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("both named")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: a qualified name with no include is refused" {
+  let raised = try {
+    ignore(render("main.thrift", "struct A { 1: other.Thing t }"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("no `include` in this file brings in `other`")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: the same file included twice is read once" {
+  let files : Map[String, String] = Map([
+    ("shared.thrift", "struct Stamp { 1: i64 at }"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"shared.thrift\"\ninclude \"shared.thrift\"\nstruct A { 1: shared.Stamp s }",
+    loader(files),
+  )
+  assert_eq(count_of(code, "pub(all) struct SharedStamp"), 1)
+}
+
+// ---------------------------------------------------------------- extends
+
+///|
+test "thriftc: a derived service carries its base's methods" {
+  let code = render(
+    "s.thrift", "service Base { void ping() }\nservice Child extends Base { i32 add(1: i32 a, 2: i32 b) }",
+  )
+  // The child's registration takes its own method first, then the inherited one.
+  assert_true(code.contains("  add : (Int32, Int32) -> Int32,"))
+  assert_true(code.contains("  ping : () -> Unit,"))
+  assert_true(code.contains("processor.add(\"ping\""))
+  assert_true(code.contains("pub async fn[T : @thrift.Transport] child_ping"))
+}
+
+///|
+test "thriftc: an inherited method is answered once, even if the child overrides it" {
+  // The base lives in the include, so only the child is emitted and a doubled `ping`
+  // would be the child registering it twice.
+  let files : Map[String, String] = Map([
+    ("base.thrift", "service Base { void ping() }"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"base.thrift\"\nservice Child extends base.Base { void ping() }",
+    loader(files),
+  )
+  assert_eq(count_of(code, "processor.add(\"ping\""), 1)
+}
+
+///|
+test "thriftc: extending a service nobody declares is refused" {
+  let raised = try {
+    ignore(render("s.thrift", "service Child extends Missing { void ping() }"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("does not declare or include")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: a service can extend one from an included file" {
+  let files : Map[String, String] = Map([
+    ("base.thrift", "service Base { void ping() }"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"base.thrift\"\nservice Child extends base.Base { void go() }",
+    loader(files),
+  )
+  assert_true(code.contains("processor.add(\"go\""))
+  assert_true(code.contains("processor.add(\"ping\""))
+}

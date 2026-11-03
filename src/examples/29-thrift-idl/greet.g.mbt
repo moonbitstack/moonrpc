@@ -29,6 +29,41 @@ pub fn Mood::from_i32(value : Int32) -> Mood raise @thrift.ThriftError {
   }
 }
 
+pub(all) struct SharedStamp {
+  at : Int64
+}
+
+pub fn SharedStamp::default() -> SharedStamp {
+  {
+    at: 0L,
+  }
+}
+
+pub fn SharedStamp::encode(self : SharedStamp, proto : &@thrift.Protocol) -> Unit {
+  proto.write_struct_begin("SharedStamp")
+  proto.write_field_begin(@thrift.type_i64, 1)
+  proto.write_i64(self.at)
+  proto.write_field_stop()
+  proto.write_struct_end()
+}
+
+pub fn SharedStamp::decode(proto : &@thrift.Protocol) -> SharedStamp raise @thrift.ThriftError {
+  let mut at : Int64 = 0L
+  proto.read_struct_begin()
+  for ;; {
+    let (field_type, field_id) = proto.read_field_begin()
+    if field_type == @thrift.type_stop {
+      break
+    }
+    match field_id {
+      1 => at = proto.read_i64()
+      _ => @thrift.skip(proto, field_type)
+    }
+  }
+  proto.read_struct_end()
+  { at, }
+}
+
 pub(all) struct Person {
   name : String
   age : Option[Int32]
@@ -36,6 +71,7 @@ pub(all) struct Person {
   scores : Map[String, Int32]
   portrait : Bytes
   mood : Mood
+  stamped : SharedStamp
 }
 
 pub fn Person::default() -> Person {
@@ -46,6 +82,7 @@ pub fn Person::default() -> Person {
     scores: (Map([]) : Map[String, Int32]),
     portrait: b"",
     mood: Mood::Calm,
+    stamped: SharedStamp::default(),
   }
 }
 
@@ -68,6 +105,8 @@ pub fn Person::encode(self : Person, proto : &@thrift.Protocol) -> Unit {
   proto.write_bytes(self.portrait)
   proto.write_field_begin(@thrift.type_i32, 6)
   proto.write_i32(self.mood.to_i32())
+  proto.write_field_begin(@thrift.type_struct, 7)
+  self.stamped.encode(proto)
   proto.write_field_stop()
   proto.write_struct_end()
 }
@@ -79,6 +118,7 @@ pub fn Person::decode(proto : &@thrift.Protocol) -> Person raise @thrift.ThriftE
   let mut scores : Map[String, Int32] = (Map([]) : Map[String, Int32])
   let mut portrait : Bytes = b""
   let mut mood : Mood = Mood::Calm
+  let mut stamped : SharedStamp = SharedStamp::default()
   proto.read_struct_begin()
   for ;; {
     let (field_type, field_id) = proto.read_field_begin()
@@ -92,11 +132,12 @@ pub fn Person::decode(proto : &@thrift.Protocol) -> Person raise @thrift.ThriftE
       4 => scores = read_map_string_i32(proto)
       5 => portrait = proto.read_bytes()
       6 => mood = Mood::from_i32(proto.read_i32())
+      7 => stamped = SharedStamp::decode(proto)
       _ => @thrift.skip(proto, field_type)
     }
   }
   proto.read_struct_end()
-  { name, age, tags, scores, portrait, mood }
+  { name, age, tags, scores, portrait, mood, stamped, }
 }
 
 pub fn write_list_string(proto : &@thrift.Protocol, value : Array[String]) -> Unit {
@@ -141,6 +182,7 @@ pub fn register_greeter(
   hello : (Person) -> String,
   add : (Int32, Int32) -> Int32,
   notify : (String) -> Unit,
+  ping : () -> String,
 ) -> Unit {
   processor.add("hello", proto => {
     let mut arg_who : Person = Person::default()
@@ -190,6 +232,18 @@ pub fn register_greeter(
     }
     notify(arg_text)
   })
+  processor.add("ping", proto => {
+    for ;; {
+      let (field_type, _) = proto.read_field_begin()
+      if field_type == @thrift.type_stop {
+        break
+      }
+      @thrift.skip(proto, field_type)
+    }
+    let result = ping()
+    proto.write_field_begin(@thrift.type_string, 0)
+    proto.write_string(result)
+  })
 }
 
 pub async fn[T : @thrift.Transport] greeter_hello(
@@ -226,5 +280,12 @@ pub async fn[T : @thrift.Transport] greeter_notify(
     proto.write_field_begin(@thrift.type_string, 1)
     proto.write_string(text)
   })
+}
+
+pub async fn[T : @thrift.Transport] greeter_ping(
+  transport : T,
+  proto : &@thrift.Protocol,
+) -> String raise @thrift.ThriftError {
+  @thrift.call(transport, proto, "ping", 1, _ => (), proto => proto.read_string())
 }
 

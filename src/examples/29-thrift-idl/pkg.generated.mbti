@@ -12,11 +12,13 @@ pub async fn[T : @thrift.Transport] greeter_hello(T, &@thrift.Protocol, Person) 
 
 pub async fn[T : @thrift.Transport] greeter_notify(T, &@thrift.Protocol, String) -> Unit raise @thrift.ThriftError
 
+pub async fn[T : @thrift.Transport] greeter_ping(T, &@thrift.Protocol) -> String raise @thrift.ThriftError
+
 pub fn read_list_string(&@thrift.Protocol) -> Array[String] raise @thrift.ThriftError
 
 pub fn read_map_string_i32(&@thrift.Protocol) -> Map[String, Int32] raise @thrift.ThriftError
 
-pub fn register_greeter(@thrift.Processor, (Person) -> String, (Int32, Int32) -> Int32, (String) -> Unit) -> Unit
+pub fn register_greeter(@thrift.Processor, (Person) -> String, (Int32, Int32) -> Int32, (String) -> Unit, () -> String) -> Unit
 
 pub fn write_list_string(&@thrift.Protocol, Array[String]) -> Unit
 
@@ -40,10 +42,18 @@ pub(all) struct Person {
   scores : Map[String, Int32]
   portrait : Bytes
   mood : Mood
+  stamped : SharedStamp
 }
 pub fn Person::decode(&@thrift.Protocol) -> Self raise @thrift.ThriftError
 pub fn Person::default() -> Self
 pub fn Person::encode(Self, &@thrift.Protocol) -> Unit
+
+pub(all) struct SharedStamp {
+  at : Int64
+}
+pub fn SharedStamp::decode(&@thrift.Protocol) -> Self raise @thrift.ThriftError
+pub fn SharedStamp::default() -> Self
+pub fn SharedStamp::encode(Self, &@thrift.Protocol) -> Unit
 
 // Type aliases
 

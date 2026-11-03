@@ -2,9 +2,13 @@
 package "moonbitstack/moonrpc/cmd/thriftc"
 
 // Values
+pub fn link(String, String, (String) -> String?) -> Linked raise Refused
+
 pub fn parse(String, String) -> Document raise Refused
 
 pub fn render(String, String) -> String raise Refused
+
+pub fn render_with(String, String, (String) -> String?) -> String raise Refused
 
 // Errors
 pub(all) suberror Refused {
@@ -19,6 +23,7 @@ pub(all) struct Document {
   structs : Array[Struct]
   enums : Array[Enum]
   services : Array[Service]
+  includes : Array[String]
 }
 
 type Emitter
@@ -41,6 +46,15 @@ pub(all) struct Function {
   params : Array[Param]
 }
 
+pub(all) struct Linked {
+  structs : Array[Struct]
+  enums : Array[Enum]
+  services : Array[Service]
+  by_service : Map[String, Service]
+}
+
+type Linker
+
 pub(all) struct Param {
   id : Int32
   name : String
@@ -51,6 +65,7 @@ type Parser
 
 pub(all) struct Service {
   name : String
+  base : String?
   functions : Array[Function]
 }
 
@@ -83,5 +98,6 @@ pub(all) enum Token {
 }
 
 // Type aliases
+pub type Loader = (String) -> String?
 
 // Traits

@@ -80,6 +80,7 @@ pub(all) struct Function {
 ///|
 pub(all) struct Service {
   name : String
+  base : String?
   functions : Array[Function]
 }
 
@@ -88,6 +89,8 @@ pub(all) struct Document {
   structs : Array[Struct]
   enums : Array[Enum]
   services : Array[Service]
+  // The files this one includes, as written.
+  includes : Array[String]
 }
 
 // ---------------------------------------------------------------- the lexer
@@ -416,12 +419,10 @@ fn Parser::parse_function(self : Parser) -> Function raise Refused {
 ///|
 fn Parser::parse_service(self : Parser) -> Service raise Refused {
   let name = self.expect_ident("a service name")
+  let mut base = None
   if self.peek() is TIdent("extends") {
-    refuse(
-      self.file,
-      self.line(),
-      "`extends` is not supported; `\{name}` inherits",
-    )
+    ignore(self.advance())
+    base = Some(self.expect_ident("the service it extends"))
   }
   self.expect('{')
   let functions : Array[Function] = []
@@ -432,7 +433,7 @@ fn Parser::parse_service(self : Parser) -> Service raise Refused {
     functions.push(self.parse_function())
   }
   self.skip_annotation()
-  { name, functions, }
+  { name, base, functions, }
 }
 
 ///|
@@ -440,6 +441,7 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
   let structs : Array[Struct] = []
   let enums : Array[Enum] = []
   let services : Array[Service] = []
+  let includes : Array[String] = []
   while !self.at_end() {
     match self.peek() {
       TIdent("namespace") => {
@@ -454,8 +456,9 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
       }
       TIdent("include") => {
         ignore(self.advance())
-        if self.peek() is TStr(_) {
+        if self.peek() is TStr(path) {
           ignore(self.advance())
+          includes.push(path)
         } else {
           refuse(self.file, self.line(), "`include` needs a quoted file")
         }
@@ -520,12 +523,12 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
         )
     }
   }
-  { structs, enums, services, }
+  { structs, enums, services, includes, }
 }
 
 ///|
-/// Parse one file. `include` is read and ignored, so a file that names another one
-/// still compiles; a type from that file has to be declared here instead.
+/// Parse one file. The includes it names are collected, not read: folding them in is
+/// `link`, which is where a `shared.Person` gets its name in the output.
 pub fn parse(file : String, source : String) -> Document raise Refused {
   let parser : Parser = { file, tokens: lex(file, source), pos: 0, }
   parser.parse_document()

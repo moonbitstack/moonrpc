@@ -204,7 +204,7 @@ fn walk_types(
 ///|
 /// Every container type reachable from the document, once each, sorted so the output
 /// does not depend on the order the file happened to mention them in.
-fn collect_containers(doc : Document) -> Array[TType] {
+fn collect_containers(doc : Linked) -> Array[TType] {
   let seen : Map[String, TType] = Map([])
   let order : Array[String] = []
   for s in doc.structs {
@@ -423,20 +423,78 @@ fn emit_struct(e : Emitter, item : Struct, enums : Array[Enum]) -> Unit {
   e.line(1, "}")
   e.line(1, "proto.read_struct_end()")
   let fields = item.fields.map(f => f.name).join(", ")
-  e.line(1, "{ \{fields} }")
+  e.line(1, "{ \{fields}, }")
   e.line(0, "}")
   e.blank()
 }
 
 ///|
-fn emit_service(e : Emitter, service : Service, enums : Array[Enum]) -> Unit {
+fn has_method(methods : Array[Function], name : String) -> Bool {
+  for func in methods {
+    if func.name == name {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// A service's methods, its own first and then its base's, so an overriding method
+/// shadows the inherited one.
+fn service_methods(
+  service : Service,
+  by_service : Map[String, Service],
+  seen : Array[String],
+  file : String,
+) -> Array[Function] raise Refused {
+  if seen.contains(service.name) {
+    refuse(
+      file,
+      0,
+      "`\{service.name}` extends itself through its bases (\{seen.join(" -> ")})",
+    )
+  }
+  seen.push(service.name)
+  let out : Array[Function] = []
+  for func in service.functions {
+    out.push(func)
+  }
+  match service.base {
+    Some(base) =>
+      match by_service.get(base) {
+        Some(parent) =>
+          for func in service_methods(parent, by_service, seen, file) {
+            if !has_method(out, func.name) {
+              out.push(func)
+            }
+          }
+        None =>
+          refuse(
+            file,
+            0,
+            "`\{service.name}` extends `\{base}`, which this file does not declare or include",
+          )
+      }
+    None => ()
+  }
+  ignore(seen.pop())
+  out
+}
+
+///|
+fn emit_service(
+  e : Emitter,
+  service : Service,
+  enums : Array[Enum],
+  methods : Array[Function],
+) -> Unit {
   let prefix = lower_first(service.name)
   let names = enums.map(x => x.name)
 
   // The server side: one handler per method, registered under its wire name.
   e.line(0, "pub fn register_\{prefix}(")
   e.line(1, "processor : @thrift.Processor,")
-  for func in service.functions {
+  for func in methods {
     let params = func.params.map(p => moon_type(p.ty)).join(", ")
     let ret = match func.ret {
       Some(ty) => moon_type(ty)
@@ -445,7 +503,7 @@ fn emit_service(e : Emitter, service : Service, enums : Array[Enum]) -> Unit {
     e.line(1, "\{func.name} : (\{params}) -> \{ret},")
   }
   e.line(0, ") -> Unit {")
-  for func in service.functions {
+  for func in methods {
     e.line(1, "processor.add(\"\{func.name}\", proto => {")
     for param in func.params {
       e.line(
@@ -454,7 +512,11 @@ fn emit_service(e : Emitter, service : Service, enums : Array[Enum]) -> Unit {
       )
     }
     e.line(2, "for ;; {")
-    e.line(3, "let (field_type, field_id) = proto.read_field_begin()")
+    if func.params.length() > 0 {
+      e.line(3, "let (field_type, field_id) = proto.read_field_begin()")
+    } else {
+      e.line(3, "let (field_type, _) = proto.read_field_begin()")
+    }
     e.line(3, "if field_type == @thrift.type_stop {")
     e.line(4, "break")
     e.line(3, "}")
@@ -487,7 +549,7 @@ fn emit_service(e : Emitter, service : Service, enums : Array[Enum]) -> Unit {
   e.blank()
 
   // The client side: one function per method, over any transport.
-  for func in service.functions {
+  for func in methods {
     let name = "\{prefix}_\{func.name}"
     let ret = match func.ret {
       Some(ty) => " -> \{moon_type(ty)}"
@@ -509,7 +571,7 @@ fn emit_service(e : Emitter, service : Service, enums : Array[Enum]) -> Unit {
     if func.params.length() == 0 {
       e.line(
         1,
-        "\{call}(transport, proto, \"\{func.name}\", 1, proto => ()\{read_tail(func.ret, names)})",
+        "\{call}(transport, proto, \"\{func.name}\", 1, _ => ()\{read_tail(func.ret, names)})",
       )
     } else {
       e.line(1, "\{call}(transport, proto, \"\{func.name}\", 1, proto => {")
@@ -549,7 +611,7 @@ fn lower_first(name : String) -> String {
 // ---------------------------------------------------------------- validation
 
 ///|
-fn owner_of(doc : Document) -> Map[String, Struct] {
+fn owner_of(doc : Linked) -> Map[String, Struct] {
   let owner : Map[String, Struct] = Map([])
   for s in doc.structs {
     owner[s.name] = s
@@ -595,7 +657,7 @@ fn visit_cycle(
 }
 
 ///|
-fn check_cycles(doc : Document, file : String) -> Unit raise Refused {
+fn check_cycles(doc : Linked, file : String) -> Unit raise Refused {
   let owner = owner_of(doc)
   let done : Map[String, Bool] = Map([])
   for s in doc.structs {
@@ -616,7 +678,7 @@ fn check_type(
         refuse(
           file,
           0,
-          "`\{name}` is not declared in this file (an `include` is read and ignored)",
+          "`\{name}` is not declared in this file or in anything it includes",
         )
       }
     List(inner) | Set(inner) => check_type(inner, enums, structs, file)
@@ -636,7 +698,7 @@ fn check_type(
 }
 
 ///|
-fn check_names(doc : Document, file : String) -> Unit raise Refused {
+fn check_names(doc : Linked, file : String) -> Unit raise Refused {
   let enums = doc.enums.map(e => e.name)
   let structs = doc.structs.map(s => s.name)
   for s in doc.structs {
@@ -660,9 +722,20 @@ fn check_names(doc : Document, file : String) -> Unit raise Refused {
 // ---------------------------------------------------------------- the file
 
 ///|
-/// Render one .thrift file as MoonBit.
+/// Render one .thrift file as MoonBit. A file with no includes needs no file system.
 pub fn render(file : String, source : String) -> String raise Refused {
-  let doc = parse(file, source)
+  render_with(file, source, _ => None)
+}
+
+///|
+/// Render one .thrift file with its includes folded in. `load` reads an included file;
+/// a loader that always answers `None` compiles a file that has no includes.
+pub fn render_with(
+  file : String,
+  source : String,
+  load : Loader,
+) -> String raise Refused {
+  let doc = link(file, source, load)
   check_names(doc, file)
   check_cycles(doc, file)
   let e : Emitter = { out: [], }
@@ -681,7 +754,12 @@ pub fn render(file : String, source : String) -> String raise Refused {
     emit_container(e, ty, doc.enums.map(x => x.name))
   }
   for service in doc.services {
-    emit_service(e, service, doc.enums)
+    emit_service(
+      e,
+      service,
+      doc.enums,
+      service_methods(service, doc.by_service, [], file),
+    )
   }
   e.text()
 }

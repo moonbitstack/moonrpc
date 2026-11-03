@@ -11,6 +11,7 @@ test "thrift idl: a person round-trips through the binary protocol" {
     scores: Map([("math", 10)]),
     portrait: b"\x01\x02",
     mood: Happy,
+    stamped: SharedStamp::{ at: 9L, },
   }
   person.encode(out)
   out.reset(out.output())
@@ -21,6 +22,7 @@ test "thrift idl: a person round-trips through the binary protocol" {
   assert_eq(back.scores.get("math"), Some(10))
   assert_eq(back.portrait, b"\x01\x02")
   assert_eq(back.mood.to_i32(), 2)
+  assert_eq(back.stamped.at, 9L)
 }
 
 ///|
@@ -33,6 +35,7 @@ test "thrift idl: a person round-trips through the compact protocol" {
     scores: Map([]),
     portrait: b"",
     mood: Calm,
+    stamped: SharedStamp::default(),
   }
   person.encode(out)
   out.reset(out.output())
@@ -73,9 +76,13 @@ test "thrift idl: an enum crosses as its number" {
 ///|
 test "thrift idl: the generated service answers a call" {
   let processor = @thrift.Processor::new()
-  register_greeter(processor, who => "Hello, \{who.name}!", (a, b) => a + b, text => {
-    ignore(text)
-  })
+  register_greeter(
+    processor,
+    who => "Hello, \{who.name}!",
+    (a, b) => a + b,
+    text => ignore(text),
+    () => "pong",
+  )
   let out : &@thrift.Protocol = @thrift.Binary::new(b"")
   out.write_message_begin("add", @thrift.message_call, 3)
   out.write_struct_begin("add_args")
