@@ -513,14 +513,14 @@ jobs:
             echo "nothing listening on $1" >&2
             return 1
           }
-          # $1 protocol name, $2 flag for thriftd and the Go peers, $3 server port,
-          # $4 Go server port
+          # $1 protocol name, $2 argument for thriftd, $3 flag for the Go peers (Go's
+          # flag package wants the dash), $4 server port, $5 Go server port
           run_protocol() {
             echo "== $1: Go client -> moonrpc server =="
-            "$THRIFTD" "$3" $2 & SRV=$!
+            "$THRIFTD" "$4" $2 & SRV=$!
             trap 'kill $SRV 2>/dev/null || true' EXIT
-            wait_for "$3"
-            ./scripts/interop/bin/thriftclient -addr 127.0.0.1:"$3" $2 | tee /tmp/thrift-go-client-$1.txt
+            wait_for "$4"
+            ./scripts/interop/bin/thriftclient -addr 127.0.0.1:"$4" $3 | tee /tmp/thrift-go-client-$1.txt
             grep -q 'apache thrift client interop OK' /tmp/thrift-go-client-$1.txt
             grep -q 'double returns 3' /tmp/thrift-go-client-$1.txt
             kill $SRV 2>/dev/null || true
@@ -528,10 +528,10 @@ jobs:
             trap - EXIT
 
             echo "== $1: moonrpc client -> Go server =="
-            ./scripts/interop/bin/thriftserver -addr 127.0.0.1:"$4" $2 & SRV=$!
+            ./scripts/interop/bin/thriftserver -addr 127.0.0.1:"$5" $3 & SRV=$!
             trap 'kill $SRV 2>/dev/null || true' EXIT
-            wait_for "$4"
-            "$THRIFTD" check "$4" $2 | tee /tmp/thrift-moonbit-client-$1.txt
+            wait_for "$5"
+            "$THRIFTD" check "$5" $2 | tee /tmp/thrift-moonbit-client-$1.txt
             grep -q 'pong:moonrpc' /tmp/thrift-moonbit-client-$1.txt
             grep -q '42' /tmp/thrift-moonbit-client-$1.txt
             grep -q 'double 3' /tmp/thrift-moonbit-client-$1.txt
@@ -541,6 +541,6 @@ jobs:
           }
           # The binary protocol, then the compact one. The same service answers both,
           # which is what makes the abstraction worth having.
-          run_protocol binary '' 9090 9091
-          run_protocol compact compact 9092 9093
+          run_protocol binary '' '' 9090 9091
+          run_protocol compact compact -compact 9092 9093
           echo "Apache Thrift interop OK"
