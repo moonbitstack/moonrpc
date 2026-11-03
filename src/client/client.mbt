@@ -152,7 +152,7 @@ pub struct H2Client {
   mut max_recv : Int32
   mut max_send : Int32
   // Where this connection reports call and connection events, once a caller sets one.
-  mut stats : @wire.Handler?
+  mut stats : @wire.StatsHandler?
   // A dynamic table size the peer asked for that has not been announced in a header block
   // yet: HPACK requires the encoder to say the new size before it uses it (RFC 7541 §6.3).
   mut size_update : Int32?
@@ -281,7 +281,7 @@ pub fn H2Client::set_user_agent(self : H2Client, user_agent : String) -> Unit {
 /// receives them: begin, each header and payload that moves, and how the call ended.
 pub fn H2Client::set_stats_handler(
   self : H2Client,
-  handler : @wire.Handler,
+  handler : @wire.StatsHandler,
 ) -> Unit {
   self.stats = Some(handler)
 }
@@ -919,7 +919,7 @@ pub fn H2Client::take_messages(self : H2Client, id : Int32) -> Array[Bytes] {
 ///|
 /// Pull every complete length-prefixed reply message now buffered on a call into
 /// `messages`, advancing the read cursor; partial trailing bytes stay buffered.
-fn drain_call_messages(c : ClientCall, stats : @wire.Handler?) -> Unit {
+fn drain_call_messages(c : ClientCall, stats : @wire.StatsHandler?) -> Unit {
   let all = c.data.to_bytes()
   let n = all.length()
   let mut off = c.data_off

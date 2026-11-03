@@ -15,6 +15,9 @@ pub using @header {type Header}
 pub using @wire {
   type Encoding,
   type Keepalive,
+  type StatsHandler,
+  type RpcStats,
+  type ConnStats,
   type StatusError,
   type Method,
   type Status,
@@ -89,6 +92,8 @@ pub using @balance {
   type Pushback,
   type Reconnect,
   type Retry,
+  type MethodConfig,
+  type ServiceConfig,
   type SubConn,
   type Throttle,
   type Throttling,

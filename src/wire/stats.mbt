@@ -36,18 +36,18 @@ pub(all) enum ConnStats {
 ///|
 /// A sink for the events a channel or a server observes. Register one with
 /// `H2Client::set_stats_handler` or `H2Server::set_stats_handler`; every call on
-/// that connection reports to it. A [`Handler`] is a pair of functions, as the
+/// that connection reports to it. A [`StatsHandler`] is a pair of functions, as the
 /// other callbacks in this library are, so a caller can build one from closures.
-pub(all) struct Handler {
+pub(all) struct StatsHandler {
   rpc : (RpcStats) -> Unit
   conn : (ConnStats) -> Unit
 }
 
 ///|
 /// A handler from its two callbacks; `conn` may be left out when only RPCs matter.
-pub fn Handler::new(
+pub fn StatsHandler::new(
   rpc~ : (RpcStats) -> Unit,
   conn? : (ConnStats) -> Unit,
-) -> Handler {
+) -> StatsHandler {
   { rpc, conn: conn.unwrap_or(_ => ()), }
 }

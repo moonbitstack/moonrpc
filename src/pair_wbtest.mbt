@@ -261,10 +261,14 @@ test "stats: a unary call reports begin, headers, payloads, trailers and end on 
   let server = @server.H2Server::new()
   server.register("/echo.Echo/Say", req => b"echo:" + req)
   let server_events : Array[@wire.RpcStats] = []
-  server.set_stats_handler(@wire.Handler::new(rpc=e => server_events.push(e)))
+  server.set_stats_handler(
+    @wire.StatsHandler::new(rpc=e => server_events.push(e)),
+  )
   let client = @client.H2Client::new()
   let client_events : Array[@wire.RpcStats] = []
-  client.set_stats_handler(@wire.Handler::new(rpc=e => client_events.push(e)))
+  client.set_stats_handler(
+    @wire.StatsHandler::new(rpc=e => client_events.push(e)),
+  )
   let (id, frames) = client.unary("/echo.Echo/Say", b"world")
   drive_pair(server, client, id, frames)
   assert_eq(client.reply(id).grpc_status, 0)

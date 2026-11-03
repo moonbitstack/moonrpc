@@ -218,7 +218,7 @@ pub(all) struct GrpcServer {
   mut max_send : Int32
   mut keepalive : @wire.ServerKeepalive?
   // Where every connection's engine reports its calls.
-  mut stats : @wire.Handler?
+  mut stats : @wire.StatsHandler?
 }
 
 ///|
@@ -284,7 +284,7 @@ pub fn GrpcServer::set_encoding(
 /// Report every call on every connection to `handler`, as grpc-go's stats handler does.
 pub fn GrpcServer::set_stats_handler(
   self : GrpcServer,
-  handler : @wire.Handler,
+  handler : @wire.StatsHandler,
 ) -> Unit {
   self.stats = Some(handler)
 }

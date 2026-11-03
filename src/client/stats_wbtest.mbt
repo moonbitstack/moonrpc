@@ -4,7 +4,9 @@
 test "client stats: a unary call reports begin, payloads, trailers and end" {
   let client = H2Client::new()
   let seen : Array[@wire.RpcStats] = []
-  client.set_stats_handler(@wire.Handler::new(rpc=event => seen.push(event)))
+  client.set_stats_handler(
+    @wire.StatsHandler::new(rpc=event => seen.push(event)),
+  )
   let (id, _req) = client.unary("/echo.Echo/Say", b"abc")
   let _ = client.feed(Settings(params=[], ack=false))
   let enc = @hpack.Encoder::new()
@@ -71,7 +73,7 @@ test "client stats: the begin event names the method, and end carries the status
   let called : Array[String] = [""]
   let end_status : Array[Int32] = [0]
   client.set_stats_handler(
-    @wire.Handler::new(rpc=event => {
+    @wire.StatsHandler::new(rpc=event => {
       match event {
         @wire.RpcStats::Begin(name~, ..) => called[0] = name
         @wire.RpcStats::End(status~, ..) => end_status[0] = status.code()
