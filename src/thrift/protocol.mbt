@@ -22,6 +22,9 @@ pub let type_bool : Int32 = 2
 pub let type_byte : Int32 = 3
 
 ///|
+pub let type_double : Int32 = 4
+
+///|
 pub let type_i16 : Int32 = 6
 
 ///|
@@ -298,6 +301,10 @@ pub fn TReader::skip(self : TReader, type_ : Int32) -> Unit raise ThriftError {
     t if t == type_i16 => ignore(self.read_i16())
     t if t == type_i32 => ignore(self.read_i32())
     t if t == type_i64 => ignore(self.read_i64())
+    t if t == type_double => {
+      self.need(8)
+      self.off = self.off + 8
+    }
     t if t == type_string => {
       let n = self.read_i32()
       self.need(n)

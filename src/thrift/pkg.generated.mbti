@@ -32,6 +32,8 @@ pub let type_bool : Int32
 
 pub let type_byte : Int32
 
+pub let type_double : Int32
+
 pub let type_i16 : Int32
 
 pub let type_i32 : Int32

@@ -166,3 +166,23 @@ test "thrift: a frame announces its body length" {
   )
   assert_eq(framed[4:].to_owned() == body, true)
 }
+
+///|
+test "thrift: skip walks a double field without a decoder" {
+  let writer = TWriter::new()
+  writer.write_field_begin(type_double, 1)
+  writer.write_i64(0L)
+  writer.write_field_stop()
+  let reader = TReader::new(writer.to_bytes())
+  let (field_type, _) = reader.read_field_begin() catch {
+    _ => abort("the field header must decode")
+  }
+  assert_eq(field_type, type_double)
+  reader.skip(field_type) catch {
+    _ => abort("a double must be skippable")
+  }
+  let (stop, _) = reader.read_field_begin() catch {
+    _ => abort("the stop byte must decode")
+  }
+  assert_eq(stop, type_stop)
+}
