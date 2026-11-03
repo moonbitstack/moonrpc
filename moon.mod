@@ -1,6 +1,6 @@
 name = "moonbitstack/moonrpc"
 
-version = "0.21.9"
+version = "0.21.10"
 
 readme = "README.md"
 
@@ -8,7 +8,31 @@ repository = "https://github.com/moonbitstack/moonrpc"
 
 license = "Apache-2.0"
 
-keywords = [ "grpc", "rpc", "protobuf", "http2", "moonbit" ]
+keywords = [
+  "grpc",
+  "rpc",
+  "protobuf",
+  "protocol-buffers",
+  "http2",
+  "microservice",
+  "streaming",
+  "unary",
+  "bidirectional-streaming",
+  "interceptor",
+  "load-balancing",
+  "health-check",
+  "reflection",
+  "tls",
+  "compression",
+  "gzip",
+  "deflate",
+  "deadline",
+  "retry",
+  "keepalive",
+  "annotations",
+  "wasm",
+  "moonbit",
+]
 
 description = "gRPC for MoonBit."
 
