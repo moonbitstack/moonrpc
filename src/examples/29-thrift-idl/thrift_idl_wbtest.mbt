@@ -247,3 +247,64 @@ test "thrift idl: a constant written in the IDL is a value of its type" {
   assert_eq(ada.stamped.at, 9L)
   assert_eq(ada.mood.to_i32(), 2)
 }
+
+///|
+test "thrift idl: a union carries one field, and reads it back" {
+  let out : &@thrift.Protocol = @thrift.Binary::new(b"")
+  At(SharedStamp::{ at: 9L, }).encode(out)
+  out.reset(out.output())
+  match Contact::decode(out) {
+    At(stamp) => assert_eq(stamp.at, 9L)
+    _ => fail("expected the stamp")
+  }
+}
+
+///|
+test "thrift idl: a union writes the one field it carries" {
+  let out : &@thrift.Protocol = @thrift.Binary::new(b"")
+  Phone(42L).encode(out)
+  out.reset(out.output())
+  out.read_struct_begin()
+  let (field_type, field_id) = out.read_field_begin()
+  // Field 2 is the phone; nothing else is on the wire.
+  assert_eq((field_type, field_id), (@thrift.type_i64, 2))
+  assert_eq(out.read_i64(), 42L)
+  let (next, _) = out.read_field_begin()
+  assert_eq(next, @thrift.type_stop)
+}
+
+///|
+test "thrift idl: a union with no field set is refused, not defaulted" {
+  let out : &@thrift.Protocol = @thrift.Binary::new(b"")
+  out.write_struct_begin("Contact")
+  out.write_field_stop()
+  out.write_struct_end()
+  out.reset(out.output())
+  let raised = try {
+    ignore(Contact::decode(out))
+    false
+  } catch {
+    @thrift.Application(message) => message.contains("carried no field")
+    _ => false
+  }
+  assert_true(raised)
+}
+
+///|
+test "thrift idl: a union's default is its first field's default" {
+  match Contact::default() {
+    Email(address) => assert_eq(address, "")
+    _ => fail("expected the first field")
+  }
+}
+
+///|
+test "thrift idl: a union of the compact protocol reads back the same" {
+  let out : &@thrift.Protocol = @thrift.Compact::new(b"")
+  Email("ada@example.com").encode(out)
+  out.reset(out.output())
+  match Contact::decode(out) {
+    Email(address) => assert_eq(address, "ada@example.com")
+    _ => fail("expected the address")
+  }
+}

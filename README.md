@@ -442,11 +442,26 @@ compiler with `--check` so the two cannot drift:
 moon run src/cmd/thriftc -- greet.thrift -o greet.g.mbt
 ```
 
-The compiler reads `struct`, `enum`, `exception`, `typedef`, `const` and `service` over
-the primitive types, `list`, `set` and `map`. A `typedef` is substituted where it is used
-— `typedef i64 Timestamp` leaves `Int64` behind, since the wire carries no name for it
-either — and an alias that loops back to itself is refused with the chain. `union` is
-refused with the line it came from instead of being silently dropped.
+The compiler reads `struct`, `enum`, `exception`, `union`, `typedef`, `const` and
+`service` over the primitive types, `list`, `set` and `map`. A `typedef` is substituted
+where it is used — `typedef i64 Timestamp` leaves `Int64` behind, since the wire carries
+no name for it either — and an alias that loops back to itself is refused with the chain.
+
+A `union` carries exactly one of its fields, so it becomes an enum with a variant each;
+on the wire it is a struct with that one field set. Reading a union that carries none is
+refused rather than defaulted, and `default()` — what a struct field of a union type
+starts from — is its first field's default:
+
+```thrift
+union Contact {
+  1: string email
+  2: i64 phone
+}
+```
+
+```moonbit
+pub(all) enum Contact { Email(String); Phone(Int64) }
+```
 
 A `const` is a `pub let` of its type. Scalar, list, map, struct and enum values are read,
 the type checks the value, and the name takes the shape MoonBit wants for a value, so

@@ -592,3 +592,62 @@ test "thriftc: an included constant arrives under its prefix" {
   )
   assert_true(code.contains("pub let sharedMax : Int32 = 7"))
 }
+
+// ---------------------------------------------------------------- unions
+
+///|
+test "thriftc: a union becomes an enum with a variant per field" {
+  let code = render("u.thrift", "union C { 1: string email, 2: i64 phone }")
+  assert_true(code.contains("pub(all) enum C {"))
+  assert_true(code.contains("Email(String)"))
+  assert_true(code.contains("Phone(Int64)"))
+  assert_true(code.contains("pub fn C::default() -> C {"))
+  // The first field's default is what an unset union is built from.
+  assert_true(code.contains("Email(\"\")"))
+  assert_true(code.contains("pub fn C::encode"))
+  assert_true(code.contains("pub fn C::decode"))
+  // Each variant writes its own field id, as a struct would.
+  assert_true(code.contains("Phone(value) => {"))
+  assert_true(code.contains("proto.write_field_begin(@thrift.type_i64, 2)"))
+  assert_true(code.contains("2 => out = Some(Phone(proto.read_i64()))"))
+}
+
+///|
+test "thriftc: a union with no field set is refused when it is read" {
+  let code = render("u.thrift", "union C { 1: string email }")
+  assert_true(code.contains("\"the union C carried no field\""))
+}
+
+///|
+test "thriftc: a union with no fields is refused" {
+  let raised = try {
+    ignore(render("u.thrift", "union C { }"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("union with no fields")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: two union fields that would share a variant are refused" {
+  let raised = try {
+    ignore(render("u.thrift", "union C { 1: i32 n, 2: i32 N }"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("two fields written `N`")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: a struct field of a union type travels as a struct" {
+  let code = render(
+    "u.thrift", "union C { 1: string email }\nstruct S { 1: C contact }",
+  )
+  assert_true(code.contains("contact : C"))
+  assert_true(code.contains("contact: C::default()"))
+  assert_true(code.contains("proto.write_field_begin(@thrift.type_struct, 1)"))
+  assert_true(code.contains("self.contact.encode(proto)"))
+  assert_true(code.contains("contact = C::decode(proto)"))
+}

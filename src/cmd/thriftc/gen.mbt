@@ -342,7 +342,110 @@ fn emit_enum(e : Emitter, item : Enum) -> Unit {
 }
 
 ///|
-fn emit_struct(e : Emitter, item : Struct, enums : Array[Enum]) -> Unit {
+/// A union carries exactly one of its fields, so it is an enum with a variant each. On
+/// the wire it is a struct: the variant's field id and value, then STOP.
+fn emit_union(
+  e : Emitter,
+  item : Struct,
+  enums : Array[Enum],
+  file : String,
+) -> Unit raise Refused {
+  let names = enums.map(x => x.name)
+  if item.fields.length() == 0 {
+    refuse(
+      file,
+      0,
+      "`\{item.name}` is a union with no fields; a union carries one of them",
+    )
+  }
+  let variants : Array[String] = []
+  for f in item.fields {
+    let variant = capitalise(f.name)
+    if variants.contains(variant) {
+      refuse(
+        file,
+        0,
+        "`\{item.name}` has two fields written `\{variant}`; rename one",
+      )
+    }
+    variants.push(variant)
+  }
+  e.line(0, "pub(all) enum \{item.name} {")
+  for f in item.fields {
+    e.line(1, "\{capitalise(f.name)}(\{moon_type(f.ty)})")
+  }
+  e.line(0, "}")
+  e.blank()
+
+  // The first field is what a missing value is built from: an unset union still needs
+  // something the rest of the generated code can carry.
+  let first = item.fields[0]
+  e.line(0, "pub fn \{item.name}::default() -> \{item.name} {")
+  e.line(1, "\{capitalise(first.name)}(\{default_of(first.ty, enums)})")
+  e.line(0, "}")
+  e.blank()
+
+  e.line(
+    0,
+    "pub fn \{item.name}::encode(self : \{item.name}, proto : &@thrift.Protocol) -> Unit {",
+  )
+  e.line(1, "proto.write_struct_begin(\"\{item.name}\")")
+  e.line(1, "match self {")
+  for f in item.fields {
+    e.line(2, "\{capitalise(f.name)}(value) => {")
+    e.line(3, "proto.write_field_begin(\{wire_type(f.ty, names)}, \{f.id})")
+    e.line(3, write_of(f.ty, "value", names))
+    e.line(2, "}")
+  }
+  e.line(1, "}")
+  e.line(1, "proto.write_field_stop()")
+  e.line(1, "proto.write_struct_end()")
+  e.line(0, "}")
+  e.blank()
+
+  e.line(
+    0,
+    "pub fn \{item.name}::decode(proto : &@thrift.Protocol) -> \{item.name} raise @thrift.ThriftError {",
+  )
+  e.line(1, "proto.read_struct_begin()")
+  e.line(1, "let mut out : \{item.name}? = None")
+  e.line(1, "for ;; {")
+  e.line(2, "let (field_type, field_id) = proto.read_field_begin()")
+  e.line(2, "if field_type == @thrift.type_stop {")
+  e.line(3, "break")
+  e.line(2, "}")
+  e.line(2, "match field_id {")
+  for f in item.fields {
+    e.line(
+      3,
+      "\{f.id} => out = Some(\{capitalise(f.name)}(\{read_of(f.ty, names)}))",
+    )
+  }
+  e.line(3, "_ => @thrift.skip(proto, field_type)")
+  e.line(2, "}")
+  e.line(1, "}")
+  e.line(1, "proto.read_struct_end()")
+  e.line(1, "match out {")
+  e.line(2, "Some(value) => value")
+  e.line(
+    2,
+    "_ => raise @thrift.Application(\"the union \{item.name} carried no field\")",
+  )
+  e.line(1, "}")
+  e.line(0, "}")
+  e.blank()
+}
+
+///|
+fn emit_struct(
+  e : Emitter,
+  item : Struct,
+  enums : Array[Enum],
+  file : String,
+) -> Unit raise Refused {
+  if item.kind is UnionDecl {
+    return emit_union(e, item, enums, file)
+  }
   let names = enums.map(x => x.name)
   e.line(0, "pub(all) struct \{item.name} {")
   for f in item.fields {
@@ -1178,7 +1281,7 @@ pub fn render_with(
     emit_enum(e, item)
   }
   for item in doc.structs {
-    emit_struct(e, item, doc.enums)
+    emit_struct(e, item, doc.enums, file)
   }
   for ty in collect_containers(doc) {
     emit_container(e, ty, doc.enums.map(x => x.name))

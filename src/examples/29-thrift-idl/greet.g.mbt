@@ -181,6 +181,58 @@ pub fn Person::decode(proto : &@thrift.Protocol) -> Person raise @thrift.ThriftE
   { name, age, tags, scores, portrait, mood, stamped, }
 }
 
+pub(all) enum Contact {
+  Email(String)
+  Phone(Int64)
+  At(SharedStamp)
+}
+
+pub fn Contact::default() -> Contact {
+  Email("")
+}
+
+pub fn Contact::encode(self : Contact, proto : &@thrift.Protocol) -> Unit {
+  proto.write_struct_begin("Contact")
+  match self {
+    Email(value) => {
+      proto.write_field_begin(@thrift.type_string, 1)
+      proto.write_string(value)
+    }
+    Phone(value) => {
+      proto.write_field_begin(@thrift.type_i64, 2)
+      proto.write_i64(value)
+    }
+    At(value) => {
+      proto.write_field_begin(@thrift.type_struct, 3)
+      value.encode(proto)
+    }
+  }
+  proto.write_field_stop()
+  proto.write_struct_end()
+}
+
+pub fn Contact::decode(proto : &@thrift.Protocol) -> Contact raise @thrift.ThriftError {
+  proto.read_struct_begin()
+  let mut out : Contact? = None
+  for ;; {
+    let (field_type, field_id) = proto.read_field_begin()
+    if field_type == @thrift.type_stop {
+      break
+    }
+    match field_id {
+      1 => out = Some(Email(proto.read_string()))
+      2 => out = Some(Phone(proto.read_i64()))
+      3 => out = Some(At(SharedStamp::decode(proto)))
+      _ => @thrift.skip(proto, field_type)
+    }
+  }
+  proto.read_struct_end()
+  match out {
+    Some(value) => value
+    _ => raise @thrift.Application("the union Contact carried no field")
+  }
+}
+
 pub fn write_list_string(proto : &@thrift.Protocol, value : Array[String]) -> Unit {
   proto.write_list_begin(@thrift.type_list, value.length())
   for item in value {

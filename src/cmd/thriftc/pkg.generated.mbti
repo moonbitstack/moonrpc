@@ -39,6 +39,7 @@ pub(all) struct Constant {
 pub(all) enum DeclKind {
   PlainStruct
   ExceptionDecl
+  UnionDecl
 }
 
 pub(all) struct Document {

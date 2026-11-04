@@ -41,6 +41,15 @@ pub fn write_map_string_i32(&@thrift.Protocol, Map[String, Int32]) -> Unit
 // Errors
 
 // Types and methods
+pub(all) enum Contact {
+  Email(String)
+  Phone(Int64)
+  At(SharedStamp)
+}
+pub fn Contact::decode(&@thrift.Protocol) -> Self raise @thrift.ThriftError
+pub fn Contact::default() -> Self
+pub fn Contact::encode(Self, &@thrift.Protocol) -> Unit
+
 pub(all) enum GreeterFindError {
   SharedMissing(SharedMissing)
 }

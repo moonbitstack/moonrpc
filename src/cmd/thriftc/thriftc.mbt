@@ -1,8 +1,8 @@
 // The Thrift IDL compiler: a .thrift file in, the MoonBit types, their codecs, and
 // the service's registration and client out. The subset it reads is the one this
-// library can carry — struct, enum, exception and service over the primitive types,
-// lists, sets and maps. Anything else is refused with the line it came from, rather
-// than silently dropped.
+// library can carry — struct, union, enum, exception, typedef, const and service over
+// the primitive types, lists, sets and maps. Anything else is refused with the line it
+// came from, rather than silently dropped.
 
 ///|
 pub(all) suberror Refused {
@@ -57,6 +57,7 @@ pub(all) struct Field {
 pub(all) enum DeclKind {
   PlainStruct
   ExceptionDecl
+  UnionDecl
 }
 
 ///|
@@ -436,6 +437,7 @@ fn Parser::parse_struct(self : Parser, kind : DeclKind) -> Struct raise Refused 
   let what = match kind {
     PlainStruct => "a struct name"
     ExceptionDecl => "an exception name"
+    UnionDecl => "a union name"
   }
   let name = self.expect_ident(what)
   self.expect('{')
@@ -718,12 +720,10 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
         ignore(self.advance())
         constants.push(self.parse_constant(line))
       }
-      TIdent("union") =>
-        refuse(
-          self.file,
-          self.line(),
-          "`union` is not supported; use a struct with optional fields",
-        )
+      TIdent("union") => {
+        ignore(self.advance())
+        structs.push(self.parse_struct(UnionDecl))
+      }
       TIdent(other) =>
         refuse(
           self.file,

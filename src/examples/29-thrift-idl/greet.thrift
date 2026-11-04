@@ -38,6 +38,13 @@ const Person ADA = {
   "stamped": { "at": 9 },
 }
 
+// A union carries one of its fields; on the wire it is a struct with one field set.
+union Contact {
+  1: string email
+  2: i64 phone
+  3: shared.Stamp at
+}
+
 service Greeter extends shared.Base {
   string hello(1: Person who)
   i32 add(1: i32 a, 2: i32 b)
