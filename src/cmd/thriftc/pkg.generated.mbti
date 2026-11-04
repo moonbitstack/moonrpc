@@ -19,6 +19,23 @@ pub fn Refused::to_string(Self) -> String
 pub impl Show for Refused
 
 // Types and methods
+pub(all) enum ConstValue {
+  CBool(Bool)
+  CInt(Int64)
+  CFloat(Double)
+  CStr(String)
+  CList(Array[ConstValue])
+  CMap(Array[(ConstValue, ConstValue)])
+  CEnum(String, String)
+}
+
+pub(all) struct Constant {
+  name : String
+  ty : TType
+  value : ConstValue
+  line : Int32
+}
+
 pub(all) enum DeclKind {
   PlainStruct
   ExceptionDecl
@@ -29,6 +46,7 @@ pub(all) struct Document {
   enums : Array[Enum]
   services : Array[Service]
   typedefs : Array[Typedef]
+  constants : Array[Constant]
   includes : Array[String]
 }
 
@@ -58,6 +76,7 @@ pub(all) struct Linked {
   enums : Array[Enum]
   services : Array[Service]
   by_service : Map[String, Service]
+  constants : Array[Constant]
 }
 
 type Linker
@@ -100,7 +119,8 @@ pub(all) enum TType {
 pub(all) enum Token {
   TIdent(String)
   TStr(String)
-  TNum(Int32)
+  TNum(String)
+  TFloat(Double)
   TSym(Char)
   TEof
 }

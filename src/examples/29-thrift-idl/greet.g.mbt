@@ -218,6 +218,16 @@ pub fn read_map_string_i32(proto : &@thrift.Protocol) -> Map[String, Int32] rais
   out
 }
 
+pub let maxAge : Int32 = 130
+
+pub let tags : Array[String] = ["math", "music"]
+
+pub let scores : Map[String, Int32] = Map([("math", 10), ("art", 7)])
+
+pub let defaultMood : Mood = Mood::Calm
+
+pub let ada : Person = { name: "Ada", age: Some(37), tags: ["math"], scores: Map([("math", 10)]), portrait: b"ab", mood: Mood::Happy, stamped: { at: 9L } }
+
 /// The declared failures of `find`.
 pub(all) enum GreeterFindError {
   SharedMissing(SharedMissing)

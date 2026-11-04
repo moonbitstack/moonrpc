@@ -18,6 +18,8 @@ pub(all) struct Linked {
   services : Array[Service]
   // Every service, the included ones too, by the name the output uses.
   by_service : Map[String, Service]
+  // The constants of every file, since one package holds them all.
+  constants : Array[Constant]
 }
 
 ///|
@@ -98,6 +100,63 @@ fn global_name(prefix : String, name : String) -> String {
 }
 
 ///|
+fn all_upper(name : String) -> Bool {
+  for i in 0..<name.length() {
+    if name.get_char(i) is Some(c) && c.is_ascii_lowercase() {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// MoonBit keeps lower case for values, so `MAX_AGE`, `max_age` and `MaxAge` are all
+/// written `maxAge`: the words are kept and only the shape changes, which makes two
+/// spellings of one name collide instead of quietly differing.
+fn camel_case(name : String) -> String {
+  if name.length() == 0 {
+    return name
+  }
+  if !name.contains("_") && !all_upper(name) {
+    let first = name.get_char(0).unwrap_or('a')
+    return first.to_ascii_lowercase().to_string() +
+      name[1:name.length()].to_owned()
+  }
+  let mut out = ""
+  let mut word = 0
+  let mut at_word_start = true
+  for i in 0..<name.length() {
+    let c = name.get_char(i).unwrap_or(' ')
+    if c == '_' {
+      at_word_start = true
+      word = word + 1
+    } else if at_word_start {
+      out = out +
+        (if word == 0 {
+          c.to_ascii_lowercase().to_string()
+        } else {
+          c.to_ascii_uppercase().to_string()
+        })
+      at_word_start = false
+    } else {
+      out = out + c.to_ascii_lowercase().to_string()
+    }
+  }
+  out
+}
+
+///|
+/// A constant's name in the output, prefix included.
+fn const_name(prefix : String, name : String) -> String {
+  let value = camel_case(name)
+  if prefix == "" {
+    value
+  } else {
+    camel_case(prefix) + capitalise(value)
+  }
+}
+
+///|
 struct Linker {
   load : Loader
   // Resolved path → prefix, so a file included twice is read once.
@@ -111,6 +170,9 @@ struct Linker {
   // Their names in the order the files declare them, so a broken one is named the same
   // way on every run.
   alias_order : Array[String]
+  constants : Array[Constant]
+  // The output name of each constant, so two that would land on one name are refused.
+  const_names : Map[String, String]
   // Every service, by the name the output uses, so `extends` can find its base.
   all : Map[String, Service]
   // The services of the file being compiled — the ones that get emitted.
@@ -154,6 +216,41 @@ fn Linker::rename_type(
         self.rename_type(value, file, prefix, locals, includes),
       )
     _ => ty
+  }
+}
+
+///|
+/// A value's `Enum.VALUE` names the enum the same way a type does, so it takes the same
+/// prefix; the containers around it are visited for that.
+fn Linker::rename_value(
+  self : Linker,
+  value : ConstValue,
+  file : String,
+  prefix : String,
+  locals : Array[String],
+  includes : Array[String],
+) -> ConstValue raise Refused {
+  ignore(self)
+  match value {
+    CEnum(name, tag) =>
+      match self.rename_type(Named(name), file, prefix, locals, includes) {
+        Named(renamed) => CEnum(renamed, tag)
+        _ => CEnum(name, tag)
+      }
+    CList(items) =>
+      CList(
+        items.map(v => self.rename_value(v, file, prefix, locals, includes)),
+      )
+    CMap(entries) =>
+      CMap(
+        entries.map(pair => {
+          (
+            self.rename_value(pair.0, file, prefix, locals, includes),
+            self.rename_value(pair.1, file, prefix, locals, includes),
+          )
+        }),
+      )
+    _ => value
   }
 }
 
@@ -230,6 +327,21 @@ fn Linker::read(
     let name = global_name(prefix, item.name)
     self.aliases[name] = ty
     self.alias_order.push(name)
+  }
+  for item in doc.constants {
+    let ty = self.rename_type(item.ty, file, prefix, declared, includes)
+    let value = self.rename_value(item.value, file, prefix, declared, includes)
+    let name = const_name(prefix, item.name)
+    match self.const_names.get(name) {
+      Some(other) =>
+        refuse(
+          file,
+          item.line,
+          "`\{item.name}` and `\{other}` are both written as `\{name}` in the output; rename one",
+        )
+      None => self.const_names[name] = item.name
+    }
+    self.constants.push({ name, ty, value, line: item.line, })
   }
   for service in doc.services {
     let base = match service.base {
@@ -357,6 +469,8 @@ pub fn link(
     enums: [],
     aliases: Map([]),
     alias_order: [],
+    constants: [],
+    const_names: Map([]),
     all: Map([]),
     root: [],
   }
@@ -379,5 +493,9 @@ pub fn link(
     by_service[name] = expand_service(service, aliases, file)
   }
   let services = linker.root.map(s => expand_service(s, aliases, file))
-  { structs, enums: linker.enums, services, by_service, }
+  let constants = linker.constants.map(c => {
+    let ty = expand(c.ty, aliases, [], file)
+    ({ name: c.name, ty, value: c.value, line: c.line, } : Constant)
+  })
+  { structs, enums: linker.enums, services, by_service, constants, }
 }

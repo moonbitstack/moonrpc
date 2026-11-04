@@ -104,11 +104,35 @@ pub(all) struct Typedef {
 }
 
 ///|
+/// A value written in the IDL. `CRecord` is not a separate case from `CMap`: `{ ... }`
+/// is the same syntax for a map and for a struct, and the declared type decides which of
+/// the two it is.
+pub(all) enum ConstValue {
+  CBool(Bool)
+  CInt(Int64)
+  CFloat(Double)
+  CStr(String)
+  CList(Array[ConstValue])
+  CMap(Array[(ConstValue, ConstValue)])
+  // `Mood.Happy`: the enum it belongs to, and the value.
+  CEnum(String, String)
+}
+
+///|
+pub(all) struct Constant {
+  name : String
+  ty : TType
+  value : ConstValue
+  line : Int32
+}
+
+///|
 pub(all) struct Document {
   structs : Array[Struct]
   enums : Array[Enum]
   services : Array[Service]
   typedefs : Array[Typedef]
+  constants : Array[Constant]
   // The files this one includes, as written.
   includes : Array[String]
 }
@@ -119,7 +143,9 @@ pub(all) struct Document {
 pub(all) enum Token {
   TIdent(String)
   TStr(String)
-  TNum(Int32)
+  // A number's text, so a 64-bit constant is not squeezed into a field id's width.
+  TNum(String)
+  TFloat(Double)
   TSym(Char)
   TEof
 }
@@ -132,6 +158,11 @@ fn is_ident_start(c : Char) -> Bool {
 ///|
 fn is_ident_body(c : Char) -> Bool {
   c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_' || c == '.'
+}
+
+///|
+fn is_hex(c : Char) -> Bool {
+  c.is_ascii_digit() || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
 ///|
@@ -178,21 +209,71 @@ fn lex(file : String, source : String) -> Array[(Token, Int32)] raise Refused {
       if c == '-' {
         i = i + 1
       }
-      while i < n && source.get_char(i) is Some(d) && d.is_ascii_digit() {
-        i = i + 1
+      if source.get_char(i) == Some('0') &&
+        (
+          source.get_char(i + 1) == Some('x') ||
+          source.get_char(i + 1) == Some('X')
+        ) {
+        i = i + 2
+        while i < n && source.get_char(i) is Some(d) && is_hex(d) {
+          i = i + 1
+        }
+        out.push((TNum(source[start:i].to_owned()), line))
+      } else {
+        while i < n && source.get_char(i) is Some(d) && d.is_ascii_digit() {
+          i = i + 1
+        }
+        let mut float = false
+        if source.get_char(i) == Some('.') &&
+          source.get_char(i + 1) is Some(d) &&
+          d.is_ascii_digit() {
+          float = true
+          i = i + 1
+          while i < n && source.get_char(i) is Some(d) && d.is_ascii_digit() {
+            i = i + 1
+          }
+        }
+        if source.get_char(i) == Some('e') || source.get_char(i) == Some('E') {
+          float = true
+          i = i + 1
+          if source.get_char(i) == Some('+') || source.get_char(i) == Some('-') {
+            i = i + 1
+          }
+          while i < n && source.get_char(i) is Some(d) && d.is_ascii_digit() {
+            i = i + 1
+          }
+        }
+        let text = source[start:i].to_owned()
+        if float {
+          let value = @string.parse_double(text[:]) catch {
+            _ => refuse(file, line, "`\{text}` is not a number")
+          }
+          out.push((TFloat(value), line))
+        } else {
+          out.push((TNum(text), line))
+        }
       }
-      let text = source[start:i].to_owned()
-      let value = @string.parse_int(text[:]) catch {
-        _ => refuse(file, line, "`\{text}` is not a number")
-      }
-      out.push((TNum(value), line))
     } else if c == '"' || c == '\'' {
       let quote = c
       let mut text = ""
       i = i + 1
       while i < n && source.get_char(i) != Some(quote) {
-        text = text + source.get_char(i).unwrap_or(' ').to_string()
-        i = i + 1
+        let ch = source.get_char(i).unwrap_or(' ')
+        if ch == '\\' {
+          // Keep the escapes a constant will need back: the renderer writes its own.
+          let escaped = source.get_char(i + 1).unwrap_or(' ')
+          text = text +
+            (match escaped {
+              'n' => "\n"
+              't' => "\t"
+              'r' => "\r"
+              _ => escaped.to_string()
+            })
+          i = i + 2
+        } else {
+          text = text + ch.to_string()
+          i = i + 1
+        }
       }
       i = i + 1
       out.push((TStr(text), line))
@@ -273,9 +354,11 @@ fn Parser::expect_ident(self : Parser, what : String) -> String raise Refused {
 
 ///|
 fn Parser::expect_num(self : Parser) -> Int32 raise Refused {
-  if self.peek() is TNum(value) {
+  if self.peek() is TNum(text) {
     ignore(self.advance())
-    value
+    @string.parse_int(text[:]) catch {
+      _ => refuse(self.file, self.line(), "`\{text}` is not a 32-bit number")
+    }
   } else {
     refuse(self.file, self.line(), "expected a number")
   }
@@ -470,11 +553,112 @@ fn Parser::parse_service(self : Parser) -> Service raise Refused {
 }
 
 ///|
+/// One value: a literal, a list, a map or struct body, or `Enum.VALUE`. Arithmetic and
+/// references to other constants are not read, and are refused where they appear.
+fn Parser::parse_value(self : Parser) -> ConstValue raise Refused {
+  match self.peek() {
+    TNum(text) => {
+      ignore(self.advance())
+      let value = @string.parse_int64(text[:]) catch {
+        _ => refuse(self.file, self.line(), "`\{text}` is not a 64-bit number")
+      }
+      CInt(value)
+    }
+    TFloat(value) => {
+      ignore(self.advance())
+      CFloat(value)
+    }
+    TStr(text) => {
+      ignore(self.advance())
+      CStr(text)
+    }
+    TIdent(word) =>
+      match word {
+        "true" => {
+          ignore(self.advance())
+          CBool(true)
+        }
+        "false" => {
+          ignore(self.advance())
+          CBool(false)
+        }
+        _ => {
+          ignore(self.advance())
+          // `Mood.Happy` arrives as one word: a dot is part of an identifier here, which
+          // is also how `shared.Person` is written.
+          match split_dot(word) {
+            Some((enum_name, tag)) => CEnum(enum_name, tag)
+            None =>
+              refuse(
+                self.file,
+                self.line(),
+                "`\{word}` is not a value; a constant cannot name another constant",
+              )
+          }
+        }
+      }
+    TSym('[') => {
+      ignore(self.advance())
+      let items : Array[ConstValue] = []
+      while !self.eat(']') {
+        if self.peek() is TEof {
+          refuse(self.file, self.line(), "a list is not closed")
+        }
+        items.push(self.parse_value())
+        ignore(self.eat(',') || self.eat(';'))
+      }
+      CList(items)
+    }
+    TSym('{') => {
+      ignore(self.advance())
+      let entries : Array[(ConstValue, ConstValue)] = []
+      while !self.eat('}') {
+        if self.peek() is TEof {
+          refuse(self.file, self.line(), "a map or struct body is not closed")
+        }
+        let key = match self.peek() {
+          TStr(text) => {
+            ignore(self.advance())
+            CStr(text)
+          }
+          // A struct body may write its field names without quotes.
+          TIdent(word) => {
+            ignore(self.advance())
+            CStr(word)
+          }
+          _ => self.parse_value()
+        }
+        self.expect(':')
+        entries.push((key, self.parse_value()))
+        ignore(self.eat(',') || self.eat(';'))
+      }
+      CMap(entries)
+    }
+    _ => refuse(self.file, self.line(), "expected a value")
+  }
+}
+
+///|
+fn Parser::parse_constant(
+  self : Parser,
+  line : Int32,
+) -> Constant raise Refused {
+  let ty = self.parse_type()
+  let name = self.expect_ident("a constant name")
+  self.expect('=')
+  let value = self.parse_value()
+  self.skip_annotation()
+  ignore(self.eat(',') || self.eat(';'))
+  { name, ty, value, line, }
+}
+
+///|
 fn Parser::parse_document(self : Parser) -> Document raise Refused {
   let structs : Array[Struct] = []
   let enums : Array[Enum] = []
   let services : Array[Service] = []
   let typedefs : Array[Typedef] = []
+  let constants : Array[Constant] = []
   let includes : Array[String] = []
   while !self.at_end() {
     match self.peek() {
@@ -529,8 +713,11 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
         ignore(self.eat(',') || self.eat(';'))
         typedefs.push({ name, ty, })
       }
-      TIdent("const") =>
-        refuse(self.file, self.line(), "`const` is not supported")
+      TIdent("const") => {
+        let line = self.line()
+        ignore(self.advance())
+        constants.push(self.parse_constant(line))
+      }
       TIdent("union") =>
         refuse(
           self.file,
@@ -557,7 +744,7 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
         )
     }
   }
-  { structs, enums, services, typedefs, includes, }
+  { structs, enums, services, typedefs, constants, includes, }
 }
 
 ///|

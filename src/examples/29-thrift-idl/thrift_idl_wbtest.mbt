@@ -233,3 +233,17 @@ async test "thrift idl: a void method that throws answers an empty result or a f
     }
   }
 }
+
+///|
+test "thrift idl: a constant written in the IDL is a value of its type" {
+  assert_eq(maxAge, 130)
+  assert_eq(tags, ["math", "music"])
+  assert_eq(scores.get("art"), Some(7))
+  assert_eq(defaultMood.to_i32(), 1)
+  // A struct constant fills the fields it names and leaves the rest at their defaults.
+  assert_eq(ada.name, "Ada")
+  assert_eq(ada.age, Some(37))
+  assert_eq(ada.portrait, b"ab")
+  assert_eq(ada.stamped.at, 9L)
+  assert_eq(ada.mood.to_i32(), 2)
+}

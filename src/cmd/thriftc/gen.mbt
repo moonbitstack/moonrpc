@@ -840,6 +840,9 @@ fn check_names(doc : Linked, file : String) -> Unit raise Refused {
       check_type(f.ty, enums, structs, file)
     }
   }
+  for c in doc.constants {
+    check_type(c.ty, enums, structs, file)
+  }
   for service in doc.services {
     for func in service.functions {
       for param in func.params {
@@ -852,6 +855,298 @@ fn check_names(doc : Linked, file : String) -> Unit raise Refused {
       check_throws(func, exceptions, structs, file)
     }
   }
+}
+
+// ---------------------------------------------------------------- constants
+
+///|
+fn find_struct(structs : Array[Struct], name : String) -> Struct? {
+  for item in structs {
+    if item.name == name {
+      return Some(item)
+    }
+  }
+  None
+}
+
+///|
+fn enum_has(item : Enum, tag : String) -> Bool {
+  for pair in item.values {
+    let (label, _) = pair
+    if label == tag {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// A string as a MoonBit literal, with the escapes a round trip needs.
+fn quoted(text : String) -> String {
+  let mut out = "\""
+  for i in 0..<text.length() {
+    let c = text.get_char(i).unwrap_or(' ')
+    out = out +
+      (match c {
+        '"' => "\\\""
+        '\\' => "\\\\"
+        '\n' => "\\n"
+        '\t' => "\\t"
+        '\r' => "\\r"
+        _ => c.to_string()
+      })
+  }
+  out + "\""
+}
+
+///|
+fn in_range(
+  value : Int64,
+  low : Int64,
+  high : Int64,
+  name : String,
+  file : String,
+  line : Int32,
+) -> String raise Refused {
+  if value < low || value > high {
+    refuse(file, line, "`\{name}` does not fit in \{value}'s type")
+  }
+  value.to_string()
+}
+
+///|
+fn double_literal(value : Double) -> String {
+  let text = value.to_string()
+  let mut plain = true
+  for i in 0..<text.length() {
+    if text.get_char(i) is Some(c) && (c == '.' || c == 'e' || c == 'E') {
+      plain = false
+    }
+  }
+  if plain {
+    text + ".0"
+  } else {
+    text
+  }
+}
+
+///|
+/// A value as the MoonBit literal its declared type calls for. The type drives the
+/// rendering, so a value that does not belong to it is refused here rather than written
+/// out and left for the compiler to reject.
+fn render_value(
+  ty : TType,
+  value : ConstValue,
+  enums : Array[Enum],
+  structs : Array[Struct],
+  file : String,
+  line : Int32,
+  owner : String,
+) -> String raise Refused {
+  let wrong = () => {
+    refuse(
+      file,
+      line,
+      "`\{owner}` is a \{moon_type(ty)} and the value it is given is not",
+    )
+  }
+  match ty {
+    Bool =>
+      match value {
+        CBool(b) => if b { "true" } else { "false" }
+        _ => wrong()
+      }
+    Byte =>
+      match value {
+        CInt(v) => in_range(v, -128L, 127L, owner, file, line)
+        _ => wrong()
+      }
+    I16 =>
+      match value {
+        CInt(v) => in_range(v, -32768L, 32767L, owner, file, line)
+        _ => wrong()
+      }
+    I32 =>
+      match value {
+        CInt(v) => in_range(v, -2147483648L, 2147483647L, owner, file, line)
+        _ => wrong()
+      }
+    I64 =>
+      match value {
+        CInt(v) => v.to_string() + "L"
+        _ => wrong()
+      }
+    Double =>
+      match value {
+        CFloat(v) => double_literal(v)
+        CInt(v) => v.to_string() + ".0"
+        _ => wrong()
+      }
+    Str =>
+      match value {
+        CStr(text) => quoted(text)
+        _ => wrong()
+      }
+    Binary =>
+      match value {
+        CStr(text) => "b" + quoted(text)
+        _ => wrong()
+      }
+    List(inner) =>
+      match value {
+        CList([]) => "([] : Array[\{moon_type(inner)}])"
+        CList(items) =>
+          "[" +
+          items
+          .map(item => {
+            render_value(inner, item, enums, structs, file, line, owner)
+          })
+          .join(", ") +
+          "]"
+        _ => wrong()
+      }
+    Set(inner) =>
+      match value {
+        CList([]) => "([] : Array[\{moon_type(inner)}])"
+        CList(items) =>
+          "[" +
+          items
+          .map(item => {
+            render_value(inner, item, enums, structs, file, line, owner)
+          })
+          .join(", ") +
+          "]"
+        _ => wrong()
+      }
+    Map(key, inner) =>
+      match value {
+        CMap([]) => "(Map([]) : Map[\{moon_type(key)}, \{moon_type(inner)}])"
+        CMap(entries) => {
+          let parts : Array[String] = []
+          for entry in entries {
+            let (k, v) = entry
+            let key_text = render_value(
+              key, k, enums, structs, file, line, owner,
+            )
+            let value_text = render_value(
+              inner, v, enums, structs, file, line, owner,
+            )
+            parts.push("(\{key_text}, \{value_text})")
+          }
+          "Map([" + parts.join(", ") + "])"
+        }
+        _ => wrong()
+      }
+    Named(name) =>
+      match find_enum(enums, name) {
+        Some(item) =>
+          match value {
+            CEnum(_, tag) => {
+              if !enum_has(item, tag) {
+                refuse(file, line, "`\{name}` has no value `\{tag}`")
+              }
+              "\{name}::\{tag}"
+            }
+            _ =>
+              refuse(
+                file,
+                line,
+                "`\{owner}` is an enum; write one of its values as \{name}.VALUE",
+              )
+          }
+        None =>
+          match find_struct(structs, name) {
+            Some(item) =>
+              match value {
+                CMap(entries) => {
+                  let seen : Array[String] = []
+                  for entry in entries {
+                    let (k, _) = entry
+                    match k {
+                      CStr(key) => {
+                        if !item.fields.any(f => f.name == key) {
+                          refuse(file, line, "`\{name}` has no field `\{key}`")
+                        }
+                        if seen.contains(key) {
+                          refuse(
+                            file,
+                            line,
+                            "`\{owner}` sets `\{name}.\{key}` twice",
+                          )
+                        }
+                        seen.push(key)
+                      }
+                      _ =>
+                        refuse(
+                          file,
+                          line,
+                          "`\{name}` needs its field names as keys",
+                        )
+                    }
+                  }
+                  let parts : Array[String] = []
+                  for f in item.fields {
+                    let mut given : ConstValue? = None
+                    for entry in entries {
+                      let (k, v) = entry
+                      if k is CStr(key) && key == f.name {
+                        given = Some(v)
+                      }
+                    }
+                    let text = match given {
+                      Some(v) =>
+                        render_value(f.ty, v, enums, structs, file, line, owner)
+                      None => default_of(f.ty, enums)
+                    }
+                    let text = if f.optional {
+                      match given {
+                        Some(_) => "Some(\{text})"
+                        None => "None"
+                      }
+                    } else {
+                      text
+                    }
+                    parts.push("\{f.name}: \{text}")
+                  }
+                  "{ " + parts.join(", ") + " }"
+                }
+                _ =>
+                  refuse(
+                    file,
+                    line,
+                    "`\{owner}` is a \{name}; write its fields as `{ name: value }`",
+                  )
+              }
+            None =>
+              refuse(
+                file,
+                line,
+                "`\{name}` is not declared in this file or in anything it includes",
+              )
+          }
+      }
+  }
+}
+
+///|
+fn emit_constant(
+  e : Emitter,
+  item : Constant,
+  enums : Array[Enum],
+  structs : Array[Struct],
+  file : String,
+) -> Unit raise Refused {
+  let value = render_value(
+    item.ty,
+    item.value,
+    enums,
+    structs,
+    file,
+    item.line,
+    item.name,
+  )
+  e.line(0, "pub let \{item.name} : \{moon_type(item.ty)} = \{value}")
+  e.blank()
 }
 
 // ---------------------------------------------------------------- the file
@@ -887,6 +1182,9 @@ pub fn render_with(
   }
   for ty in collect_containers(doc) {
     emit_container(e, ty, doc.enums.map(x => x.name))
+  }
+  for item in doc.constants {
+    emit_constant(e, item, doc.enums, doc.structs, file)
   }
   for service in doc.services {
     emit_service(

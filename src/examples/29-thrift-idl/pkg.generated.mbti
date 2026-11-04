@@ -6,6 +6,10 @@ import {
 }
 
 // Values
+pub let ada : Person
+
+pub let defaultMood : Mood
+
 pub async fn[T : @thrift.Transport] greeter_add(T, &@thrift.Protocol, Int32, Int32) -> Int32 raise @thrift.ThriftError
 
 pub async fn[T : @thrift.Transport] greeter_find(T, &@thrift.Protocol, String) -> Result[String, GreeterFindError] raise @thrift.ThriftError
@@ -18,11 +22,17 @@ pub async fn[T : @thrift.Transport] greeter_ping(T, &@thrift.Protocol) -> String
 
 pub async fn[T : @thrift.Transport] greeter_shout(T, &@thrift.Protocol, String) -> Result[Unit, GreeterShoutError] raise @thrift.ThriftError
 
+pub let maxAge : Int32
+
 pub fn read_list_string(&@thrift.Protocol) -> Array[String] raise @thrift.ThriftError
 
 pub fn read_map_string_i32(&@thrift.Protocol) -> Map[String, Int32] raise @thrift.ThriftError
 
 pub fn register_greeter(@thrift.Processor, (Person) -> String, (Int32, Int32) -> Int32, (String) -> Unit, (String) -> Result[String, GreeterFindError], (String) -> Result[Unit, GreeterShoutError], () -> String) -> Unit
+
+pub let scores : Map[String, Int32]
+
+pub let tags : Array[String]
 
 pub fn write_list_string(&@thrift.Protocol, Array[String]) -> Unit
 

@@ -23,6 +23,21 @@ struct Person {
   7: shared.Stamp stamped
 }
 
+// Constants: a value written once in the IDL, emitted as a `pub let` of its type.
+const i32 MAX_AGE = 130
+const list<string> TAGS = ["math", "music"]
+const map<string, i32> SCORES = { "math": 10, "art": 7 }
+const Mood DEFAULT_MOOD = Mood.Calm
+const Person ADA = {
+  "name": "Ada",
+  "age": 37,
+  "tags": ["math"],
+  "scores": { "math": 10 },
+  "portrait": "ab",
+  "mood": Mood.Happy,
+  "stamped": { "at": 9 },
+}
+
 service Greeter extends shared.Base {
   string hello(1: Person who)
   i32 add(1: i32 a, 2: i32 b)

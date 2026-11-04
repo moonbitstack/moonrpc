@@ -442,11 +442,28 @@ compiler with `--check` so the two cannot drift:
 moon run src/cmd/thriftc -- greet.thrift -o greet.g.mbt
 ```
 
-The compiler reads `struct`, `enum`, `exception`, `typedef` and `service` over the
-primitive types, `list`, `set` and `map`. A `typedef` is substituted where it is used —
-`typedef i64 Timestamp` leaves `Int64` behind, since the wire carries no name for it
-either — and an alias that loops back to itself is refused with the chain. `union` and
-`const` are refused with the line they came from instead of being silently dropped.
+The compiler reads `struct`, `enum`, `exception`, `typedef`, `const` and `service` over
+the primitive types, `list`, `set` and `map`. A `typedef` is substituted where it is used
+— `typedef i64 Timestamp` leaves `Int64` behind, since the wire carries no name for it
+either — and an alias that loops back to itself is refused with the chain. `union` is
+refused with the line it came from instead of being silently dropped.
+
+A `const` is a `pub let` of its type. Scalar, list, map, struct and enum values are read,
+the type checks the value, and the name takes the shape MoonBit wants for a value, so
+`MAX_AGE` is written `maxAge`:
+
+```thrift
+const i32 MAX_AGE = 130
+const Person ADA = { "name": "Ada", "age": 37 }
+```
+
+```moonbit
+pub let maxAge : Int32 = 130
+pub let ada : Person = { name: "Ada", age: Some(37), tags: [], scores: Map([]), portrait: b"", mood: Mood::Calm, stamped: SharedStamp::default() }
+```
+
+A value that does not fit its type, a field or enum value that does not exist, and a
+constant that names another constant are refused with the line they came from.
 
 An `exception` is a struct on the wire; a method whose IDL declares `throws` answers a
 `Result`, one variant per declared failure, instead of raising it:

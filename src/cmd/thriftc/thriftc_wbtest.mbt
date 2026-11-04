@@ -437,3 +437,158 @@ test "thriftc: an exception from an included file is thrown under its prefix" {
     code.contains("1 => Some(SharedMissing(SharedMissing::decode(proto)))"),
   )
 }
+
+// ---------------------------------------------------------------- constants
+
+///|
+test "thriftc: a scalar constant becomes a let of its type" {
+  let code = render(
+    "c.thrift", "const i32 MAX = 130\nconst i64 BIG = 9000000000\nconst double PI = 3.14\nconst double WHOLE = 3\nconst string HI = \"hello\"\nconst bool YES = true\nconst binary RAW = \"ab\"",
+  )
+  assert_true(code.contains("pub let max : Int32 = 130"))
+  assert_true(code.contains("pub let big : Int64 = 9000000000L"))
+  assert_true(code.contains("pub let pi : Double = 3.14"))
+  // An integer given to a double still needs the point MoonBit wants.
+  assert_true(code.contains("pub let whole : Double = 3.0"))
+  assert_true(code.contains("pub let hi : String = \"hello\""))
+  assert_true(code.contains("pub let yes : Bool = true"))
+  assert_true(code.contains("pub let raw : Bytes = b\"ab\""))
+}
+
+///|
+test "thriftc: a double in exponent form still gets its point" {
+  // `3e2` reads as 300, which MoonBit would take for an integer without the point.
+  let code = render("c.thrift", "const double E = 3e2")
+  assert_true(code.contains("pub let e : Double = 300.0"))
+}
+
+///|
+test "thriftc: a constant's name takes the lower case MoonBit wants for a value" {
+  // The three spellings of the same words land on one name, which is what makes a file
+  // that uses two of them refused rather than silently different.
+  let spelled = s => {
+    render("c.thrift", s).contains("pub let maxAge : Int32 = 1")
+  }
+  assert_true(spelled("const i32 MAX_AGE = 1"))
+  assert_true(spelled("const i32 max_age = 1"))
+  assert_true(spelled("const i32 MaxAge = 1"))
+  // A name that is already a word keeps it.
+  assert_true(
+    render("c.thrift", "const i32 done = 1").contains(
+      "pub let done : Int32 = 1",
+    ),
+  )
+}
+
+///|
+test "thriftc: two constants that would share a name are refused" {
+  let raised = try {
+    ignore(render("c.thrift", "const i32 MAX_AGE = 1\nconst i32 maxAge = 2"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("both written as `maxAge`")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: a list, a map and their empty forms are literals too" {
+  let code = render(
+    "c.thrift", "const list<i32> N = [1, 2]\nconst map<string, i32> M = { \"a\": 1 }\nconst list<i32> E = []\nconst map<string, i32> EM = {}",
+  )
+  assert_true(code.contains("pub let n : Array[Int32] = [1, 2]"))
+  assert_true(
+    code.contains("pub let m : Map[String, Int32] = Map([(\"a\", 1)])"),
+  )
+  assert_true(code.contains("pub let e : Array[Int32] = ([] : Array[Int32])"))
+  assert_true(
+    code.contains(
+      "pub let em : Map[String, Int32] = (Map([]) : Map[String, Int32])",
+    ),
+  )
+}
+
+///|
+test "thriftc: a struct constant fills what it leaves out" {
+  let code = render(
+    "c.thrift", "struct P { 1: string name, 2: optional i32 age, 3: bool ok }\nconst P ADA = { \"name\": \"Ada\" }",
+  )
+  // The field it names is set, the optional one stays None, the rest take defaults.
+  assert_true(
+    code.contains("pub let ada : P = { name: \"Ada\", age: None, ok: false }"),
+  )
+}
+
+///|
+test "thriftc: an enum constant names one of its values" {
+  let code = render(
+    "c.thrift", "enum Mood { Calm = 1, Happy = 2 }\nconst Mood D = Mood.Happy",
+  )
+  assert_true(code.contains("pub let d : Mood = Mood::Happy"))
+}
+
+///|
+test "thriftc: a value that does not belong to its type is refused" {
+  let raised = try {
+    ignore(render("c.thrift", "const i32 X = \"text\""))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("and the value it is given is not")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: a number too wide for its type is refused" {
+  let raised = try {
+    ignore(render("c.thrift", "const byte B = 999"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("does not fit")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: a field or an enum value that does not exist is refused" {
+  let missing_field = try {
+    ignore(
+      render(
+        "c.thrift", "struct P { 1: string name }\nconst P A = { \"age\": 1 }",
+      ),
+    )
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("has no field `age`")
+  }
+  assert_true(missing_field)
+  let missing_value = try {
+    ignore(render("c.thrift", "enum M { Calm = 1 }\nconst M D = M.Happy"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("has no value `Happy`")
+  }
+  assert_true(missing_value)
+}
+
+///|
+test "thriftc: a constant cannot name another constant" {
+  let raised = try {
+    ignore(render("c.thrift", "const i32 A = 1\nconst i32 B = A"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("cannot name another constant")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: an included constant arrives under its prefix" {
+  let files : Map[String, String] = Map([("shared.thrift", "const i32 MAX = 7")])
+  let code = render_with(
+    "main.thrift",
+    "include \"shared.thrift\"",
+    loader(files),
+  )
+  assert_true(code.contains("pub let sharedMax : Int32 = 7"))
+}
