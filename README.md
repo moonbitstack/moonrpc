@@ -442,9 +442,11 @@ compiler with `--check` so the two cannot drift:
 moon run src/cmd/thriftc -- greet.thrift -o greet.g.mbt
 ```
 
-The compiler reads `struct`, `enum`, `exception` and `service` over the primitive
-types, `list`, `set` and `map`. `typedef`, `union` and `const` are refused with
-the line they came from instead of being silently dropped.
+The compiler reads `struct`, `enum`, `exception`, `typedef` and `service` over the
+primitive types, `list`, `set` and `map`. A `typedef` is substituted where it is used —
+`typedef i64 Timestamp` leaves `Int64` behind, since the wire carries no name for it
+either — and an alias that loops back to itself is refused with the chain. `union` and
+`const` are refused with the line they came from instead of being silently dropped.
 
 An `exception` is a struct on the wire; a method whose IDL declares `throws` answers a
 `Result`, one variant per declared failure, instead of raising it:

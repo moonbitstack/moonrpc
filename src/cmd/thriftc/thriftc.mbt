@@ -96,10 +96,19 @@ pub(all) struct Service {
 }
 
 ///|
+/// Another name for a type. It is substituted where it is used, so no alias reaches
+/// the generated code — the wire does not carry one either.
+pub(all) struct Typedef {
+  name : String
+  ty : TType
+}
+
+///|
 pub(all) struct Document {
   structs : Array[Struct]
   enums : Array[Enum]
   services : Array[Service]
+  typedefs : Array[Typedef]
   // The files this one includes, as written.
   includes : Array[String]
 }
@@ -465,6 +474,7 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
   let structs : Array[Struct] = []
   let enums : Array[Enum] = []
   let services : Array[Service] = []
+  let typedefs : Array[Typedef] = []
   let includes : Array[String] = []
   while !self.at_end() {
     match self.peek() {
@@ -511,12 +521,14 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
         ignore(self.advance())
         services.push(self.parse_service())
       }
-      TIdent("typedef") =>
-        refuse(
-          self.file,
-          self.line(),
-          "`typedef` is not supported; spell the type out",
-        )
+      TIdent("typedef") => {
+        ignore(self.advance())
+        let ty = self.parse_type()
+        let name = self.expect_ident("a typedef name")
+        self.skip_annotation()
+        ignore(self.eat(',') || self.eat(';'))
+        typedefs.push({ name, ty, })
+      }
       TIdent("const") =>
         refuse(self.file, self.line(), "`const` is not supported")
       TIdent("union") =>
@@ -545,7 +557,7 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
         )
     }
   }
-  { structs, enums, services, includes, }
+  { structs, enums, services, typedefs, includes, }
 }
 
 ///|

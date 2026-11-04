@@ -106,6 +106,11 @@ struct Linker {
   prefix_path : Map[String, String]
   structs : Array[Struct]
   enums : Array[Enum]
+  // Every `typedef`, by the name the output would give it.
+  aliases : Map[String, TType]
+  // Their names in the order the files declare them, so a broken one is named the same
+  // way on every run.
+  alias_order : Array[String]
   // Every service, by the name the output uses, so `extends` can find its base.
   all : Map[String, Service]
   // The services of the file being compiled — the ones that get emitted.
@@ -162,7 +167,8 @@ fn Linker::read(
   let doc = parse(file, source)
   let locals = doc.structs.map(s => s.name)
   let names = doc.enums.map(e => e.name)
-  let declared = locals + names
+  let aliases = doc.typedefs.map(t => t.name)
+  let declared = locals + names + aliases
   let includes = doc.includes.map(p => include_prefix(p))
 
   // Read the includes first: a reference into one needs that file to have been given
@@ -217,6 +223,14 @@ fn Linker::read(
       values: item.values,
     })
   }
+  // An alias keeps a name here so a reference to it can be resolved later; the name is
+  // substituted away before anything is generated.
+  for item in doc.typedefs {
+    let ty = self.rename_type(item.ty, file, prefix, declared, includes)
+    let name = global_name(prefix, item.name)
+    self.aliases[name] = ty
+    self.alias_order.push(name)
+  }
   for service in doc.services {
     let base = match service.base {
       Some(name) =>
@@ -259,6 +273,75 @@ fn Linker::read(
 }
 
 ///|
+/// Substitute aliases until a real type is reached. `stack` is the chain being expanded,
+/// which is how an alias of itself is caught instead of looping.
+fn expand(
+  ty : TType,
+  aliases : Map[String, TType],
+  stack : Array[String],
+  file : String,
+) -> TType raise Refused {
+  match ty {
+    Named(name) =>
+      match aliases.get(name) {
+        Some(target) => {
+          if stack.contains(name) {
+            refuse(
+              file,
+              0,
+              "`\{name}` is an alias of itself (\{stack.join(" -> ")} -> \{name})",
+            )
+          }
+          stack.push(name)
+          let out = expand(target, aliases, stack, file)
+          ignore(stack.pop())
+          out
+        }
+        None => Named(name)
+      }
+    List(inner) => List(expand(inner, aliases, stack, file))
+    Set(inner) => Set(expand(inner, aliases, stack, file))
+    Map(key, value) =>
+      Map(
+        expand(key, aliases, stack, file),
+        expand(value, aliases, stack, file),
+      )
+    _ => ty
+  }
+}
+
+///|
+fn expand_function(
+  func : Function,
+  aliases : Map[String, TType],
+  file : String,
+) -> Function raise Refused {
+  let params = func.params.map(p => {
+    let ty = expand(p.ty, aliases, [], file)
+    ({ id: p.id, name: p.name, ty, } : Param)
+  })
+  let ret = match func.ret {
+    Some(ty) => Some(expand(ty, aliases, [], file))
+    None => None
+  }
+  let exceptions = func.exceptions.map(x => {
+    let ty = expand(x.ty, aliases, [], file)
+    ({ id: x.id, name: x.name, ty, } : Param)
+  })
+  ({ name: func.name, ret, params, exceptions, } : Function)
+}
+
+///|
+fn expand_service(
+  service : Service,
+  aliases : Map[String, TType],
+  file : String,
+) -> Service raise Refused {
+  let functions = service.functions.map(f => expand_function(f, aliases, file))
+  ({ name: service.name, base: service.base, functions, } : Service)
+}
+
+///|
 /// Fold `file`'s includes into it. `load` is what reads an included file, so the
 /// compiler itself stays free of a file system and a test can hand in a map.
 pub fn link(
@@ -272,15 +355,29 @@ pub fn link(
     prefix_path: Map([]),
     structs: [],
     enums: [],
+    aliases: Map([]),
+    alias_order: [],
     all: Map([]),
     root: [],
   }
   linker.seen[file] = ""
   linker.read(file, source, "")
-  {
-    structs: linker.structs,
-    enums: linker.enums,
-    services: linker.root,
-    by_service: linker.all,
+  let aliases = linker.aliases
+  // Expand every alias once, so one that loops is refused even if nothing uses it yet.
+  for name in linker.alias_order {
+    ignore(expand(Named(name), aliases, [], file))
   }
+  let structs = linker.structs.map(s => {
+    let fields = s.fields.map(f => {
+      let ty = expand(f.ty, aliases, [], file)
+      ({ id: f.id, name: f.name, ty, optional: f.optional, } : Field)
+    })
+    ({ name: s.name, kind: s.kind, fields, } : Struct)
+  })
+  let by_service : Map[String, Service] = Map([])
+  for name, service in linker.all {
+    by_service[name] = expand_service(service, aliases, file)
+  }
+  let services = linker.root.map(s => expand_service(s, aliases, file))
+  { structs, enums: linker.enums, services, by_service, }
 }

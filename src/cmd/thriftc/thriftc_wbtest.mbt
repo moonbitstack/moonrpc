@@ -75,12 +75,89 @@ test "thriftc: the same struct in a list or an optional field is accepted" {
 }
 
 ///|
-test "thriftc: `typedef` is refused, not silently dropped" {
+test "thriftc: a typedef is substituted where it is used, not emitted" {
+  let code = render("t.thrift", "typedef i32 UserId\nstruct A { 1: UserId id }")
+  assert_true(code.contains("id : Int32"))
+  assert_false(code.contains("UserId"))
+}
+
+///|
+test "thriftc: an alias of a container keeps the container" {
+  let code = render(
+    "t.thrift", "typedef map<string, list<i32>> Index\nstruct A { 1: Index rows }",
+  )
+  assert_true(code.contains("rows : Map[String, Array[Int32]]"))
+  // The container helpers take the type they wrap, not the alias.
+  assert_true(code.contains("pub fn read_map_string_list_i32"))
+}
+
+///|
+test "thriftc: an alias chain collapses to the type at the end of it" {
+  let code = render(
+    "t.thrift", "typedef i32 A\ntypedef A B\nstruct S { 1: B b }",
+  )
+  assert_true(code.contains("b : Int32"))
+}
+
+///|
+test "thriftc: an alias may name a type from an included file" {
+  let files : Map[String, String] = Map([
+    ("shared.thrift", "struct Stamp { 1: i64 at }"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"shared.thrift\"\ntypedef shared.Stamp At\nstruct A { 1: At at }",
+    loader(files),
+  )
+  assert_true(code.contains("at : SharedStamp"))
+}
+
+///|
+test "thriftc: an included file's alias is reachable under its prefix" {
+  let files : Map[String, String] = Map([
+    ("shared.thrift", "typedef i32 UserId"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"shared.thrift\"\nstruct A { 1: shared.UserId id }",
+    loader(files),
+  )
+  assert_true(code.contains("id : Int32"))
+  assert_false(code.contains("SharedUserId"))
+}
+
+///|
+test "thriftc: an alias of itself is refused with the chain" {
   let raised = try {
-    ignore(render("t.thrift", "typedef i32 UserId"))
+    ignore(render("t.thrift", "typedef B A\ntypedef A B"))
     false
   } catch {
-    Bad(msg~, ..) => msg.contains("typedef")
+    Bad(msg~, ..) =>
+      msg.contains("alias of itself") && msg.contains("A -> B -> A")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: an alias of an exception can be thrown" {
+  let code = render(
+    "t.thrift", "exception Missing { 1: string message }\ntypedef Missing Gone\nservice S { void go() throws (1: Gone g) }",
+  )
+  assert_true(code.contains("Missing(Missing)"))
+  assert_false(code.contains("Gone"))
+}
+
+///|
+test "thriftc: an alias does not get a struct past the map-key rule" {
+  let raised = try {
+    ignore(
+      render(
+        "t.thrift", "struct K { 1: string s }\ntypedef K Key\nstruct A { 1: map<Key, i32> m }",
+      ),
+    )
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("map key")
   }
   assert_true(raised)
 }

@@ -28,6 +28,7 @@ pub(all) struct Document {
   structs : Array[Struct]
   enums : Array[Enum]
   services : Array[Service]
+  typedefs : Array[Typedef]
   includes : Array[String]
 }
 
@@ -102,6 +103,11 @@ pub(all) enum Token {
   TNum(Int32)
   TSym(Char)
   TEof
+}
+
+pub(all) struct Typedef {
+  name : String
+  ty : TType
 }
 
 // Type aliases
