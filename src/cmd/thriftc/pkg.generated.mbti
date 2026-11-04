@@ -19,6 +19,11 @@ pub fn Refused::to_string(Self) -> String
 pub impl Show for Refused
 
 // Types and methods
+pub(all) enum DeclKind {
+  PlainStruct
+  ExceptionDecl
+}
+
 pub(all) struct Document {
   structs : Array[Struct]
   enums : Array[Enum]
@@ -44,6 +49,7 @@ pub(all) struct Function {
   name : String
   ret : TType?
   params : Array[Param]
+  exceptions : Array[Param]
 }
 
 pub(all) struct Linked {
@@ -72,6 +78,7 @@ pub(all) struct Service {
 pub(all) struct Struct {
   name : String
   fields : Array[Field]
+  kind : DeclKind
 }
 
 pub(all) enum TType {

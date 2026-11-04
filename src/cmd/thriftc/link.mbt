@@ -205,7 +205,11 @@ fn Linker::read(
       let ty = self.rename_type(f.ty, file, prefix, declared, includes)
       { id: f.id, name: f.name, ty, optional: f.optional, }
     })
-    self.structs.push({ name: global_name(prefix, item.name), fields, })
+    self.structs.push({
+      name: global_name(prefix, item.name),
+      fields,
+      kind: item.kind,
+    })
   }
   for item in doc.enums {
     self.enums.push({
@@ -240,7 +244,11 @@ fn Linker::read(
         Some(ty) => Some(self.rename_type(ty, file, prefix, declared, includes))
         None => None
       }
-      { name: f.name, ret, params, }
+      let exceptions = f.exceptions.map(x => {
+        let ty = self.rename_type(x.ty, file, prefix, declared, includes)
+        { id: x.id, name: x.name, ty, }
+      })
+      { name: f.name, ret, params, exceptions, }
     })
     let named = { name: global_name(prefix, service.name), base, functions, }
     self.all[named.name] = named

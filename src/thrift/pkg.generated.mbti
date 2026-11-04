@@ -8,6 +8,10 @@ import {
 // Values
 pub async fn[T : Transport, R] call(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError, (&Protocol) -> R raise ThriftError) -> R raise ThriftError
 
+pub async fn[T : Transport, R, E] call_result(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError, (&Protocol) -> R raise ThriftError, (&Protocol, Int32) -> E? raise ThriftError) -> Result[R, E] raise ThriftError
+
+pub async fn[T : Transport, E] call_result_unit(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError, (&Protocol, Int32) -> E? raise ThriftError) -> Result[Unit, E] raise ThriftError
+
 pub fn frame(Bytes) -> Bytes
 
 pub fn frame_len(Bytes) -> Int32 raise ThriftError
@@ -23,6 +27,10 @@ pub let message_exception : Int32
 pub let message_oneway : Int32
 
 pub let message_reply : Int32
+
+pub fn[R, E] read_result(&Protocol, (&Protocol) -> R raise ThriftError, (&Protocol, Int32) -> E? raise ThriftError) -> Result[R, E] raise ThriftError
+
+pub fn[E] read_result_unit(&Protocol, (&Protocol, Int32) -> E? raise ThriftError) -> Result[Unit, E] raise ThriftError
 
 pub fn[R] read_success(&Protocol, (&Protocol) -> R raise ThriftError) -> R raise ThriftError
 

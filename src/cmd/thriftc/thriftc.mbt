@@ -1,8 +1,8 @@
 // The Thrift IDL compiler: a .thrift file in, the MoonBit types, their codecs, and
 // the service's registration and client out. The subset it reads is the one this
-// library can carry — struct, enum and service over the primitive types, lists, sets
-// and maps. Anything else is refused with the line it came from, rather than silently
-// dropped.
+// library can carry — struct, enum, exception and service over the primitive types,
+// lists, sets and maps. Anything else is refused with the line it came from, rather
+// than silently dropped.
 
 ///|
 pub(all) suberror Refused {
@@ -52,9 +52,18 @@ pub(all) struct Field {
 }
 
 ///|
+/// What a declared field list is. An `exception` is a struct on the wire; the
+/// difference is in a service's signature, where a `throws` clause names one.
+pub(all) enum DeclKind {
+  PlainStruct
+  ExceptionDecl
+}
+
+///|
 pub(all) struct Struct {
   name : String
   fields : Array[Field]
+  kind : DeclKind
 }
 
 ///|
@@ -75,6 +84,8 @@ pub(all) struct Function {
   name : String
   ret : TType?
   params : Array[Param]
+  // The `throws` clause: the exceptions this method may answer instead of a value.
+  exceptions : Array[Param]
 }
 
 ///|
@@ -329,13 +340,17 @@ fn Parser::parse_type(self : Parser) -> TType raise Refused {
 }
 
 ///|
-fn Parser::parse_struct(self : Parser) -> Struct raise Refused {
-  let name = self.expect_ident("a struct name")
+fn Parser::parse_struct(self : Parser, kind : DeclKind) -> Struct raise Refused {
+  let what = match kind {
+    PlainStruct => "a struct name"
+    ExceptionDecl => "an exception name"
+  }
+  let name = self.expect_ident(what)
   self.expect('{')
   let fields : Array[Field] = []
   while !self.eat('}') {
     if self.peek() is TEof {
-      refuse(self.file, self.line(), "`struct \{name}` is not closed")
+      refuse(self.file, self.line(), "`\{name}` is not closed")
     }
     let id = self.expect_num()
     self.expect(':')
@@ -360,7 +375,7 @@ fn Parser::parse_struct(self : Parser) -> Struct raise Refused {
     fields.push({ id, name: field_name, ty, optional, })
   }
   self.skip_annotation()
-  { name, fields, }
+  { name, fields, kind, }
 }
 
 ///|
@@ -384,19 +399,16 @@ fn Parser::parse_enum(self : Parser) -> Enum raise Refused {
 }
 
 ///|
-fn Parser::parse_function(self : Parser) -> Function raise Refused {
-  let ret = if self.peek() is TIdent("void") {
-    ignore(self.advance())
-    None
-  } else {
-    Some(self.parse_type())
-  }
-  let name = self.expect_ident("a method name")
+/// The `( id: Type name, ... )` a method's arguments and its `throws` clause both use.
+fn Parser::parse_params(
+  self : Parser,
+  method_name : String,
+) -> Array[Param] raise Refused {
   self.expect('(')
   let params : Array[Param] = []
   while !self.eat(')') {
     if self.peek() is TEof {
-      refuse(self.file, self.line(), "`\{name}` is not closed")
+      refuse(self.file, self.line(), "`\{method_name}` is not closed")
     }
     let id = self.expect_num()
     self.expect(':')
@@ -405,15 +417,27 @@ fn Parser::parse_function(self : Parser) -> Function raise Refused {
     ignore(self.eat(',') || self.eat(';'))
     params.push({ id, name: param_name, ty, })
   }
-  if self.peek() is TIdent("throws") {
-    refuse(
-      self.file,
-      self.line(),
-      "`throws` is not supported; `\{name}` declares one",
-    )
+  params
+}
+
+///|
+fn Parser::parse_function(self : Parser) -> Function raise Refused {
+  let ret = if self.peek() is TIdent("void") {
+    ignore(self.advance())
+    None
+  } else {
+    Some(self.parse_type())
+  }
+  let name = self.expect_ident("a method name")
+  let params = self.parse_params(name)
+  let exceptions = if self.peek() is TIdent("throws") {
+    ignore(self.advance())
+    self.parse_params(name)
+  } else {
+    []
   }
   ignore(self.eat(',') || self.eat(';'))
-  { name, ret, params, }
+  { name, ret, params, exceptions, }
 }
 
 ///|
@@ -473,7 +497,11 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
       }
       TIdent("struct") => {
         ignore(self.advance())
-        structs.push(self.parse_struct())
+        structs.push(self.parse_struct(PlainStruct))
+      }
+      TIdent("exception") => {
+        ignore(self.advance())
+        structs.push(self.parse_struct(ExceptionDecl))
       }
       TIdent("enum") => {
         ignore(self.advance())
@@ -496,12 +524,6 @@ fn Parser::parse_document(self : Parser) -> Document raise Refused {
           self.file,
           self.line(),
           "`union` is not supported; use a struct with optional fields",
-        )
-      TIdent("exception") =>
-        refuse(
-          self.file,
-          self.line(),
-          "`exception` is not supported; return a status instead",
         )
       TIdent(other) =>
         refuse(

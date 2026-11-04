@@ -161,6 +161,88 @@ pub fn[R] read_success(
 }
 
 ///|
+/// Read a result struct whose method declares exceptions: field 0 is the success value,
+/// any other field is a failure that `exception` decodes by its field id. The decoder
+/// answers `None` for a field it does not know and must not have read it; that one is
+/// skipped and raised as `Application`, so a failure nobody declared is not swallowed as
+/// a value.
+pub fn[R, E] read_result(
+  proto : &Protocol,
+  read : (&Protocol) -> R raise ThriftError,
+  exception : (&Protocol, Int32) -> E? raise ThriftError,
+) -> Result[R, E] raise ThriftError {
+  let (field_type, field_id) = proto.read_field_begin()
+  if field_type == type_stop {
+    raise Application("the reply carried no result")
+  }
+  if field_id == 0 {
+    return Ok(read(proto))
+  }
+  match exception(proto, field_id) {
+    Some(failure) => Err(failure)
+    None => undeclared(proto, field_type)
+  }
+}
+
+///|
+/// The same, for a method that answers nothing: an empty result struct is success.
+pub fn[E] read_result_unit(
+  proto : &Protocol,
+  exception : (&Protocol, Int32) -> E? raise ThriftError,
+) -> Result[Unit, E] raise ThriftError {
+  let (field_type, field_id) = proto.read_field_begin()
+  if field_type == type_stop {
+    return Ok(())
+  }
+  match exception(proto, field_id) {
+    Some(failure) => Err(failure)
+    None => undeclared(proto, field_type)
+  }
+}
+
+///|
+/// A failure field no `throws` clause declared. Its string message is what gets raised,
+/// as with any other Thrift exception.
+fn[E] undeclared(proto : &Protocol, field_type : Int32) -> E raise ThriftError {
+  let message = if field_type == type_string {
+    proto.read_string()
+  } else {
+    skip(proto, field_type)
+    "the method raised an undeclared Thrift exception"
+  }
+  raise Application(message)
+}
+
+///|
+/// Send one CALL and read a result that may be a declared exception.
+pub async fn[T : Transport, R, E] call_result(
+  transport : T,
+  proto : &Protocol,
+  name : String,
+  seqid : Int32,
+  args : (&Protocol) -> Unit raise ThriftError,
+  read : (&Protocol) -> R raise ThriftError,
+  exception : (&Protocol, Int32) -> E? raise ThriftError,
+) -> Result[R, E] raise ThriftError {
+  request(transport, proto, name, seqid, args)
+  read_result(proto, read, exception)
+}
+
+///|
+/// The same, for a method that returns nothing and may still throw.
+pub async fn[T : Transport, E] call_result_unit(
+  transport : T,
+  proto : &Protocol,
+  name : String,
+  seqid : Int32,
+  args : (&Protocol) -> Unit raise ThriftError,
+  exception : (&Protocol, Int32) -> E? raise ThriftError,
+) -> Result[Unit, E] raise ThriftError {
+  request(transport, proto, name, seqid, args)
+  read_result_unit(proto, exception)
+}
+
+///|
 /// A length-prefixed frame, as `TFramedTransport` writes it.
 pub fn frame(body : Bytes) -> Bytes {
   let writer : Binary = Binary::new(b"")

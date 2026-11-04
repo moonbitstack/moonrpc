@@ -270,3 +270,93 @@ test "thriftc: a service can extend one from an included file" {
   assert_true(code.contains("processor.add(\"go\""))
   assert_true(code.contains("processor.add(\"ping\""))
 }
+
+// ---------------------------------------------------------------- exceptions
+
+///|
+test "thriftc: an exception is a struct, named by a throws clause" {
+  let code = render(
+    "t.thrift", "exception Missing { 1: string message, 2: i32 code }\nservice S { string find(1: string key) throws (1: Missing missing) }",
+  )
+  assert_true(code.contains("pub(all) struct Missing"))
+  assert_true(code.contains("pub(all) enum SFindError"))
+  assert_true(code.contains("Missing(Missing)"))
+  assert_true(code.contains("find : (String) -> Result[String, SFindError],"))
+  // The failure goes out as a struct in the field its throws clause numbers.
+  assert_true(code.contains("proto.write_field_begin(@thrift.type_struct, 1)"))
+}
+
+///|
+test "thriftc: the client of a throwing method returns a Result, not a value" {
+  let code = render(
+    "t.thrift", "exception Missing { 1: string message }\nservice S { string find(1: string key) throws (1: Missing missing) }",
+  )
+  assert_true(code.contains("@thrift.call_result(transport, proto, \"find\""))
+  assert_true(
+    code.contains(") -> Result[String, SFindError] raise @thrift.ThriftError {"),
+  )
+  assert_true(code.contains("1 => Some(Missing(Missing::decode(proto)))"))
+}
+
+///|
+test "thriftc: a void method that throws reads its empty result as success" {
+  let code = render(
+    "t.thrift", "exception Boom { 1: string message }\nservice S { void go(1: i32 n) throws (1: Boom boom) }",
+  )
+  assert_true(code.contains("@thrift.call_result_unit"))
+  assert_true(code.contains("go : (Int32) -> Result[Unit, SGoError],"))
+  assert_true(code.contains("Ok(_) => ()"))
+}
+
+///|
+test "thriftc: a method without throws keeps its plain signature" {
+  let code = render(
+    "t.thrift", "exception Boom { 1: string message }\nservice S { i32 add(1: i32 a, 2: i32 b) }",
+  )
+  assert_true(code.contains("add : (Int32, Int32) -> Int32,"))
+  assert_false(code.contains("SAddError"))
+  assert_false(code.contains("call_result"))
+}
+
+///|
+test "thriftc: throwing a struct is refused, and says why" {
+  let raised = try {
+    ignore(
+      render(
+        "t.thrift", "struct Plain { 1: string s }\nservice S { void go() throws (1: Plain p) }",
+      ),
+    )
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("which is a struct")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: throwing a name nobody declares is refused" {
+  let raised = try {
+    ignore(render("t.thrift", "service S { void go() throws (1: Gone g) }"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("not declared in this file")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: an exception from an included file is thrown under its prefix" {
+  let files : Map[String, String] = Map([
+    ("shared.thrift", "exception Missing { 1: string message }"),
+  ])
+  let code = render_with(
+    "main.thrift",
+    "include \"shared.thrift\"\nservice S { void go() throws (1: shared.Missing m) }",
+    loader(files),
+  )
+  assert_true(code.contains("pub(all) enum SGoError"))
+  assert_true(code.contains("SharedMissing(SharedMissing)"))
+  assert_true(
+    code.contains("1 => Some(SharedMissing(SharedMissing::decode(proto)))"),
+  )
+}

@@ -8,17 +8,21 @@ import {
 // Values
 pub async fn[T : @thrift.Transport] greeter_add(T, &@thrift.Protocol, Int32, Int32) -> Int32 raise @thrift.ThriftError
 
+pub async fn[T : @thrift.Transport] greeter_find(T, &@thrift.Protocol, String) -> Result[String, GreeterFindError] raise @thrift.ThriftError
+
 pub async fn[T : @thrift.Transport] greeter_hello(T, &@thrift.Protocol, Person) -> String raise @thrift.ThriftError
 
 pub async fn[T : @thrift.Transport] greeter_notify(T, &@thrift.Protocol, String) -> Unit raise @thrift.ThriftError
 
 pub async fn[T : @thrift.Transport] greeter_ping(T, &@thrift.Protocol) -> String raise @thrift.ThriftError
 
+pub async fn[T : @thrift.Transport] greeter_shout(T, &@thrift.Protocol, String) -> Result[Unit, GreeterShoutError] raise @thrift.ThriftError
+
 pub fn read_list_string(&@thrift.Protocol) -> Array[String] raise @thrift.ThriftError
 
 pub fn read_map_string_i32(&@thrift.Protocol) -> Map[String, Int32] raise @thrift.ThriftError
 
-pub fn register_greeter(@thrift.Processor, (Person) -> String, (Int32, Int32) -> Int32, (String) -> Unit, () -> String) -> Unit
+pub fn register_greeter(@thrift.Processor, (Person) -> String, (Int32, Int32) -> Int32, (String) -> Unit, (String) -> Result[String, GreeterFindError], (String) -> Result[Unit, GreeterShoutError], () -> String) -> Unit
 
 pub fn write_list_string(&@thrift.Protocol, Array[String]) -> Unit
 
@@ -27,6 +31,14 @@ pub fn write_map_string_i32(&@thrift.Protocol, Map[String, Int32]) -> Unit
 // Errors
 
 // Types and methods
+pub(all) enum GreeterFindError {
+  SharedMissing(SharedMissing)
+}
+
+pub(all) enum GreeterShoutError {
+  SharedMissing(SharedMissing)
+}
+
 pub(all) enum Mood {
   Calm
   Happy
@@ -47,6 +59,14 @@ pub(all) struct Person {
 pub fn Person::decode(&@thrift.Protocol) -> Self raise @thrift.ThriftError
 pub fn Person::default() -> Self
 pub fn Person::encode(Self, &@thrift.Protocol) -> Unit
+
+pub(all) struct SharedMissing {
+  message : String
+  code : Int32
+}
+pub fn SharedMissing::decode(&@thrift.Protocol) -> Self raise @thrift.ThriftError
+pub fn SharedMissing::default() -> Self
+pub fn SharedMissing::encode(Self, &@thrift.Protocol) -> Unit
 
 pub(all) struct SharedStamp {
   at : Int64

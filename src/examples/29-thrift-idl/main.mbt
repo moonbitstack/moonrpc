@@ -32,6 +32,11 @@ fn probe(proto : &@thrift.Protocol) -> Unit raise {
     who => "Hello, \{who.name}!",
     (a, b) => a + b,
     text => println("  notify: \{text}"),
+    key => Ok("found " + key),
+    text => {
+      ignore(text)
+      Ok(())
+    },
     () => "pong",
   )
   let reply = processor.process(proto, proto.output())

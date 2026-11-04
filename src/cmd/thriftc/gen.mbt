@@ -482,6 +482,25 @@ fn service_methods(
 }
 
 ///|
+/// The error type of one method: a variant per exception its `throws` clause names.
+fn error_name(service : String, func : String) -> String {
+  service + capitalise(func) + "Error"
+}
+
+///|
+fn emit_error_enum(e : Emitter, service : String, func : Function) -> Unit {
+  let name = error_name(service, func.name)
+  e.line(0, "/// The declared failures of `\{func.name}`.")
+  e.line(0, "pub(all) enum \{name} {")
+  for ex in func.exceptions {
+    let ty = moon_type(ex.ty)
+    e.line(1, "\{ty}(\{ty})")
+  }
+  e.line(0, "}")
+  e.blank()
+}
+
+///|
 fn emit_service(
   e : Emitter,
   service : Service,
@@ -490,6 +509,11 @@ fn emit_service(
 ) -> Unit {
   let prefix = lower_first(service.name)
   let names = enums.map(x => x.name)
+  for func in methods {
+    if func.exceptions.length() > 0 {
+      emit_error_enum(e, service.name, func)
+    }
+  }
 
   // The server side: one handler per method, registered under its wire name.
   e.line(0, "pub fn register_\{prefix}(")
@@ -499,6 +523,11 @@ fn emit_service(
     let ret = match func.ret {
       Some(ty) => moon_type(ty)
       None => "Unit"
+    }
+    let ret = if func.exceptions.length() > 0 {
+      "Result[\{ret}, \{error_name(service.name, func.name)}]"
+    } else {
+      ret
     }
     e.line(1, "\{func.name} : (\{params}) -> \{ret},")
   }
@@ -535,13 +564,34 @@ fn emit_service(
     }
     e.line(2, "}")
     let args = func.params.map(p => "arg_" + p.name).join(", ")
-    match func.ret {
-      Some(ty) => {
-        e.line(2, "let result = \{func.name}(\{args})")
-        e.line(2, "proto.write_field_begin(\{wire_type(ty, names)}, 0)")
-        e.line(2, write_of(ty, "result", names))
+    if func.exceptions.length() > 0 {
+      e.line(2, "match \{func.name}(\{args}) {")
+      match func.ret {
+        Some(ty) => {
+          e.line(3, "Ok(value) => {")
+          e.line(4, "proto.write_field_begin(\{wire_type(ty, names)}, 0)")
+          e.line(4, write_of(ty, "value", names))
+          e.line(3, "}")
+        }
+        None => e.line(3, "Ok(_) => ()")
       }
-      None => e.line(2, "\{func.name}(\{args})")
+      for ex in func.exceptions {
+        let ty = moon_type(ex.ty)
+        e.line(3, "Err(\{ty}(value)) => {")
+        e.line(4, "proto.write_field_begin(@thrift.type_struct, \{ex.id})")
+        e.line(4, "value.encode(proto)")
+        e.line(3, "}")
+      }
+      e.line(2, "}")
+    } else {
+      match func.ret {
+        Some(ty) => {
+          e.line(2, "let result = \{func.name}(\{args})")
+          e.line(2, "proto.write_field_begin(\{wire_type(ty, names)}, 0)")
+          e.line(2, write_of(ty, "result", names))
+        }
+        None => e.line(2, "\{func.name}(\{args})")
+      }
     }
     e.line(1, "})")
   }
@@ -551,9 +601,20 @@ fn emit_service(
   // The client side: one function per method, over any transport.
   for func in methods {
     let name = "\{prefix}_\{func.name}"
+    let throwing = func.exceptions.length() > 0
     let ret = match func.ret {
-      Some(ty) => " -> \{moon_type(ty)}"
-      None => " -> Unit"
+      Some(ty) =>
+        if throwing {
+          "Result[\{moon_type(ty)}, \{error_name(service.name, func.name)}]"
+        } else {
+          moon_type(ty)
+        }
+      None =>
+        if throwing {
+          "Result[Unit, \{error_name(service.name, func.name)}]"
+        } else {
+          "Unit"
+        }
     }
     e.line(0, "pub async fn[T : @thrift.Transport] \{name}(")
     e.line(1, "transport : T,")
@@ -561,14 +622,47 @@ fn emit_service(
     for param in func.params {
       e.line(1, "\{param.name} : \{moon_type(param.ty)},")
     }
-    e.line(0, ")\{ret} raise @thrift.ThriftError {")
+    e.line(0, ") -> \{ret} raise @thrift.ThriftError {")
     let mut call = "@thrift"
-    if func.ret is Some(_) {
+    if throwing {
+      call = if func.ret is Some(_) {
+        call + ".call_result"
+      } else {
+        call + ".call_result_unit"
+      }
+    } else if func.ret is Some(_) {
       call = call + ".call"
     } else {
       call = call + ".request"
     }
-    if func.params.length() == 0 {
+    if throwing {
+      if func.params.length() == 0 {
+        e.line(1, "\{call}(transport, proto, \"\{func.name}\", 1, _ => (),")
+      } else {
+        e.line(1, "\{call}(transport, proto, \"\{func.name}\", 1, proto => {")
+        for param in func.params {
+          e.line(
+            2,
+            "proto.write_field_begin(\{wire_type(param.ty, names)}, \{param.id})",
+          )
+          e.line(2, write_of(param.ty, param.name, names))
+        }
+        e.line(1, "},")
+      }
+      match func.ret {
+        Some(ty) => e.line(1, "proto => \{read_of(ty, names)},")
+        None => ()
+      }
+      e.line(1, "(proto, id) => {")
+      e.line(2, "match id {")
+      for ex in func.exceptions {
+        let ty = moon_type(ex.ty)
+        e.line(3, "\{ex.id} => Some(\{ty}(\{ty}::decode(proto)))")
+      }
+      e.line(3, "_ => None")
+      e.line(2, "}")
+      e.line(1, "})")
+    } else if func.params.length() == 0 {
       e.line(
         1,
         "\{call}(transport, proto, \"\{func.name}\", 1, _ => ()\{read_tail(func.ret, names)})",
@@ -698,9 +792,49 @@ fn check_type(
 }
 
 ///|
+/// A `throws` clause may name only a declared `exception`; a struct there would
+/// generate a variant nobody can construct and would blame the wrong declaration.
+fn check_throws(
+  func : Function,
+  exceptions : Array[String],
+  structs : Array[String],
+  file : String,
+) -> Unit raise Refused {
+  for ex in func.exceptions {
+    match ex.ty {
+      Named(name) =>
+        if !exceptions.contains(name) {
+          if structs.contains(name) {
+            refuse(
+              file,
+              0,
+              "`\{func.name}` throws `\{name}`, which is a struct; declare it as an `exception`",
+            )
+          } else {
+            refuse(
+              file,
+              0,
+              "`\{func.name}` throws `\{name}`, which is not declared in this file or in anything it includes",
+            )
+          }
+        }
+      _ =>
+        refuse(
+          file,
+          0,
+          "`\{func.name}` throws something that is not a named exception",
+        )
+    }
+  }
+}
+
+///|
 fn check_names(doc : Linked, file : String) -> Unit raise Refused {
   let enums = doc.enums.map(e => e.name)
   let structs = doc.structs.map(s => s.name)
+  let exceptions = doc.structs
+    .filter(s => s.kind is ExceptionDecl)
+    .map(s => s.name)
   for s in doc.structs {
     for f in s.fields {
       check_type(f.ty, enums, structs, file)
@@ -715,6 +849,7 @@ fn check_names(doc : Linked, file : String) -> Unit raise Refused {
         Some(ty) => check_type(ty, enums, structs, file)
         None => ()
       }
+      check_throws(func, exceptions, structs, file)
     }
   }
 }

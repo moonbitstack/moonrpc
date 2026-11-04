@@ -64,6 +64,47 @@ pub fn SharedStamp::decode(proto : &@thrift.Protocol) -> SharedStamp raise @thri
   { at, }
 }
 
+pub(all) struct SharedMissing {
+  message : String
+  code : Int32
+}
+
+pub fn SharedMissing::default() -> SharedMissing {
+  {
+    message: "",
+    code: 0,
+  }
+}
+
+pub fn SharedMissing::encode(self : SharedMissing, proto : &@thrift.Protocol) -> Unit {
+  proto.write_struct_begin("SharedMissing")
+  proto.write_field_begin(@thrift.type_string, 1)
+  proto.write_string(self.message)
+  proto.write_field_begin(@thrift.type_i32, 2)
+  proto.write_i32(self.code)
+  proto.write_field_stop()
+  proto.write_struct_end()
+}
+
+pub fn SharedMissing::decode(proto : &@thrift.Protocol) -> SharedMissing raise @thrift.ThriftError {
+  let mut message : String = ""
+  let mut code : Int32 = 0
+  proto.read_struct_begin()
+  for ;; {
+    let (field_type, field_id) = proto.read_field_begin()
+    if field_type == @thrift.type_stop {
+      break
+    }
+    match field_id {
+      1 => message = proto.read_string()
+      2 => code = proto.read_i32()
+      _ => @thrift.skip(proto, field_type)
+    }
+  }
+  proto.read_struct_end()
+  { message, code, }
+}
+
 pub(all) struct Person {
   name : String
   age : Option[Int32]
@@ -177,11 +218,23 @@ pub fn read_map_string_i32(proto : &@thrift.Protocol) -> Map[String, Int32] rais
   out
 }
 
+/// The declared failures of `find`.
+pub(all) enum GreeterFindError {
+  SharedMissing(SharedMissing)
+}
+
+/// The declared failures of `shout`.
+pub(all) enum GreeterShoutError {
+  SharedMissing(SharedMissing)
+}
+
 pub fn register_greeter(
   processor : @thrift.Processor,
   hello : (Person) -> String,
   add : (Int32, Int32) -> Int32,
   notify : (String) -> Unit,
+  find : (String) -> Result[String, GreeterFindError],
+  shout : (String) -> Result[Unit, GreeterShoutError],
   ping : () -> String,
 ) -> Unit {
   processor.add("hello", proto => {
@@ -232,6 +285,49 @@ pub fn register_greeter(
     }
     notify(arg_text)
   })
+  processor.add("find", proto => {
+    let mut arg_key : String = ""
+    for ;; {
+      let (field_type, field_id) = proto.read_field_begin()
+      if field_type == @thrift.type_stop {
+        break
+      }
+      match field_id {
+        1 => arg_key = proto.read_string()
+        _ => @thrift.skip(proto, field_type)
+      }
+    }
+    match find(arg_key) {
+      Ok(value) => {
+        proto.write_field_begin(@thrift.type_string, 0)
+        proto.write_string(value)
+      }
+      Err(SharedMissing(value)) => {
+        proto.write_field_begin(@thrift.type_struct, 1)
+        value.encode(proto)
+      }
+    }
+  })
+  processor.add("shout", proto => {
+    let mut arg_text : String = ""
+    for ;; {
+      let (field_type, field_id) = proto.read_field_begin()
+      if field_type == @thrift.type_stop {
+        break
+      }
+      match field_id {
+        1 => arg_text = proto.read_string()
+        _ => @thrift.skip(proto, field_type)
+      }
+    }
+    match shout(arg_text) {
+      Ok(_) => ()
+      Err(SharedMissing(value)) => {
+        proto.write_field_begin(@thrift.type_struct, 1)
+        value.encode(proto)
+      }
+    }
+  })
   processor.add("ping", proto => {
     for ;; {
       let (field_type, _) = proto.read_field_begin()
@@ -279,6 +375,41 @@ pub async fn[T : @thrift.Transport] greeter_notify(
   @thrift.request(transport, proto, "notify", 1, proto => {
     proto.write_field_begin(@thrift.type_string, 1)
     proto.write_string(text)
+  })
+}
+
+pub async fn[T : @thrift.Transport] greeter_find(
+  transport : T,
+  proto : &@thrift.Protocol,
+  key : String,
+) -> Result[String, GreeterFindError] raise @thrift.ThriftError {
+  @thrift.call_result(transport, proto, "find", 1, proto => {
+    proto.write_field_begin(@thrift.type_string, 1)
+    proto.write_string(key)
+  },
+  proto => proto.read_string(),
+  (proto, id) => {
+    match id {
+      1 => Some(SharedMissing(SharedMissing::decode(proto)))
+      _ => None
+    }
+  })
+}
+
+pub async fn[T : @thrift.Transport] greeter_shout(
+  transport : T,
+  proto : &@thrift.Protocol,
+  text : String,
+) -> Result[Unit, GreeterShoutError] raise @thrift.ThriftError {
+  @thrift.call_result_unit(transport, proto, "shout", 1, proto => {
+    proto.write_field_begin(@thrift.type_string, 1)
+    proto.write_string(text)
+  },
+  (proto, id) => {
+    match id {
+      1 => Some(SharedMissing(SharedMissing::decode(proto)))
+      _ => None
+    }
   })
 }
 

@@ -440,9 +440,37 @@ compiler with `--check` so the two cannot drift:
 moon run src/cmd/thriftc -- greet.thrift -o greet.g.mbt
 ```
 
-The compiler reads `struct`, `enum` and `service` over the primitive types, `list`,
-`set` and `map`. `typedef`, `union`, `exception`, `const` and `throws` are refused with
+The compiler reads `struct`, `enum`, `exception` and `service` over the primitive
+types, `list`, `set` and `map`. `typedef`, `union` and `const` are refused with
 the line they came from instead of being silently dropped.
+
+An `exception` is a struct on the wire; a method whose IDL declares `throws` answers a
+`Result`, one variant per declared failure, instead of raising it:
+
+```thrift
+exception Missing {
+  1: string message
+  2: i32 code
+}
+
+service Greeter {
+  string find(1: string key) throws (1: Missing missing)
+}
+```
+
+```moonbit
+pub(all) enum GreeterFindError { Missing(Missing) }
+
+// the handler the registration takes
+find : (String) -> Result[String, GreeterFindError]
+
+// the client
+let found = greeter_find(transport, proto, "ada")   // Result[String, GreeterFindError]
+```
+
+On the wire this is what Apache Thrift does: the success value in field 0, the exception
+in the field its clause numbers. A failure field the IDL does not declare is skipped and
+raised as `@thrift.Application`, so nothing is swallowed as if it were a value.
 
 `include "shared.thrift"` folds that file's types into the output, under the name the
 include gives them: `shared.Person` becomes `SharedPerson`, so one package holds both

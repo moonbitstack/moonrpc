@@ -23,4 +23,6 @@ service Greeter extends shared.Base {
   string hello(1: Person who)
   i32 add(1: i32 a, 2: i32 b)
   void notify(1: string text)
+  string find(1: string key) throws (1: shared.Missing missing)
+  void shout(1: string text) throws (1: shared.Missing missing)
 }
