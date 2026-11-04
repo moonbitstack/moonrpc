@@ -651,3 +651,14 @@ test "thriftc: a struct field of a union type travels as a struct" {
   assert_true(code.contains("self.contact.encode(proto)"))
   assert_true(code.contains("contact = C::decode(proto)"))
 }
+
+///|
+test "thriftc: `oneway` is refused at the word, not at the parenthesis after it" {
+  let raised = try {
+    ignore(render("o.thrift", "service S { oneway void ping() }"))
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("`oneway` is not supported")
+  }
+  assert_true(raised)
+}

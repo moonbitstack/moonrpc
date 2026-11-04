@@ -516,6 +516,15 @@ fn Parser::parse_params(
 
 ///|
 fn Parser::parse_function(self : Parser) -> Function raise Refused {
+  if self.peek() is TIdent("oneway") {
+    // Say so here: read as a return type, `oneway void ping()` fails later with a
+    // "expected `(`" that points at the wrong thing.
+    refuse(
+      self.file,
+      self.line(),
+      "`oneway` is not supported; it would need a call that sends and reads no reply",
+    )
+  }
   let ret = if self.peek() is TIdent("void") {
     ignore(self.advance())
     None
