@@ -65,3 +65,22 @@ test "config: malformed JSON raises rather than yielding a half-read config" {
   }
   assert_true(raised)
 }
+
+///|
+test "config: maxAttempts comes from the document, not from the preset" {
+  // The sample's four is also the preset's, so a field that was never read would
+  // still answer four there.
+  let config = ServiceConfig::parse(
+    "{\"methodConfig\":[{\"name\":[{\"service\":\"s\"}]," +
+    "\"retryPolicy\":{\"maxAttempts\":2,\"initialBackoff\":\"0.1s\"," +
+    "\"maxBackoff\":\"1s\",\"backoffMultiplier\":2," +
+    "\"retryableStatusCodes\":[\"UNAVAILABLE\"]}}]}",
+  ) catch {
+    _ => abort("a valid config must parse")
+  }
+  let retry = match config.for_method("/s/m") {
+    Some({ retry: Some(r), .. }) => r
+    _ => abort("the entry carries a retry policy")
+  }
+  assert_eq(retry.backoff.attempts, 2)
+}
