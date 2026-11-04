@@ -422,12 +422,14 @@ let pong = @thrift.call(client, proto, "ping", 1, proto => {
 }, proto => proto.read_string())
 ```
 
-[`cmd/thriftd`](src/cmd/thriftd/) serves `ping`, `add` and `double`; `thriftd check`
+[`cmd/thriftd`](src/cmd/thriftd/) serves `ping`, `add`, `double` and `fail`; `thriftd check`
 calls them, and a `compact` argument picks the protocol on either side. CI runs an Apache
 Thrift Go client against it and the moonrpc client against an Apache Thrift Go server, in
 the binary and in the compact protocol. Both cover the strict message header, `bool`,
 `byte`, `i16`, `i32`, `i64`, `double`, `string`, structs, lists, sets and maps, with a
-depth guard on `skip`.
+depth guard on `skip`. `fail` answers a value in field 0 or an exception in field 1, so
+the shape a `throws` clause gives a reply is checked against Apache's client and server
+as well.
 
 [`cmd/thriftc`](src/cmd/thriftc/) compiles a `.thrift` file to MoonBit: enums with their
 numbers, structs with a codec and a `default()`, and each service's `register_*` and

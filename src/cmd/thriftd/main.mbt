@@ -34,7 +34,58 @@ fn processor() -> @thrift.Processor {
     proto.write_field_begin(@thrift.type_double, 0)
     proto.write_double(x * 2.0)
   })
+  // A method that may answer an exception instead of a value: field 0 for success,
+  // field 1 for the failure its `throws` clause numbers.
+  processor.add("fail", proto => {
+    ignore(proto.read_field_begin())
+    let text = proto.read_string()
+    ignore(proto.read_field_begin())
+    if text == "ok" {
+      proto.write_field_begin(@thrift.type_string, 0)
+      proto.write_string("fine:" + text)
+    } else {
+      proto.write_field_begin(@thrift.type_struct, 1)
+      write_boom(proto, "boom:" + text)
+    }
+  })
   processor
+}
+
+///|
+/// The `Boom` exception as a struct on the wire: one string field, as the IDL declares.
+fn write_boom(proto : &@thrift.Protocol, message : String) -> Unit {
+  proto.write_struct_begin("Boom")
+  proto.write_field_begin(@thrift.type_string, 1)
+  proto.write_string(message)
+  proto.write_field_stop()
+  proto.write_struct_end()
+}
+
+///|
+/// Decode that struct when it arrives in field 1, and leave any other field to the
+/// caller.
+fn read_boom(
+  proto : &@thrift.Protocol,
+  field_id : Int32,
+) -> String? raise @thrift.ThriftError {
+  if field_id != 1 {
+    return None
+  }
+  proto.read_struct_begin()
+  let mut message = ""
+  for ;; {
+    let (field_type, id) = proto.read_field_begin()
+    if field_type == @thrift.type_stop {
+      break
+    }
+    if id == 1 && field_type == @thrift.type_string {
+      message = proto.read_string()
+    } else {
+      @thrift.skip(proto, field_type)
+    }
+  }
+  proto.read_struct_end()
+  Some(message)
 }
 
 ///|
@@ -105,6 +156,42 @@ async fn check(port : Int32, compact : Bool) -> Unit {
     e => abort("double failed: \{e}")
   }
   println("double \{scaled}")
+  let fine = @thrift.call_result(
+    client,
+    proto,
+    "fail",
+    4,
+    proto => {
+      proto.write_field_begin(@thrift.type_string, 1)
+      proto.write_string("ok")
+    },
+    proto => proto.read_string(),
+    read_boom,
+  ) catch {
+    e => abort("fail failed: \{e}")
+  }
+  match fine {
+    Ok(value) => println("fail  \{value}")
+    Err(_) => abort("fail with `ok` answered an exception")
+  }
+  let boom = @thrift.call_result(
+    client,
+    proto,
+    "fail",
+    5,
+    proto => {
+      proto.write_field_begin(@thrift.type_string, 1)
+      proto.write_string("no")
+    },
+    proto => proto.read_string(),
+    read_boom,
+  ) catch {
+    e => abort("fail failed: \{e}")
+  }
+  match boom {
+    Ok(_) => abort("fail with `no` answered a value")
+    Err(message) => println("fail  \{message}")
+  }
 }
 
 ///|

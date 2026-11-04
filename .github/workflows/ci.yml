@@ -524,6 +524,7 @@ jobs:
             ./scripts/interop/bin/thriftclient -addr 127.0.0.1:"$4" $3 | tee /tmp/thrift-go-client-$1.txt
             grep -q 'apache thrift client interop OK' /tmp/thrift-go-client-$1.txt
             grep -q 'double returns 3' /tmp/thrift-go-client-$1.txt
+            grep -q 'an exception arrives in field 1' /tmp/thrift-go-client-$1.txt
             kill $SRV 2>/dev/null || true
             wait $SRV 2>/dev/null || true
             trap - EXIT
@@ -536,6 +537,7 @@ jobs:
             grep -q 'pong:moonrpc' /tmp/thrift-moonbit-client-$1.txt
             grep -q '42' /tmp/thrift-moonbit-client-$1.txt
             grep -q 'double 3' /tmp/thrift-moonbit-client-$1.txt
+            grep -q 'boom:no' /tmp/thrift-moonbit-client-$1.txt
             kill $SRV 2>/dev/null || true
             wait $SRV 2>/dev/null || true
             trap - EXIT

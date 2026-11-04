@@ -92,6 +92,39 @@ func (processor) Process(ctx context.Context, in, out thrift.TProtocol) (bool, t
 		if err := out.WriteI32(ctx, values[1].(int32)+values[2].(int32)); err != nil {
 			return false, thrift.WrapTException(err)
 		}
+	case "fail":
+		// A value in field 0, or the exception in field 1, as a `throws` clause numbers it.
+		text := values[1].(string)
+		if text == "ok" {
+			if err := out.WriteFieldBegin(ctx, "success", thrift.STRING, 0); err != nil {
+				return false, thrift.WrapTException(err)
+			}
+			if err := out.WriteString(ctx, "fine:"+text); err != nil {
+				return false, thrift.WrapTException(err)
+			}
+			break
+		}
+		if err := out.WriteFieldBegin(ctx, "boom", thrift.STRUCT, 1); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteStructBegin(ctx, "Boom"); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteFieldBegin(ctx, "message", thrift.STRING, 1); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteString(ctx, "boom:"+text); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteFieldEnd(ctx); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteFieldStop(ctx); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteStructEnd(ctx); err != nil {
+			return false, thrift.WrapTException(err)
+		}
 	default:
 		return false, thrift.NewTApplicationException(thrift.UNKNOWN_METHOD, "unknown method: "+name)
 	}
