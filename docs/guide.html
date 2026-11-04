@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>moonrpc — Guide</title>
-<meta name="description" content="A progressive guide to moonrpc: define messages, handle the four gRPC call kinds, and run the pure client/server engines in memory or over a real socket.">
+<meta name="description" content="A progressive guide to moonrpc: define messages, handle the four gRPC call kinds, run the pure client/server engines in memory or over a real socket, and compile a Thrift IDL to the same kinds of service.">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -448,8 +448,70 @@ let reply = chan.unary("/greet.Greeter/SayHello", request)</code></pre>
 </section>
 
 <section class="section wrap">
+  <h2 class="h">13 &middot; Thrift beside gRPC</h2>
+  <p class="lede">The same module also speaks Apache Thrift: <code>TBinaryProtocol</code> and <code>TCompactProtocol</code> over <code>TFramedTransport</code>, written against one <code>Protocol</code> trait, so the processor, the client request and <code>skip</code> exist once. A Thrift peer is a different conversation from a gRPC one — nothing here goes through HTTP/2.</p>
+  <pre><code>// serve it on 9090; a Compact here would be the other protocol, same service
+let processor = @thrift.Processor::new()
+processor.add("ping", proto => {
+  ignore(proto.read_field_begin())                  // field 1: the argument
+  let text = proto.read_string()
+  ignore(proto.read_field_begin())                  // STOP
+  proto.write_field_begin(@thrift.type_string, 0)   // field 0: the result
+  proto.write_string("pong:" + text)
+})
+@net.serve_thrift(
+  host="127.0.0.1", port=9090, processor, () =&gt; @thrift.Binary::new(b""),
+)
+
+// the client, over the same protocol object
+let proto : &amp;@thrift.Protocol = @thrift.Compact::new(b"")
+let client = @net.ThriftClient::connect("127.0.0.1", 9090, proto)
+let pong = @thrift.call(client, proto, "ping", 1, proto =&gt; {
+  proto.write_field_begin(@thrift.type_string, 1)
+  proto.write_string("moonrpc")
+}, proto =&gt; proto.read_string())</code></pre>
+  <p class="note"><span class="src"></span> A call is one framed round trip. The flag picks the bytes, not the service: the two protocols differ in how a field is numbered and how a double is ordered, and the trait is what keeps that difference in one place.</p>
+
+  <p class="lede">Writing those bytes by hand gets old, so <code>cmd/thriftc</code> compiles the IDL instead: types with their codecs, each service's registration and client, and the constants.</p>
+  <pre><code>// greet.thrift — the shapes the compiler reads
+typedef map&lt;string, i32&gt; Scores
+
+exception Missing {
+  1: string message
+}
+
+union Contact {
+  1: string email
+  2: i64 phone
+}
+
+struct Person {
+  1: required string name
+  2: optional i32 age
+  3: Scores scores
+}
+
+const i32 MAX_AGE = 130
+
+service Greeter {
+  string find(1: string key) throws (1: Missing missing)
+}</code></pre>
+  <pre><code>// what thriftc writes
+pub(all) struct Person { name : String, age : Option[Int32], scores : Map[String, Int32] }
+pub(all) enum Contact { Email(String); Phone(Int64) }
+pub(all) enum GreeterFindError { Missing(Missing) }
+pub let maxAge : Int32 = 130
+
+// a method that declares throws answers a Result, on both ends
+find : (String) -&gt; Result[String, GreeterFindError]
+let found = greeter_find(transport, proto, "ada")   // Result[String, GreeterFindError]</code></pre>
+  <p class="note"><span class="src"></span> <code>include</code> folds another file's types in under a prefix (<code>shared.Person</code> becomes <code>SharedPerson</code>) and <code>service Child extends Base</code> carries the base's methods into the child's registration. A <code>typedef</code> is substituted where it is used, so no alias reaches the generated code; a <code>union</code> becomes an enum that carries exactly one field. CI compiles the example with <code>--check</code>, so the generated file and the IDL cannot drift.</p>
+  <p class="note"><span class="src"></span> An Apache Thrift Go client calls <code>cmd/thriftd</code> and the moonrpc client calls an Apache Thrift Go server, in the binary and in the compact protocol. One of those methods answers a value in field 0 or an exception in field 1 — the shape a <code>throws</code> clause gives a reply — and both peers agree on it.</p>
+</section>
+
+<section class="section wrap">
   <h2 class="h">Where to next</h2>
-  <p class="lede">The <a href="api.html">API reference</a> lists every public item by package. The <a href="showcase.html">Showcase</a> runs the real engine in your browser. The repository's <code>src/examples/*</code> cover HTTP/2 frames, HPACK, flow control, health, reflection, deadlines, retries and more.</p>
+  <p class="lede">The <a href="api.html">API reference</a> lists every public item by package. The <a href="showcase.html">Showcase</a> runs the real engine in your browser. The repository's <code>src/examples/*</code> cover HTTP/2 frames, HPACK, flow control, health, reflection, deadlines, retries, the Thrift protocols and the IDL compiler.</p>
   <p><a class="btn" href="index.html">Back to home</a></p>
 </section>
 
