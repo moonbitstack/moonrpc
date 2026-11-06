@@ -1,7 +1,8 @@
 // Connection backoff (gRPC `doc/connection-backoff.md`): after a backend fails, the next
 // dial to it waits longer and longer, with jitter, so a hundred clients reconnecting to a
-// restarted server do not arrive in the same millisecond. Pure decisions here; the channel
-// dials when this says the wait is over.
+// restarted server do not arrive in the same millisecond. The schedule itself is
+// moonward's, the same one a retry policy uses; this file carries gRPC's numbers and the
+// clock a channel keeps per backend.
 
 ///|
 /// A backoff schedule: the first wait, the factor each failure multiplies it by, the cap,
@@ -42,6 +43,19 @@ pub fn Backoff::new(
 }
 
 ///|
+/// The same schedule in the shape moonward computes it, which is where the ceiling and
+/// the spread come from. `attempts` does not apply: a reconnect clock never gives up.
+fn Backoff::schedule(self : Backoff) -> @moonward.Backoff {
+  {
+    ..@moonward.backoff,
+    base: self.initial,
+    cap: self.max,
+    factor: self.factor,
+    jitter: @moonward.Spread(self.jitter),
+  }
+}
+
+///|
 /// How long to wait before the `attempt`-th dial (the first being 1): the initial wait
 /// times the factor once per earlier failure, capped, then spread by the jitter — `roll`
 /// draws from `[0, 1)` and 0.5 is no spread at all.
@@ -50,18 +64,7 @@ pub fn Backoff::delay(
   attempt : Int32,
   roll~ : Double = 0.5,
 ) -> @moondate.Span {
-  let cap = self.max.nanos.to_double()
-  let mut wait = self.initial.nanos.to_double()
-  for _i = 1; _i < attempt; _i = _i + 1 {
-    wait = wait * self.factor
-    if wait > cap {
-      wait = cap
-      break
-    }
-  }
-  // The jitter multiplies the wait by something in [1 - jitter, 1 + jitter).
-  let spread = 1.0 + (roll * 2.0 - 1.0) * self.jitter
-  @moondate.Span::new(nanos=(wait * spread).to_int64())
+  self.schedule().delay(attempt, random=roll)
 }
 
 ///|

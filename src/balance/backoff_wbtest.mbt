@@ -29,6 +29,39 @@ test "backoff: the jitter is the twenty percent either way the document asks for
 }
 
 ///|
+test "backoff: the preset is the document's numbers" {
+  assert_eq(backoff.initial.nanos, 1_000_000_000L)
+  assert_eq(backoff.max.nanos, 120_000_000_000L)
+  assert_eq(backoff.factor, 1.6)
+  assert_eq(backoff.jitter, 0.2)
+  assert_eq(min_connect_timeout.nanos, 20_000_000_000L)
+}
+
+///|
+test "backoff: the wait is the one moonward computes from the same four numbers" {
+  let policy = Backoff::new(
+    initial=@moondate.Span::new(millis=7L),
+    max=@moondate.Span::new(millis=900L),
+    factor=1.4,
+    jitter=0.35,
+  )
+  let schedule = @moonward.Backoff::new(
+    base=@moondate.Span::new(millis=7L),
+    cap=@moondate.Span::new(millis=900L),
+    factor=1.4,
+    jitter=@moonward.Spread(0.35),
+  )
+  for attempt in [1, 2, 3, 8] {
+    for roll in [0.0, 0.25, 0.5, 0.99] {
+      assert_eq(
+        policy.delay(attempt, roll~).nanos,
+        schedule.delay(attempt, random=roll).nanos,
+      )
+    }
+  }
+}
+
+///|
 test "backoff: a dial that worked starts the schedule over" {
   let clock = Reconnect::new(now=1000L)
   assert_eq(clock.due(1000L), true)
