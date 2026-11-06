@@ -1,6 +1,6 @@
 name = "moonbitstack/moonrpc"
 
-version = "0.21.12"
+version = "0.21.13"
 
 readme = "README.md"
 
@@ -52,18 +52,18 @@ description = "gRPC for MoonBit."
 import {
   "moonbitlang/async@0.22.5",
   "moonbitstack/moonbase@0.4.3",
-  "moonbitstack/moonzip@0.3.6",
-  "moonbitstack/moonhttp@0.15.7",
+  "moonbitstack/moonzip@0.3.7",
+  "moonbitstack/moonhttp@0.15.9",
   "moonbitstack/moonurl@0.2.5",
   "moonbitstack/moonvar@0.2.1",
-  "moonbitstack/moondate@0.1.4",
+  "moonbitstack/moondate@0.1.5",
   "moonbitstack/moonward@0.2.1",
   "moonbitstack/moonast@0.2.6",
   "moonbitlang/parser@0.4.6",
-  "moonbitstack/moonnet@0.1.10",
-  "moonbitstack/moontls@0.9.14",
-  "moonbitstack/mooncred@0.6.9",
-  "moonbitstack/mooncrypt@0.4.11",
+  "moonbitstack/moonnet@0.1.11",
+  "moonbitstack/moontls@0.9.15",
+  "moonbitstack/mooncred@0.6.10",
+  "moonbitstack/mooncrypt@0.4.12",
   "moonbitstack/moonseed@0.1.1",
 }
 
