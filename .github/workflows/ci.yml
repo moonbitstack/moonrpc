@@ -590,4 +590,4 @@ jobs:
       - name: Apache Thrift cross test
         run: |
           bash scripts/interop/thrift_cross_test.sh "$RUNNER_TEMP/athrift" \
-            ./_build/native/debug/build/cmd/thriftcrosstest/thriftcrosstest
+            ./_build/native/debug/build/cmd/thriftcrosstest/thriftcrosstest.exe
