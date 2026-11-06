@@ -1,0 +1,16 @@
+// Apache Thrift's cross test on this Thrift stack: the `ThriftTest` service the
+// reference clients call, and the client that calls the reference servers.
+import {
+  "moonbitstack/moonrpc/thrift",
+  "moonbitstack/moonrpc/net",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/core/debug",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

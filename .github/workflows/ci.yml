@@ -547,3 +547,47 @@ jobs:
           run_protocol binary '' '' 9090 9091
           run_protocol compact compact -compact 9092 9093
           echo "Apache Thrift interop OK"
+
+  # Apache Thrift's own cross test, in both directions and both protocols: their Go client
+  # (`test/go/src/bin/testclient`) calls the service this stack serves, and the client here
+  # calls their Go server (`testserver`), checking every answer their client checks. The
+  # peers are built from the pinned tag with the bindings the Thrift compiler on the runner
+  # generates, so the bytes are a reference implementation's, not this repository's.
+  thrift-cross-test:
+    name: Apache Thrift cross test (both directions)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: install the Thrift compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq thrift-compiler
+          thrift --version
+
+      - name: build the reference peers
+        run: bash scripts/interop/build_thrift_peers.sh "$RUNNER_TEMP/athrift"
+
+      - name: build this stack's two halves
+        run: moon build --target native
+
+      - name: Apache Thrift cross test
+        run: |
+          bash scripts/interop/thrift_cross_test.sh "$RUNNER_TEMP/athrift" \
+            ./_build/native/debug/build/cmd/thriftcrosstest/thriftcrosstest
