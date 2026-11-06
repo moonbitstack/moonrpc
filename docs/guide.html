@@ -506,7 +506,27 @@ pub let maxAge : Int32 = 130
 find : (String) -&gt; Result[String, GreeterFindError]
 let found = greeter_find(transport, proto, "ada")   // Result[String, GreeterFindError]</code></pre>
   <p class="note"><span class="src"></span> <code>include</code> folds another file's types in under a prefix (<code>shared.Person</code> becomes <code>SharedPerson</code>) and <code>service Child extends Base</code> carries the base's methods into the child's registration. A <code>typedef</code> is substituted where it is used, so no alias reaches the generated code; a <code>union</code> becomes an enum that carries exactly one field. CI compiles the example with <code>--check</code>, so the generated file and the IDL cannot drift.</p>
-  <p class="note"><span class="src"></span> An Apache Thrift Go client calls <code>cmd/thriftd</code> and the moonrpc client calls an Apache Thrift Go server, in the binary and in the compact protocol. One of those methods answers a value in field 0 or an exception in field 1 — the shape a <code>throws</code> clause gives a reply — and both peers agree on it.</p>
+  <p class="lede">The type set is Thrift's rather than a convenient subset: <code>uuid</code> as sixteen raw bytes with no length in front, <code>set</code> with a field type of its own, structs nested inside structs, maps of maps. Two failures and one silence complete it — a handler that raises answers a <code>TApplicationException</code> instead of dropping the connection, and a method the IDL declares <code>oneway</code> runs without a reply.</p>
+  <pre><code>// a handler that fails answers an application exception, not silence
+processor.add("find", proto =&gt; {
+  ignore(proto.read_field_begin())
+  let key = proto.read_string()
+  ignore(proto.read_field_begin())
+  if key == "ada" {
+    proto.write_field_begin(@thrift.type_string, 0)
+    proto.write_string("found")
+  } else {
+    raise @thrift.Application("no such key")
+  }
+})
+
+// a oneway method runs and answers nothing; the flag belongs to the method,
+// because a client may send it as an ordinary CALL and never read a reply
+processor.add_oneway("notify", proto =&gt; {
+  ignore(proto.read_field_begin())
+  ignore(proto.read_string())
+})</code></pre>
+  <p class="note"><span class="src"></span> Apache Thrift's own cross test runs against this stack in both directions: their Go client calls the service served here, and the client here calls their Go server, in the binary and in the compact protocol. All 23 methods of <code>ThriftTest</code> — structs nested two deep, maps of maps, sets, a uuid, a <code>oneway</code> method, a value in field 0, a declared exception in its own field, and the application exception a failing handler produces — pass both ways. <code>src/cmd/thriftcrosstest</code> is this side of it, and <a href="https://github.com/moonbitstack/moonrpc#conformance">Conformance</a> lists what the suite covers and what it does not.</p>
 </section>
 
 <section class="section wrap">

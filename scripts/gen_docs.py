@@ -194,7 +194,17 @@ def main():
                     '<p class="pdesc">%s</p>' % (sid, title, html.escape(desc)))
         files = sorted(f for f in (ROOT / "src" / rel).glob("*.mbt")
                        if not f.stem.endswith(("_test", "_wbtest")))
-        for kind, sig, doc in [it for f in files for it in parse(f)]:
+        # One line per item. A trait implemented method by method produces the same
+        # `impl ... for ...` line once per method; the reader wants it once.
+        seen = set()
+        items = []
+        for f in files:
+            for kind, sig, doc in parse(f):
+                if (kind, sig) in seen:
+                    continue
+                seen.add((kind, sig))
+                items.append((kind, sig, doc))
+        for kind, sig, doc in items:
             total += 1
             body.append('<div class="item" data-k="%s"><span class="kind">%s</span>'
                         '<pre class="sig">%s</pre>%s</div>'
