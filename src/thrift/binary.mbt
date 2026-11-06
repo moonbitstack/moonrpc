@@ -164,6 +164,22 @@ pub impl Protocol for Binary with fn read_bytes(self) {
 }
 
 ///|
+pub impl Protocol for Binary with fn write_uuid(self, body) {
+  if body.length() != 16 {
+    abort("a uuid is sixteen bytes")
+  }
+  self.out.write_bytes(body)
+}
+
+///|
+pub impl Protocol for Binary with fn read_uuid(self) {
+  self.need(16)
+  let body = self.data[self.off:self.off + 16].to_owned()
+  self.off = self.off + 16
+  body
+}
+
+///|
 pub impl Protocol for Binary with fn write_field_begin(self, type_, id) {
   self.write_byte(type_)
   self.write_i16(id)
@@ -217,6 +233,20 @@ pub impl Protocol for Binary with fn write_list_begin(self, elem, size) {
 
 ///|
 pub impl Protocol for Binary with fn read_list_begin(self) {
+  (self.read_byte(), self.read_i32())
+}
+
+// A set is laid out exactly as a list is; only the field's type byte says which one
+// arrived, so the reader is the same walk and the writer the same bytes.
+
+///|
+pub impl Protocol for Binary with fn write_set_begin(self, elem, size) {
+  self.write_byte(elem)
+  self.write_i32(size)
+}
+
+///|
+pub impl Protocol for Binary with fn read_set_begin(self) {
   (self.read_byte(), self.read_i32())
 }
 
@@ -278,7 +308,9 @@ pub extend Binary with Protocol::{
   read_i64,
   read_double,
   read_string,
+  read_uuid,
   read_list_begin,
+  read_set_begin,
   read_map_begin,
   write_bool,
   write_byte,
@@ -287,6 +319,8 @@ pub extend Binary with Protocol::{
   write_i64,
   write_double,
   write_string,
+  write_uuid,
   write_list_begin,
+  write_set_begin,
   write_map_begin,
 }

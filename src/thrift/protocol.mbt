@@ -48,6 +48,13 @@ pub let type_set : Int32 = 14
 ///|
 pub let type_list : Int32 = 15
 
+// A uuid is not a string in this protocol: sixteen raw bytes, with no length in front,
+// on both protocols. Apache Thrift added it as a type of its own rather than a typedef,
+// so it travels as type id 16 and has nothing in common with the `binary` layout.
+
+///|
+pub let type_uuid : Int32 = 16
+
 ///|
 pub let message_call : Int32 = 1
 
@@ -97,7 +104,11 @@ pub(open) trait Protocol {
   fn read_double(Self) -> Double raise ThriftError
   fn read_string(Self) -> String raise ThriftError
   fn read_bytes(Self) -> Bytes raise ThriftError
+  /// Sixteen bytes, with no length in front and no byte swapping: the order the
+  /// sender wrote them in is the order a reader gets.
+  fn read_uuid(Self) -> Bytes raise ThriftError
   fn read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+  fn read_set_begin(Self) -> (Int32, Int32) raise ThriftError
   fn read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
   fn write_bool(Self, Bool) -> Unit
   fn write_byte(Self, Int32) -> Unit
@@ -107,7 +118,9 @@ pub(open) trait Protocol {
   fn write_double(Self, Double) -> Unit
   fn write_string(Self, String) -> Unit
   fn write_bytes(Self, Bytes) -> Unit
+  fn write_uuid(Self, Bytes) -> Unit
   fn write_list_begin(Self, Int32, Int32) -> Unit
+  fn write_set_begin(Self, Int32, Int32) -> Unit
   fn write_map_begin(Self, Int32, Int32, Int32) -> Unit
 }
 
@@ -136,6 +149,7 @@ fn skip_at(
     t if t == type_i64 => ignore(proto.read_i64())
     t if t == type_double => ignore(proto.read_double())
     t if t == type_string => ignore(proto.read_bytes())
+    t if t == type_uuid => ignore(proto.read_uuid())
     t if t == type_struct => {
       proto.read_struct_begin()
       for ;; {
@@ -147,8 +161,14 @@ fn skip_at(
       }
       proto.read_struct_end()
     }
-    t if t == type_list || t == type_set => {
+    t if t == type_list => {
       let (elem, n) = proto.read_list_begin()
+      for _ in 0..<n {
+        skip_at(proto, elem, depth + 1)
+      }
+    }
+    t if t == type_set => {
+      let (elem, n) = proto.read_set_begin()
       for _ in 0..<n {
         skip_at(proto, elem, depth + 1)
       }

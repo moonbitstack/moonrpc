@@ -19,14 +19,15 @@ pub(open) trait Transport {
 pub type Method = (&Protocol) -> Unit raise ThriftError
 
 ///|
-/// A dispatcher over method names, one `Method` each.
+/// A dispatcher over method names, one `Method` each, and the names that answer nothing.
 pub(all) struct Processor {
   methods : Map[String, Method]
+  oneway : Set[String]
 }
 
 ///|
 pub fn Processor::new() -> Processor {
-  { methods: Map([]), }
+  { methods: Map([]), oneway: Set([]), }
 }
 
 ///|
@@ -40,9 +41,29 @@ pub fn Processor::add(
 }
 
 ///|
+/// Register a method the IDL declares `oneway`: it runs, and no REPLY goes back.
+///
+/// The message kind alone cannot say this. Apache Thrift's Go client sends a ONEWAY call
+/// as an ordinary CALL and simply never reads an answer, so a server that replies to one
+/// leaves an unread frame on the connection and every later reply is off by one. The flag
+/// belongs to the method, which is where the IDL puts it, not to the call.
+pub fn Processor::add_oneway(
+  self : Processor,
+  name : String,
+  handler : Method,
+) -> Unit {
+  self.methods[name] = handler
+  self.oneway.add(name)
+}
+
+///|
 /// Answer one CALL frame. A method that is not registered gets a
 /// `TApplicationException` with `UNKNOWN_METHOD`, as Apache Thrift's processors do. A
 /// ONEWAY call is run and answered with no bytes.
+///
+/// A handler that fails is not a closed connection: the frame it was building is
+/// dropped and the caller gets a `TApplicationException` carrying the message, which is
+/// what an Apache Thrift processor does with a `TException` raised out of a handler.
 pub fn Processor::process(
   self : Processor,
   proto : &Protocol,
@@ -54,9 +75,9 @@ pub fn Processor::process(
     raise BadType(kind)
   }
   proto.read_struct_begin()
-  if kind == message_oneway {
+  if kind == message_oneway || self.oneway.contains(name) {
     match self.methods.get(name) {
-      Some(handler) => handler(proto)
+      Some(handler) => handler(proto) catch { _ => () }
       None => ()
     }
     return b""
@@ -65,23 +86,72 @@ pub fn Processor::process(
     Some(handler) => {
       proto.write_message_begin(name, message_reply, seqid)
       proto.write_struct_begin(name + "_result")
-      handler(proto)
-      proto.write_field_stop()
-      proto.write_struct_end()
-      proto.output()
+      let mut failure : String? = None
+      handler(proto) catch {
+        // An `Application` carries the message an Apache Thrift processor would have
+        // put in the TApplicationException; anything else is described by its repr.
+        e =>
+          failure = Some(
+            match e {
+              Application(message) => message
+              other => other.to_string()
+            },
+          )
+      }
+      match failure {
+        None => {
+          proto.write_field_stop()
+          proto.write_struct_end()
+          proto.output()
+        }
+        Some(message) => {
+          // The half-written result struct is dropped, not patched: a reply is either a
+          // result or an exception, and the exception's header has to come first.
+          proto.reset(b"")
+          application_exception(proto, name, seqid, message, internal_error)
+        }
+      }
     }
     None => {
-      proto.write_message_begin(name, message_exception, seqid)
-      proto.write_struct_begin("TApplicationException")
-      proto.write_field_begin(type_string, 1)
-      proto.write_string("unknown method: " + name)
-      proto.write_field_begin(type_i32, 2)
-      proto.write_i32(1)
-      proto.write_field_stop()
-      proto.write_struct_end()
-      proto.output()
+      proto.reset(b"")
+      application_exception(
+        proto,
+        name,
+        seqid,
+        "unknown method: " + name,
+        unknown_method,
+      )
     }
   }
+}
+
+// `TApplicationException`'s type codes, as Apache Thrift numbers them.
+
+///|
+let unknown_method : Int32 = 1
+
+///|
+let internal_error : Int32 = 6
+
+///|
+/// A REPLY that failed instead of answering: `TApplicationException` with its message in
+/// field 1 and its type in field 2, framed as an EXCEPTION message.
+fn application_exception(
+  proto : &Protocol,
+  name : String,
+  seqid : Int32,
+  message : String,
+  type_ : Int32,
+) -> Bytes {
+  proto.write_message_begin(name, message_exception, seqid)
+  proto.write_struct_begin("TApplicationException")
+  proto.write_field_begin(type_string, 1)
+  proto.write_string(message)
+  proto.write_field_begin(type_i32, 2)
+  proto.write_i32(type_)
+  proto.write_field_stop()
+  proto.write_struct_end()
+  proto.output()
 }
 
 ///|
@@ -240,6 +310,24 @@ pub async fn[T : Transport, E] call_result_unit(
 ) -> Result[Unit, E] raise ThriftError {
   request(transport, proto, name, seqid, args)
   read_result_unit(proto, exception)
+}
+
+///|
+/// A ONEWAY call written whole: the header, the arguments and the end of the struct, with
+/// no reply to wait for. A transport sends these bytes and returns.
+pub fn oneway(
+  proto : &Protocol,
+  name : String,
+  seqid : Int32,
+  args : (&Protocol) -> Unit raise ThriftError,
+) -> Bytes raise ThriftError {
+  proto.reset(b"")
+  proto.write_message_begin(name, message_oneway, seqid)
+  proto.write_struct_begin(name + "_args")
+  args(proto)
+  proto.write_field_stop()
+  proto.write_struct_end()
+  proto.output()
 }
 
 ///|

@@ -29,10 +29,19 @@ pub fn ThriftClient::close(self : ThriftClient) -> Unit {
 }
 
 ///|
-pub impl @thrift.Transport for ThriftClient with fn round_trip(self, body) {
+/// Write one framed body and return, for a ONEWAY call that has no reply to wait for.
+pub async fn ThriftClient::send(
+  self : ThriftClient,
+  body : Bytes,
+) -> Unit raise @thrift.ThriftError {
   self.conn.write(@thrift.frame(body)) catch {
     _ => raise @thrift.Truncated
   }
+}
+
+///|
+pub impl @thrift.Transport for ThriftClient with fn round_trip(self, body) {
+  self.send(body)
   let head = self.conn.read_exactly(4) catch { _ => raise @thrift.Truncated }
   let len = @thrift.frame_len(head) catch { _ => raise @thrift.Truncated }
   if len < 0 || len > @thrift.max_frame {

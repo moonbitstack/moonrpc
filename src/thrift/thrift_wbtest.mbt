@@ -339,3 +339,157 @@ test "thrift: a frame announces its body length" {
   assert_eq(frame_len(framed[:4].to_owned()), 5)
   assert_eq(framed[4:].to_owned() == body, true)
 }
+
+///|
+test "thrift: a uuid is sixteen raw bytes, with no length in front" {
+  let uuid = b"\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff"
+  let writer = Binary::new(b"")
+  writer.write_field_begin(type_uuid, 1)
+  writer.write_uuid(uuid)
+  writer.write_field_stop()
+  // The binary field header is the type byte and a big-endian id; the value follows as
+  // it was given, which is why the first nineteen bytes are the whole of it.
+  let binary = writer.output()
+  assert_eq(binary[0:19].to_owned(), b"\x10\x00\x01" + uuid)
+
+  let compact = Compact::new(b"")
+  compact.write_field_begin(type_uuid, 1)
+  compact.write_uuid(uuid)
+  compact.write_field_stop()
+  // The compact header packs the id delta above the type; a uuid's type code is 0x0D.
+  assert_eq(compact.output()[0:17].to_owned(), b"\x1d" + uuid)
+
+  for proto in [binary_protocol(binary), compact_protocol(compact.output())] {
+    proto.read_struct_begin()
+    let (ft, id) = proto.read_field_begin()
+    assert_eq((ft, id), (type_uuid, 1))
+    assert_eq(proto.read_uuid() == uuid, true)
+    let (stop, _) = proto.read_field_begin()
+    assert_eq(stop, type_stop)
+  }
+}
+
+///|
+test "thrift: skip walks past a uuid" {
+  for compact in [false, true] {
+    let writer : &Protocol = if compact {
+      compact_protocol(b"")
+    } else {
+      binary_protocol(b"")
+    }
+    writer.write_field_begin(type_uuid, 1)
+    writer.write_uuid(b"0123456789abcdef")
+    writer.write_field_begin(type_i32, 2)
+    writer.write_i32(9)
+    writer.write_field_stop()
+    let reader : &Protocol = if compact {
+      compact_protocol(writer.output())
+    } else {
+      binary_protocol(writer.output())
+    }
+    reader.read_struct_begin()
+    let (ft, _) = reader.read_field_begin()
+    skip(reader, ft) catch {
+      _ => abort("a uuid must be skippable")
+    }
+    let (ft2, _) = reader.read_field_begin()
+    assert_eq(ft2, type_i32)
+    assert_eq(reader.read_i32(), 9)
+  }
+}
+
+///|
+test "thrift: a handler that fails answers a TApplicationException" {
+  let processor = Processor::new()
+  processor.add("half", proto => {
+    // The handler gets as far as writing a field, then fails: the processor must drop
+    // that half-written result rather than splice an exception into it.
+    ignore(proto.read_field_begin())
+    ignore(proto.read_string())
+    proto.write_field_begin(type_string, 0)
+    proto.write_string("partial")
+    raise Application("no")
+  })
+  for compact in [false, true] {
+    let call_message = if compact {
+      compact_protocol(b"")
+    } else {
+      binary_protocol(b"")
+    }
+    call_message.write_message_begin("half", message_call, 5)
+    call_message.write_struct_begin("half_args")
+    call_message.write_field_begin(type_string, 1)
+    call_message.write_string("x")
+    call_message.write_field_stop()
+    call_message.write_struct_end()
+    let proto = if compact {
+      compact_protocol(b"")
+    } else {
+      binary_protocol(b"")
+    }
+    let reply = processor.process(proto, call_message.output())
+    let reader = if compact {
+      compact_protocol(reply)
+    } else {
+      binary_protocol(reply)
+    }
+    let (name, kind, seqid) = reader.read_message_begin()
+    assert_eq((name, kind, seqid), ("half", message_exception, 5))
+    reader.read_struct_begin()
+    let (ft, id) = reader.read_field_begin()
+    assert_eq((ft, id), (type_string, 1))
+    // The message the handler raised, not its repr: this is what an Apache Thrift
+    // server puts in the exception a client reads.
+    assert_eq(reader.read_string(), "no")
+    let (ft2, id2) = reader.read_field_begin()
+    assert_eq((ft2, id2), (type_i32, 2))
+    assert_eq(reader.read_i32(), 6)
+  }
+}
+
+///|
+test "thrift: a set carries its own type, not the list's" {
+  // The field header says `set`, and in the compact protocol so does the collection
+  // header's low nibble: a reader that took one for the other would still see the three
+  // numbers, so the test pins the bytes instead of the values.
+  let binary = Binary::new(b"")
+  binary.write_field_begin(type_set, 1)
+  binary.write_set_begin(type_i32, 3)
+  for n in [1, 2, 42] {
+    binary.write_i32(n)
+  }
+  binary.write_field_stop()
+  assert_eq(
+    binary.output()[0:8].to_owned(),
+    b"\x0e\x00\x01\x08\x00\x00\x00\x03",
+  )
+
+  let compact = Compact::new(b"")
+  compact.write_field_begin(type_set, 1)
+  compact.write_set_begin(type_i32, 3)
+  for n in [1, 2, 42] {
+    compact.write_i32(n)
+  }
+  compact.write_field_stop()
+  assert_eq(compact.output()[0:5].to_owned(), b"\x1a\x35\x02\x04\x54")
+
+  // The compact protocol does not distinguish the two in the collection header itself:
+  // the same three numbers in a list differ only in the field header's nibble.
+  let as_list = Compact::new(b"")
+  as_list.write_field_begin(type_list, 1)
+  as_list.write_list_begin(type_i32, 3)
+  for n in [1, 2, 42] {
+    as_list.write_i32(n)
+  }
+  assert_eq(as_list.output()[0:5].to_owned(), b"\x19\x35\x02\x04\x54")
+
+  let reader : &Protocol = Compact::new(compact.output())
+  reader.read_struct_begin()
+  let (ft, _) = reader.read_field_begin()
+  assert_eq(ft, type_set)
+  let (elem, n) = reader.read_set_begin()
+  assert_eq((elem, n), (type_i32, 3))
+  assert_eq(reader.read_i32(), 1)
+  assert_eq(reader.read_i32(), 2)
+  assert_eq(reader.read_i32(), 42)
+}

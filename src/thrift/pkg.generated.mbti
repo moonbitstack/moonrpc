@@ -3,6 +3,7 @@ package "moonbitstack/moonrpc/thrift"
 
 import {
   "moonbitlang/core/buffer",
+  "moonbitlang/core/set",
 }
 
 // Values
@@ -27,6 +28,8 @@ pub let message_exception : Int32
 pub let message_oneway : Int32
 
 pub let message_reply : Int32
+
+pub fn oneway(&Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError) -> Bytes raise ThriftError
 
 pub fn[R, E] read_result(&Protocol, (&Protocol) -> R raise ThriftError, (&Protocol, Int32) -> E? raise ThriftError) -> Result[R, E] raise ThriftError
 
@@ -62,6 +65,8 @@ pub let type_string : Int32
 
 pub let type_struct : Int32
 
+pub let type_uuid : Int32
+
 // Errors
 pub(all) suberror ThriftError {
   BadVersion(Int32)
@@ -95,9 +100,11 @@ pub fn Binary::read_i64(Self) -> Int64 raise ThriftError
 pub fn Binary::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Binary::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
 pub fn Binary::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Binary::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Binary::read_string(Self) -> String raise ThriftError
 pub fn Binary::read_struct_begin(Self) -> Unit
 pub fn Binary::read_struct_end(Self) -> Unit
+pub fn Binary::read_uuid(Self) -> Bytes raise ThriftError
 pub fn Binary::reset(Self, Bytes) -> Unit
 pub fn Binary::write_bool(Self, Bool) -> Unit
 pub fn Binary::write_byte(Self, Int32) -> Unit
@@ -111,9 +118,11 @@ pub fn Binary::write_i64(Self, Int64) -> Unit
 pub fn Binary::write_list_begin(Self, Int32, Int32) -> Unit
 pub fn Binary::write_map_begin(Self, Int32, Int32, Int32) -> Unit
 pub fn Binary::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Binary::write_set_begin(Self, Int32, Int32) -> Unit
 pub fn Binary::write_string(Self, String) -> Unit
 pub fn Binary::write_struct_begin(Self, String) -> Unit
 pub fn Binary::write_struct_end(Self) -> Unit
+pub fn Binary::write_uuid(Self, Bytes) -> Unit
 pub impl Protocol for Binary
 
 pub struct Compact {
@@ -140,9 +149,11 @@ pub fn Compact::read_i64(Self) -> Int64 raise ThriftError
 pub fn Compact::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Compact::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
 pub fn Compact::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Compact::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Compact::read_string(Self) -> String raise ThriftError
 pub fn Compact::read_struct_begin(Self) -> Unit
 pub fn Compact::read_struct_end(Self) -> Unit
+pub fn Compact::read_uuid(Self) -> Bytes raise ThriftError
 pub fn Compact::reset(Self, Bytes) -> Unit
 pub fn Compact::write_bool(Self, Bool) -> Unit
 pub fn Compact::write_byte(Self, Int32) -> Unit
@@ -156,15 +167,19 @@ pub fn Compact::write_i64(Self, Int64) -> Unit
 pub fn Compact::write_list_begin(Self, Int32, Int32) -> Unit
 pub fn Compact::write_map_begin(Self, Int32, Int32, Int32) -> Unit
 pub fn Compact::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Compact::write_set_begin(Self, Int32, Int32) -> Unit
 pub fn Compact::write_string(Self, String) -> Unit
 pub fn Compact::write_struct_begin(Self, String) -> Unit
 pub fn Compact::write_struct_end(Self) -> Unit
+pub fn Compact::write_uuid(Self, Bytes) -> Unit
 pub impl Protocol for Compact
 
 pub(all) struct Processor {
   methods : Map[String, (&Protocol) -> Unit raise ThriftError]
+  oneway : @set.Set[String]
 }
 pub fn Processor::add(Self, String, (&Protocol) -> Unit raise ThriftError) -> Unit
+pub fn Processor::add_oneway(Self, String, (&Protocol) -> Unit raise ThriftError) -> Unit
 pub fn Processor::new() -> Self
 pub fn Processor::process(Self, &Protocol, Bytes) -> Bytes raise ThriftError
 
@@ -192,7 +207,9 @@ pub(open) trait Protocol {
   fn read_double(Self) -> Double raise ThriftError
   fn read_string(Self) -> String raise ThriftError
   fn read_bytes(Self) -> Bytes raise ThriftError
+  fn read_uuid(Self) -> Bytes raise ThriftError
   fn read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+  fn read_set_begin(Self) -> (Int32, Int32) raise ThriftError
   fn read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
   fn write_bool(Self, Bool) -> Unit
   fn write_byte(Self, Int32) -> Unit
@@ -202,7 +219,9 @@ pub(open) trait Protocol {
   fn write_double(Self, Double) -> Unit
   fn write_string(Self, String) -> Unit
   fn write_bytes(Self, Bytes) -> Unit
+  fn write_uuid(Self, Bytes) -> Unit
   fn write_list_begin(Self, Int32, Int32) -> Unit
+  fn write_set_begin(Self, Int32, Int32) -> Unit
   fn write_map_begin(Self, Int32, Int32, Int32) -> Unit
 }
 

@@ -46,6 +46,9 @@ let compact_map : Int32 = 0x0B
 let compact_struct : Int32 = 0x0C
 
 ///|
+let compact_uuid : Int32 = 0x0D
+
+///|
 fn compact_of(type_ : Int32) -> Int32 {
   match type_ {
     t if t == type_bool => compact_true
@@ -59,6 +62,7 @@ fn compact_of(type_ : Int32) -> Int32 {
     t if t == type_set => compact_set
     t if t == type_map => compact_map
     t if t == type_struct => compact_struct
+    t if t == type_uuid => compact_uuid
     _ => type_stop
   }
 }
@@ -78,6 +82,7 @@ fn type_of(compact : Int32) -> Int32 raise ThriftError {
     0x0A => type_set
     0x0B => type_map
     0x0C => type_struct
+    0x0D => type_uuid
     other => raise BadType(other)
   }
 }
@@ -331,6 +336,24 @@ pub impl Protocol for Compact with fn read_bytes(self) {
   body
 }
 
+// Sixteen bytes with no varint in front, where a binary value would carry one.
+
+///|
+pub impl Protocol for Compact with fn write_uuid(self, body) {
+  if body.length() != 16 {
+    abort("a uuid is sixteen bytes")
+  }
+  self.out.write_bytes(body)
+}
+
+///|
+pub impl Protocol for Compact with fn read_uuid(self) {
+  self.need(16)
+  let body = self.data[self.off:self.off + 16].to_owned()
+  self.off = self.off + 16
+  body
+}
+
 ///|
 pub impl Protocol for Compact with fn write_field_begin(self, type_, id) {
   if type_ == type_bool {
@@ -397,8 +420,17 @@ pub impl Protocol for Compact with fn read_message_begin(self) {
   (name, kind, seqid)
 }
 
+// A list and a set are the same bytes here: one header with the element type in the low
+// four bits and the size in the high four, fifteen meaning a varint follows. Which of the
+// two a field is says so in the field header; a nested collection does not tell, and
+// Apache Thrift's readers do not ask.
+
 ///|
-pub impl Protocol for Compact with fn write_list_begin(self, elem, size) {
+fn Compact::write_collection_begin(
+  self : Compact,
+  elem : Int32,
+  size : Int32,
+) -> Unit {
   let compact_type = compact_of(elem)
   if size <= 14 {
     self.write_byte((size << 4) | compact_type)
@@ -409,13 +441,35 @@ pub impl Protocol for Compact with fn write_list_begin(self, elem, size) {
 }
 
 ///|
-pub impl Protocol for Compact with fn read_list_begin(self) {
+fn Compact::read_collection_begin(
+  self : Compact,
+) -> (Int32, Int32) raise ThriftError {
   let header = self.read_raw_byte()
   let mut size = (header >> 4) & 0x0F
   if size == 15 {
     size = self.read_varint().to_int()
   }
   (type_of(header & 0x0F), size)
+}
+
+///|
+pub impl Protocol for Compact with fn write_list_begin(self, elem, size) {
+  self.write_collection_begin(elem, size)
+}
+
+///|
+pub impl Protocol for Compact with fn write_set_begin(self, elem, size) {
+  self.write_collection_begin(elem, size)
+}
+
+///|
+pub impl Protocol for Compact with fn read_set_begin(self) {
+  self.read_collection_begin()
+}
+
+///|
+pub impl Protocol for Compact with fn read_list_begin(self) {
+  self.read_collection_begin()
 }
 
 ///|
@@ -486,7 +540,9 @@ pub extend Compact with Protocol::{
   read_i64,
   read_double,
   read_string,
+  read_uuid,
   read_list_begin,
+  read_set_begin,
   read_map_begin,
   write_bool,
   write_byte,
@@ -495,6 +551,8 @@ pub extend Compact with Protocol::{
   write_i64,
   write_double,
   write_string,
+  write_uuid,
   write_list_begin,
+  write_set_begin,
   write_map_begin,
 }
