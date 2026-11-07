@@ -4,4 +4,10 @@
 import {
   "moonbitlang/core/buffer",
   "moonbitlang/core/encoding/utf8",
+  "moonbitstack/moonzip/zlib",
+  "moonbitstack/moonvar/fixed",
 }
+
+import {
+  "moonbitlang/async",
+} for "wbtest"

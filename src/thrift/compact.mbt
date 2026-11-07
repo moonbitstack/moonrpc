@@ -120,6 +120,13 @@ pub fn Compact::new(input : Bytes) -> Compact {
 }
 
 ///|
+/// Whether the reader has consumed every octet it was given, which is how a frame's
+/// padding is told from another field.
+pub fn Compact::eof(self : Compact) -> Bool {
+  self.off >= self.data.length()
+}
+
+///|
 fn Compact::need(self : Compact, n : Int32) -> Unit raise ThriftError {
   if n < 0 || self.off + n > self.data.length() {
     raise Truncated

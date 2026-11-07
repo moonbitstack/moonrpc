@@ -13,9 +13,25 @@ pub async fn[T : Transport, R, E] call_result(T, &Protocol, String, Int32, (&Pro
 
 pub async fn[T : Transport, E] call_result_unit(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError, (&Protocol, Int32) -> E? raise ThriftError) -> Result[Unit, E] raise ThriftError
 
+pub fn decode_header_frame(Bytes) -> HeaderFrame raise ThriftError
+
+pub fn encode_header_frame(Bytes, protocol? : Int32, seqid? : Int32, flags? : Int32, transforms? : Array[Int32], headers? : Array[(String, String)]) -> Bytes raise ThriftError
+
 pub fn frame(Bytes) -> Bytes
 
 pub fn frame_len(Bytes) -> Int32 raise ThriftError
+
+pub let header_magic : Int32
+
+pub let header_meta_size : Int32
+
+pub let header_protocol_binary : Int32
+
+pub let header_protocol_compact : Int32
+
+pub let header_transform_none : Int32
+
+pub let header_transform_zlib : Int32
 
 pub let max_depth : Int32
 
@@ -30,6 +46,8 @@ pub let message_oneway : Int32
 pub let message_reply : Int32
 
 pub fn oneway(&Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError) -> Bytes raise ThriftError
+
+pub async fn[T : Transport] oneway_call(T, &Protocol, String, Int32, (&Protocol) -> Unit raise ThriftError) -> Unit raise ThriftError
 
 pub fn[R, E] read_result(&Protocol, (&Protocol) -> R raise ThriftError, (&Protocol, Int32) -> E? raise ThriftError) -> Result[R, E] raise ThriftError
 
@@ -136,6 +154,7 @@ pub struct Compact {
   mut bool_value : Bool
   mut bool_ready : Bool
 }
+pub fn Compact::eof(Self) -> Bool
 pub fn Compact::new(Bytes) -> Self
 pub fn Compact::output(Self) -> Bytes
 pub fn Compact::read_bool(Self) -> Bool raise ThriftError
@@ -173,6 +192,71 @@ pub fn Compact::write_struct_begin(Self, String) -> Unit
 pub fn Compact::write_struct_end(Self) -> Unit
 pub fn Compact::write_uuid(Self, Bytes) -> Unit
 pub impl Protocol for Compact
+
+pub struct Header {
+  binary : Binary
+  compact : Compact
+  mut use_compact : Bool
+  mut write_protocol : Int32
+  write_headers : Array[(String, String)]
+  mut transforms : Array[Int32]
+  mut seqid : Int32
+  mut frame_headers : Array[(String, String)]
+  mut frame_protocol : Int32
+  mut broken : Bool
+}
+pub fn Header::add_header(Self, String, String) -> Unit
+pub fn Header::add_transform(Self, Int32) -> Unit
+pub fn Header::new() -> Self
+pub fn Header::output(Self) -> Bytes
+pub fn Header::read_bool(Self) -> Bool raise ThriftError
+pub fn Header::read_byte(Self) -> Int32 raise ThriftError
+pub fn Header::read_bytes(Self) -> Bytes raise ThriftError
+pub fn Header::read_double(Self) -> Double raise ThriftError
+pub fn Header::read_field_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Header::read_headers(Self) -> Array[(String, String)]
+pub fn Header::read_i16(Self) -> Int32 raise ThriftError
+pub fn Header::read_i32(Self) -> Int32 raise ThriftError
+pub fn Header::read_i64(Self) -> Int64 raise ThriftError
+pub fn Header::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Header::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
+pub fn Header::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Header::read_protocol(Self) -> Int32
+pub fn Header::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Header::read_string(Self) -> String raise ThriftError
+pub fn Header::read_struct_begin(Self) -> Unit
+pub fn Header::read_struct_end(Self) -> Unit
+pub fn Header::read_uuid(Self) -> Bytes raise ThriftError
+pub fn Header::reset(Self, Bytes) -> Unit
+pub fn Header::sequence_id(Self) -> Int32
+pub fn Header::set_protocol(Self, Int32) -> Unit
+pub fn Header::write_bool(Self, Bool) -> Unit
+pub fn Header::write_byte(Self, Int32) -> Unit
+pub fn Header::write_bytes(Self, Bytes) -> Unit
+pub fn Header::write_double(Self, Double) -> Unit
+pub fn Header::write_field_begin(Self, Int32, Int32) -> Unit
+pub fn Header::write_field_stop(Self) -> Unit
+pub fn Header::write_i16(Self, Int32) -> Unit
+pub fn Header::write_i32(Self, Int32) -> Unit
+pub fn Header::write_i64(Self, Int64) -> Unit
+pub fn Header::write_list_begin(Self, Int32, Int32) -> Unit
+pub fn Header::write_map_begin(Self, Int32, Int32, Int32) -> Unit
+pub fn Header::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Header::write_set_begin(Self, Int32, Int32) -> Unit
+pub fn Header::write_string(Self, String) -> Unit
+pub fn Header::write_struct_begin(Self, String) -> Unit
+pub fn Header::write_struct_end(Self) -> Unit
+pub fn Header::write_uuid(Self, Bytes) -> Unit
+pub impl Protocol for Header
+
+pub(all) struct HeaderFrame {
+  protocol : Int32
+  seqid : Int32
+  flags : Int32
+  transforms : Array[Int32]
+  headers : Array[(String, String)]
+  payload : Bytes
+}
 
 pub(all) struct Processor {
   methods : Map[String, (&Protocol) -> Unit raise ThriftError]
@@ -227,4 +311,5 @@ pub(open) trait Protocol {
 
 pub(open) trait Transport {
   async fn round_trip(Self, Bytes) -> Bytes raise ThriftError
+  async fn send(Self, Bytes) -> Unit raise ThriftError
 }
