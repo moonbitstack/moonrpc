@@ -72,6 +72,21 @@ jobs:
         run: |
           moon info --target all && git diff --exit-code
 
+      - name: the skills are valid
+        if: runner.os == 'Linux'
+        run: |
+          for dir in docs/skills/*/; do
+            case "$dir" in *CHANGE-ME*) continue ;; esac
+            [ -f "$dir/SKILL.md" ] || continue
+            pipx run --spec skills-ref agentskills validate "$dir"
+          done
+
+      # A reader pastes the blocks of the README and the skills into a project, so they have
+      # to compile as written, against this commit's source.
+      - name: the code in the docs compiles
+        if: runner.os == 'Linux'
+        run: python3 scripts/check_snippets.py
+
   # Real third-party gRPC interop: a genuine `grpcurl` client (Go, unrelated codebase)
   # discovers the moonrpc server via Server Reflection and calls it. This proves the
   # self-built HTTP/2 + HPACK + gRPC framing + trailers + descriptor bytes actually
