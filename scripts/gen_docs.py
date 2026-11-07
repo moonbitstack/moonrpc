@@ -86,14 +86,18 @@ def parse(path):
             doc = []
         elif s.startswith("pub"):
             buf = s
+            # A `let` or a `const` is one line and ends at its value; a signature does not,
+            # so `x~ : Int32 = 4` keeps the default and the parameters after it.
             is_alias = re.match(r"pub\s+(type|let|trait|impl)\b", buf) is not None
-            while (not is_alias and "{" not in buf and "=" not in buf
+            is_value = re.match(r"pub(?:\([a-z]+\))?\s+(let|const)\b", buf) is not None
+            while (not is_alias and not is_value and "{" not in buf
                    and i + 1 < len(lines) and lines[i + 1].strip() != ""
                    and not lines[i + 1].strip().startswith("pub")):
                 i += 1
                 buf += " " + lines[i].strip()
             core = re.sub(r"\s*\{.*$", "", buf)          # drop body
-            core = re.sub(r"\s*=\s*\S.*$", "", core)     # drop `= value`
+            if is_value:
+                core = re.sub(r"\s*=\s*\S.*$", "", core)  # drop the value
             core = re.sub(r"^pub(?:\(all\))?\s+", "", core).strip()
             core = re.sub(r"\s+", " ", core).rstrip(",").rstrip()
             core = re.sub(r",\s*\)", ")", core)
