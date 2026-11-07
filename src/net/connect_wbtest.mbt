@@ -220,3 +220,77 @@ async test "connect over HTTP/2: an unknown method is 501 with an error body" {
     task.cancel()
   })
 }
+
+///|
+async test "connect client over HTTP/1.1: a unary call through the client reads the reply" {
+  @async.with_task_group(g => {
+    let server = echo_connect_server()
+    let port = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let client : @connect.Client[Http1Transport] = @connect.Client::new(
+      Http1Transport::new("127.0.0.1", port),
+    )
+    let reply = client.unary("/test.Echo/Say", b"through the client")
+    assert_eq(reply.messages.length(), 1)
+    assert_eq(reply.messages[0], b"through the client")
+    task.cancel()
+  })
+}
+
+///|
+async test "connect client over HTTP/1.1: a streaming call reads every message and the end" {
+  @async.with_task_group(g => {
+    let server = ConnectServer::new()
+    server.add("/test.Count/Up", {
+      input: "",
+      output: "",
+      handler: @stream.Handler::ServerStreaming((_ctx, req) => [req, req]),
+    })
+    let port = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let client : @connect.Client[Http1Transport] = @connect.Client::new(
+      Http1Transport::new("127.0.0.1", port),
+    )
+    let reply = client.server_stream("/test.Count/Up", b"twice")
+    assert_eq(reply.messages.length(), 2)
+    assert_eq(reply.messages[0], b"twice")
+    assert_eq(reply.messages[1], b"twice")
+    task.cancel()
+  })
+}
+
+///|
+async test "connect client: a failing call raises the status the server answered with" {
+  @async.with_task_group(g => {
+    let server = ConnectServer::new()
+    server.add("/test.Echo/Fail", {
+      input: "",
+      output: "",
+      handler: @stream.Handler::Unary((ctx, _req) => {
+        ctx.fail(
+          @wire.Status::code(@wire.Status::PermissionDenied),
+          "not allowed",
+        )
+        b""
+      }),
+    })
+    let port = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let client : @connect.Client[Http1Transport] = @connect.Client::new(
+      Http1Transport::new("127.0.0.1", port),
+    )
+    let raised = try {
+      ignore(client.unary("/test.Echo/Fail", b""))
+      false
+    } catch {
+      @wire.StatusError(status, message) => {
+        assert_eq(status, @wire.Status::PermissionDenied)
+        assert_eq(message, "not allowed")
+        true
+      }
+      _ => false
+    }
+    assert_true(raised)
+    task.cancel()
+  })
+}

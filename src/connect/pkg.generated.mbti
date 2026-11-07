@@ -36,6 +36,15 @@ pub fn status_of_code(String) -> @wire.Status
 // Errors
 
 // Types and methods
+pub struct Client[T] {
+  transport : T
+}
+pub async fn[T : Transport] Client::bidi(Self[T], String, Array[Bytes], content? : Content, metadata? : Array[@header.Header]) -> Reply
+pub async fn[T : Transport] Client::client_stream(Self[T], String, Array[Bytes], content? : Content, metadata? : Array[@header.Header]) -> Reply
+pub fn[T] Client::new(T) -> Self[T]
+pub async fn[T : Transport] Client::server_stream(Self[T], String, Bytes, content? : Content, metadata? : Array[@header.Header], timeout_millis? : Int32) -> Reply
+pub async fn[T : Transport] Client::unary(Self[T], String, Bytes, content? : Content, metadata? : Array[@header.Header], timeout_millis? : Int32) -> Reply
+
 #derive(Eq, @debug.Debug)
 pub(all) enum Codec {
   Proto
@@ -62,6 +71,12 @@ pub(all) struct Envelope {
 }
 pub fn Envelope::is_compressed(Self) -> Bool
 pub fn Envelope::is_end_stream(Self) -> Bool
+
+pub(all) struct Reply {
+  messages : Array[Bytes]
+  headers : Array[@header.Header]
+  trailers : Array[@header.Header]
+}
 
 pub(all) struct Request {
   path : String
@@ -92,3 +107,6 @@ pub fn Server::serve(Self, Request) -> Response
 // Type aliases
 
 // Traits
+pub(open) trait Transport {
+  async fn post(Self, String, Content, Bytes, Array[@header.Header]) -> (Int32, Array[@header.Header], Bytes)
+}
