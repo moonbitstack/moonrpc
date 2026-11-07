@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/connect"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+  "moonbitstack/moonrpc/wire",
+}
+
+// Values
+pub fn code_of_status(@wire.Status) -> String
+
+pub fn decode_envelope(BytesView, at? : Int32) -> (Envelope, Int32)?
+
+pub fn encode_envelope(Bytes, flags? : Byte) -> Bytes
+
+pub let envelope_header_size : Int32
+
+pub fn error_json(@wire.Status, String, details? : Array[(String, @json.Json)]) -> @json.Json
+
+pub fn error_of_json(@json.Json) -> (@wire.Status, String)
+
+pub let flag_compressed : Byte
+
+pub let flag_end_stream : Byte
+
+pub fn http_status_of(@wire.Status) -> Int32
+
+pub fn split_envelopes(Bytes) -> (Array[Envelope], Int32)
+
+pub fn status_of_code(String) -> @wire.Status
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum Codec {
+  Proto
+  Json
+}
+pub fn Codec::equal(Self, Self) -> Bool
+pub fn Codec::not_equal(Self, Self) -> Bool
+pub fn Codec::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Content {
+  codec : Codec
+  streaming : Bool
+}
+pub fn Content::equal(Self, Self) -> Bool
+pub fn Content::not_equal(Self, Self) -> Bool
+pub fn Content::parse(String) -> Self?
+pub fn Content::text(Self) -> String
+pub fn Content::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Envelope {
+  flags : Byte
+  payload : Bytes
+}
+pub fn Envelope::is_compressed(Self) -> Bool
+pub fn Envelope::is_end_stream(Self) -> Bool
+
+// Type aliases
+
+// Traits
