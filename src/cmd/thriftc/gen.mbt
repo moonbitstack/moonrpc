@@ -636,7 +636,8 @@ fn emit_service(
   }
   e.line(0, ") -> Unit {")
   for func in methods {
-    e.line(1, "processor.add(\"\{func.name}\", proto => {")
+    let register = if func.oneway { "add_oneway" } else { "add" }
+    e.line(1, "processor.\{register}(\"\{func.name}\", proto => {")
     for param in func.params {
       e.line(
         2,
@@ -727,7 +728,11 @@ fn emit_service(
     }
     e.line(0, ") -> \{ret} raise @thrift.ThriftError {")
     let mut call = "@thrift"
-    if throwing {
+    if func.oneway {
+      // A ONEWAY method answers nothing: the generated call hands the frame to the
+      // transport and returns, so the caller is never left waiting for a reply.
+      call = call + ".oneway_call"
+    } else if throwing {
       call = if func.ret is Some(_) {
         call + ".call_result"
       } else {
@@ -738,7 +743,21 @@ fn emit_service(
     } else {
       call = call + ".request"
     }
-    if throwing {
+    if func.oneway {
+      if func.params.length() == 0 {
+        e.line(1, "\{call}(transport, proto, \"\{func.name}\", 1, _ => ())")
+      } else {
+        e.line(1, "\{call}(transport, proto, \"\{func.name}\", 1, proto => {")
+        for param in func.params {
+          e.line(
+            2,
+            "proto.write_field_begin(\{wire_type(param.ty, names)}, \{param.id})",
+          )
+          e.line(2, write_of(param.ty, param.name, names))
+        }
+        e.line(1, "})")
+      }
+    } else if throwing {
       if func.params.length() == 0 {
         e.line(1, "\{call}(transport, proto, \"\{func.name}\", 1, _ => (),")
       } else {

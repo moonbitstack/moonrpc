@@ -70,6 +70,7 @@ pub(all) struct Function {
   ret : TType?
   params : Array[Param]
   exceptions : Array[Param]
+  oneway : Bool
 }
 
 pub(all) struct Linked {

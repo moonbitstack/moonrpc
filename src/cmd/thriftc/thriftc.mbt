@@ -87,6 +87,9 @@ pub(all) struct Function {
   params : Array[Param]
   // The `throws` clause: the exceptions this method may answer instead of a value.
   exceptions : Array[Param]
+  // `oneway`: the call is sent and nothing comes back, so the method has to return void and
+  // may not declare exceptions.
+  oneway : Bool
 }
 
 ///|
@@ -516,14 +519,11 @@ fn Parser::parse_params(
 
 ///|
 fn Parser::parse_function(self : Parser) -> Function raise Refused {
-  if self.peek() is TIdent("oneway") {
-    // Say so here: read as a return type, `oneway void ping()` fails later with a
-    // "expected `(`" that points at the wrong thing.
-    refuse(
-      self.file,
-      self.line(),
-      "`oneway` is not supported; it would need a call that sends and reads no reply",
-    )
+  // `oneway` stands in front of the return type, which the IDL then requires to be `void`:
+  // a call that reads no reply has nowhere to put a value.
+  let oneway = self.peek() is TIdent("oneway")
+  if oneway {
+    ignore(self.advance())
   }
   let ret = if self.peek() is TIdent("void") {
     ignore(self.advance())
@@ -539,8 +539,22 @@ fn Parser::parse_function(self : Parser) -> Function raise Refused {
   } else {
     []
   }
+  if oneway && ret is Some(_) {
+    refuse(
+      self.file,
+      self.line(),
+      "`oneway \{name}` has to return void: there is no reply to carry a value",
+    )
+  }
+  if oneway && exceptions.length() > 0 {
+    refuse(
+      self.file,
+      self.line(),
+      "`oneway \{name}` cannot declare exceptions: there is no reply to carry one",
+    )
+  }
   ignore(self.eat(',') || self.eat(';'))
-  { name, ret, params, exceptions, }
+  { name, ret, params, exceptions, oneway, }
 }
 
 ///|

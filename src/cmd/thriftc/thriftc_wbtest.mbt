@@ -653,12 +653,41 @@ test "thriftc: a struct field of a union type travels as a struct" {
 }
 
 ///|
-test "thriftc: `oneway` is refused at the word, not at the parenthesis after it" {
+test "thriftc: `oneway` registers a method that answers nothing" {
+  let code = render("o.thrift", "service S { oneway void ping(1: i32 n) }")
+  // The processor has to know the method answers nothing, or the reply it writes stays in
+  // the socket and every later reply is read by the wrong call.
+  assert_true(code.contains("processor.add_oneway(\"ping\""))
+  assert_true(
+    code.contains(
+      "@thrift.oneway_call(transport, proto, \"ping\", 1, proto => {",
+    ),
+  )
+  assert_false(code.contains("@thrift.request(transport, proto, \"ping\""))
+}
+
+///|
+test "thriftc: `oneway` on a method that returns a value is refused" {
   let raised = try {
-    ignore(render("o.thrift", "service S { oneway void ping() }"))
+    ignore(render("o.thrift", "service S { oneway i32 ping() }"))
     false
   } catch {
-    Bad(msg~, ..) => msg.contains("`oneway` is not supported")
+    Bad(msg~, ..) => msg.contains("has to return void")
+  }
+  assert_true(raised)
+}
+
+///|
+test "thriftc: `oneway` on a method that throws is refused" {
+  let raised = try {
+    ignore(
+      render(
+        "o.thrift", "exception E { 1: string why }\nservice S { oneway void ping() throws (1: E e) }",
+      ),
+    )
+    false
+  } catch {
+    Bad(msg~, ..) => msg.contains("cannot declare exceptions")
   }
   assert_true(raised)
 }

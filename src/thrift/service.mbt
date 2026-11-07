@@ -7,10 +7,17 @@
 pub let max_frame : Int32 = 16 * 1024 * 1024
 
 ///|
-/// One framed round trip: a body out, a body back. The native driver puts a length
-/// prefix on it; an in-memory transport can carry the bytes directly.
+/// One framed round trip: a body out, a body back — and, for a method declared `oneway`,
+/// a body out and nothing back. The native driver puts a length prefix on it; an in-memory
+/// transport can carry the bytes directly.
+///
+/// `send` is separate from `round_trip` because a oneway call has no reply to wait for: a
+/// transport that waited for one would hang until the peer closed, and a transport that
+/// invented an empty reply would leave the caller reading a frame that never comes.
 pub(open) trait Transport {
   async fn round_trip(Self, Bytes) -> Bytes raise ThriftError
+  /// Write one body and return, for a method that answers nothing.
+  async fn send(Self, Bytes) -> Unit raise ThriftError
 }
 
 ///|
@@ -328,6 +335,20 @@ pub fn oneway(
   proto.write_field_stop()
   proto.write_struct_end()
   proto.output()
+}
+
+///|
+/// Send one ONEWAY call and return — the client half of a method the IDL declares `oneway`.
+/// Nothing is read back, so this ends as soon as the bytes are handed to the transport; a
+/// failure means they never left.
+pub async fn[T : Transport] oneway_call(
+  transport : T,
+  proto : &Protocol,
+  name : String,
+  seqid : Int32,
+  args : (&Protocol) -> Unit raise ThriftError,
+) -> Unit raise ThriftError {
+  transport.send(oneway(proto, name, seqid, args))
 }
 
 ///|

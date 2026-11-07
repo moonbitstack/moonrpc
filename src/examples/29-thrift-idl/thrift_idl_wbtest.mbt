@@ -118,6 +118,13 @@ impl @thrift.Transport for Loop with fn round_trip(self, body) {
 }
 
 ///|
+/// A ONEWAY call over the in-process loop: the frame is handed over and nothing comes back.
+impl @thrift.Transport for Loop with fn send(self, body) {
+  let proto : &@thrift.Protocol = @thrift.Binary::new(b"")
+  ignore(self.processor.process(proto, body))
+}
+
+///|
 fn failing_greeter() -> @thrift.Processor {
   let processor = @thrift.Processor::new()
   register_greeter(

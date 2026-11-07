@@ -29,17 +29,6 @@ pub fn ThriftClient::close(self : ThriftClient) -> Unit {
 }
 
 ///|
-/// Write one framed body and return, for a ONEWAY call that has no reply to wait for.
-pub async fn ThriftClient::send(
-  self : ThriftClient,
-  body : Bytes,
-) -> Unit raise @thrift.ThriftError {
-  self.conn.write(@thrift.frame(body)) catch {
-    _ => raise @thrift.Truncated
-  }
-}
-
-///|
 pub impl @thrift.Transport for ThriftClient with fn round_trip(self, body) {
   self.send(body)
   let head = self.conn.read_exactly(4) catch { _ => raise @thrift.Truncated }
@@ -119,4 +108,13 @@ async fn[P : @thrift.Protocol] serve_connection(
 }
 
 ///|
-pub extend ThriftClient with @thrift.Transport::{round_trip}
+/// A ONEWAY call writes its frame and returns: there is no reply to wait for, and waiting for
+/// one would block until the peer closed.
+pub impl @thrift.Transport for ThriftClient with fn send(self, body) {
+  self.conn.write(@thrift.frame(body)) catch {
+    _ => raise @thrift.Truncated
+  }
+}
+
+///|
+pub extend ThriftClient with @thrift.Transport::{round_trip, send}

@@ -374,7 +374,7 @@ fn Linker::read(
         let ty = self.rename_type(x.ty, file, prefix, declared, includes)
         { id: x.id, name: x.name, ty, }
       })
-      { name: f.name, ret, params, exceptions, }
+      { name: f.name, ret, params, exceptions, oneway: f.oneway, }
     })
     let named = { name: global_name(prefix, service.name), base, functions, }
     self.all[named.name] = named
@@ -440,7 +440,7 @@ fn expand_function(
     let ty = expand(x.ty, aliases, [], file)
     ({ id: x.id, name: x.name, ty, } : Param)
   })
-  ({ name: func.name, ret, params, exceptions, } : Function)
+  ({ name: func.name, ret, params, exceptions, oneway: func.oneway, } : Function)
 }
 
 ///|
