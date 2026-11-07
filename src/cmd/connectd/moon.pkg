@@ -1,0 +1,17 @@
+// A Connect server in one file: the messages as descriptors, the service, and a listener that
+// answers HTTP/1.1 and HTTP/2 on the same port. What the README's Connect chapter runs.
+import {
+  "moonbitstack/moonrpc/net",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/wire",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

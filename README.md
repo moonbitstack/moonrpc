@@ -697,6 +697,36 @@ same basename are refused rather than merged silently. `service Child extends Ba
 carries the base's methods into `register_child` and the child's client — the base's
 own registration stays with the base's file.
 
+## Connect
+
+Beside gRPC sits the Connect protocol: the same four call kinds and the same handlers, over
+either HTTP version, with the body in protobuf or in JSON. A unary call is one message in the
+body and the outcome in the HTTP status; a streaming call is a run of five-octet envelopes
+closed by an end-stream envelope that carries the outcome and the trailing metadata.
+
+```moonbit native
+async fn serve_echo(server : @net.ConnectServer) -> Unit raise {
+  server.add("/connect.Echo/Say", {
+    input: ".connect.EchoRequest",   // the message a JSON body is read as
+    output: ".connect.EchoReply",
+    handler: @stream.Handler::Unary((_ctx, req) => req),
+  })
+  // One listener for both versions: a connection that opens with the HTTP/2 preface is
+  // served over HTTP/2, any other over HTTP/1.1.
+  server.serve(port=12000)
+}
+```
+
+A JSON caller needs no second service: the request is read into wire bytes through the
+schema a server was built with, and the reply is written back the same way, so the handler
+below is the same code either codec reaches. `command: moon run src/cmd/connectd -- 12000`
+runs the example — `curl -d '{"text":"hi"}' -H 'content-type: application/json'
+http://127.0.0.1:12000/connect.Echo/Say` answers `{"text":"hi"}`.
+
+The dispatch is a pure function: `connect.Server::serve` takes a path, headers and a body and
+returns a status, headers and a body, which is what makes it testable without a socket and
+what lets the two drivers — `net` over HTTP/1.1, and its HTTP/2 half — share it.
+
 ## Concurrency on a connection
 
 A finished call is not run inside the frame loop. The server hands it to the driver, which runs it on a task of its own, so a handler that is waiting on something holds up nothing else on the connection:
@@ -854,8 +884,10 @@ async fn throttled_call(host : String) -> Unit raise {
   body that arrives whole, so an unframed message, which has no length in front of it, has
   nothing to read to. The binary, compact and header transports and both directions of the
   reference cross test are in place.
-- Connect: `application/connect+proto` and `+json` are not implemented. The module speaks gRPC
-  over HTTP/2 only.
+- Connect: the reference `ConformanceService` the official suite drives is not implemented, so
+  `connectrpc/conformance` is not in CI yet. The protocol itself is served — both content types,
+  all four call kinds, over HTTP/1.1 and HTTP/2 — and a bidirectional call is answered when its
+  request half closes, because a Connect call's body is read whole before it is dispatched.
 
 ## Licence
 

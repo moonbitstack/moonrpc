@@ -1,7 +1,14 @@
 // The Connect protocol: the content types it names, the envelope its streaming bodies are cut
-// into, and the error body it answers with. Named after what a request says about itself, so a
-// driver on either HTTP version only moves the bytes.
+// into, the error body it answers with, and the dispatch that turns one request into one
+// response. Pure: the drivers that move the bytes live in `net`.
 import {
   "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
   "moonbitstack/moonvar/fixed",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonzip/gzip",
+  "moonbitlang/core/json",
+  "moonbitlang/core/string",
+  "moonbitlang/core/encoding/utf8",
 }

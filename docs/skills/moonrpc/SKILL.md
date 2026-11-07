@@ -71,6 +71,23 @@ in the header frame, which names its inner protocol and can carry headers and th
 transform. A method the IDL declares `oneway` is registered with `add_oneway` and called
 through `@thrift.oneway_call`, which sends and reads nothing back.
 
+## Serve Connect beside gRPC
+
+The Connect protocol answers the same handlers over either HTTP version, with the body in
+protobuf or JSON. Register the method with the message names a JSON caller is read through,
+and serve: one listener takes both versions, deciding from a connection's first octets.
+
+```moonbit native
+async fn serve_connect(server : @net.ConnectServer) -> Unit raise {
+  server.add("/connect.Echo/Say", {
+    input: ".connect.EchoRequest",
+    output: ".connect.EchoReply",
+    handler: @stream.Handler::Unary((_ctx, req) => req),
+  })
+  server.serve(port=12000)
+}
+```
+
 ## Rules that catch people out
 
 - `@net` is native only. A package that imports it is native only too, and the same goes for

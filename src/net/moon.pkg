@@ -1,6 +1,9 @@
 supported_targets = "native"
 
 import {
+  "moonbitstack/moonrpc/connect",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonhttp/http1",
   "moonbitstack/moonrpc/wire",
   "moonbitstack/moonrpc/client",
   "moonbitstack/moonrpc/server",
@@ -22,6 +25,7 @@ import {
 }
 
 import {
+  "moonbitstack/moonrpc/stream",
   "moonbitstack/moondate",
   "moonbitstack/mooncrypt/sign/ecdsa",
   "moonbitstack/moonseed",
