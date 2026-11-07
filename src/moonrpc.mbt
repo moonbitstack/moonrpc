@@ -51,6 +51,7 @@ pub using @proto {
   type PbError,
   type PbReader,
   type PbWriter,
+  type Schema,
   type ServiceDescriptor,
   type StatusDetails,
   type WireType,

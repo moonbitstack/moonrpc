@@ -717,6 +717,25 @@ The server also holds peers to a keepalive policy when one is set — PINGs clos
 
 ## Protobuf and Server Reflection
 
+A message is bytes on the wire; JSON is a second way to say the same thing, and the mapping
+between them is driven by the descriptor rather than by generated code. `proto.Schema` is the
+set of files a value may use, and it maps a message to JSON and back:
+
+```moonbit
+pub fn message_as_json(schema : @moonrpc.Schema) -> Json raise {
+  // `Profile` is a message whose descriptor the schema holds; `bytes` is its wire form.
+  let bytes = b""
+  let value = schema.to_json(".test.Profile", bytes)
+  // The same value back on the wire, so the two directions are checked against each other.
+  ignore(schema.to_bytes(".test.Profile", value))
+  value
+}
+```
+
+The shapes are proto3's: lowerCamelCase names, `int64` as a string, `bytes` as base64, enums
+by name, a map as an object, and the well-known types as the specification spells them — a
+`Timestamp` is an RFC 3339 string, a `Duration` ends in `s`, a wrapper is the value it wraps.
+
 `PbWriter` and `PbReader` carry the proto3 binary format: varint, zigzag, `fixed32`／`fixed64` and length-delimited fields. The base-128 varint and the zigzag fold are moonvar's, since DWARF writes the same integer; what is here is the field structure built over it.
 
 ```moonbit

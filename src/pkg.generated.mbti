@@ -229,6 +229,8 @@ pub using @stream {type RpcContext}
 
 pub using @wire {type RpcStats}
 
+pub using @proto {type Schema}
+
 pub using @service {type ServerNode}
 
 pub using @balance {type ServiceConfig}

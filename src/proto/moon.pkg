@@ -2,6 +2,9 @@
 // repeats) and descriptors for messages, services and files. Usable on its own,
 // without any gRPC transport.
 import {
+  "moonbitstack/moonbase/base64",
+  "moonbitlang/core/string",
+  "moonbitlang/core/double",
   "moonbitstack/moonvar/leb128",
   "moonbitstack/moonvar/fixed",
   "moonbitlang/core/encoding/utf8",

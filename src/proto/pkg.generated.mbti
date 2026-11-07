@@ -4,6 +4,7 @@ package "moonbitstack/moonrpc/proto"
 import {
   "moonbitlang/core/buffer",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -16,6 +17,8 @@ pub fn detail_body(BytesView) -> Bytes?
 pub fn detail_type_url(BytesView) -> String?
 
 pub fn encode_file_descriptor_set(Array[FileDescriptor]) -> Bytes
+
+pub fn json_name(FieldDescriptor) -> String
 
 // Errors
 #derive(Eq)
@@ -205,6 +208,15 @@ pub fn PbWriter::write_fixed64(Self, UInt64) -> Unit
 pub fn PbWriter::write_len_delim(Self, Bytes) -> Unit
 pub fn PbWriter::write_tag(Self, Int32, WireType) -> Unit
 pub fn PbWriter::write_varint(Self, UInt64) -> Unit
+
+pub(all) struct Schema {
+  messages : Map[String, MessageDescriptor]
+  enums : Map[String, EnumDescriptor]
+}
+pub fn Schema::empty() -> Self
+pub fn Schema::of(Array[FileDescriptor]) -> Self
+pub fn Schema::to_bytes(Self, String, @json.Json) -> Bytes raise PbError
+pub fn Schema::to_json(Self, String, Bytes) -> @json.Json raise PbError
 
 #derive(Eq)
 pub(all) struct ServiceDescriptor {
