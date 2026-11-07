@@ -40,6 +40,8 @@ keywords = [
   "thrift-compact",
   "tcompactprotocol",
   "tframedtransport",
+  "thrift-header",
+  "theader",
   "oneway",
   "idl",
   "grpc-go",
