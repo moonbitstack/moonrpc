@@ -727,6 +727,17 @@ The dispatch is a pure function: `connect.Server::serve` takes a path, headers a
 returns a status, headers and a body, which is what makes it testable without a socket and
 what lets the two drivers — `net` over HTTP/1.1, and its HTTP/2 half — share it.
 
+The client is the same protocol from the other side, written against one method rather than a
+socket, so a transport is forty lines:
+
+```moonbit native
+async fn call_echo(transport : @net.Http1Transport) -> Unit raise {
+  let client : @connect.Client[@net.Http1Transport] = @connect.Client::new(transport)
+  let reply = client.unary("/connect.Echo/Say", b"hi")
+  assert_eq(reply.messages[0], b"hi")
+}
+```
+
 ## Concurrency on a connection
 
 A finished call is not run inside the frame loop. The server hands it to the driver, which runs it on a task of its own, so a handler that is waiting on something holds up nothing else on the connection:
