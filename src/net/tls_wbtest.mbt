@@ -38,9 +38,7 @@ async test "TLS: a channel negotiates h2 and a unary call crosses the encrypted 
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
     let port_18081 = server.bind(port=0, tls=server_tls([cert], key)).port()
-    let task = g.spawn(() => {
-      server.serve()
-    })
+    let task = g.spawn(() => server.serve())
     let chan = Channel::connect("127.0.0.1", port_18081, tls=trusting_tls())
     assert_eq(chan.conn.alpn(), Some(alpn_h2))
     let reply = chan.unary("/echo.Echo/Say", b"tls")
@@ -58,9 +56,7 @@ async test "TLS: a peer that does not offer h2 is not served" {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
     let port_18082 = server.bind(port=0, tls=server_tls([cert], key)).port()
-    let task = g.spawn(() => {
-      server.serve()
-    })
+    let task = g.spawn(() => server.serve())
     let refused = try {
       let chan = Channel::connect(
         "127.0.0.1",
@@ -84,9 +80,7 @@ async test "TLS: a MuxChannel carries concurrent calls over TLS" {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
     let port_18083 = server.bind(port=0, tls=server_tls([cert], key)).port()
-    let task = g.spawn(() => {
-      server.serve()
-    })
+    let task = g.spawn(() => server.serve())
     let chan = MuxChannel::connect("127.0.0.1", port_18083, tls=trusting_tls())
     assert_eq(chan.conn.alpn(), Some(alpn_h2))
     g.spawn_bg(() => chan.read_pump())
@@ -108,9 +102,7 @@ async test "TLS: a ManagedChannel dials a TLS backend" {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
     let port_18084 = server.bind(port=0, tls=server_tls([cert], key)).port()
-    let task = g.spawn(() => {
-      server.serve()
-    })
+    let task = g.spawn(() => server.serve())
     let chan = ManagedChannel::connect(
       [("127.0.0.1", port_18084)],
       tls=trusting_tls(),
@@ -129,10 +121,10 @@ async test "TLS: a handshake that settles on http/1.1 carries no gRPC call" {
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
-    let port_18271 = server.bind(port=0, tls=server_tls([cert], key, protocols=["http/1.1"])).port()
-    let task = g.spawn(() => {
-      server.serve()
-    })
+    let port_18271 = server
+      .bind(port=0, tls=server_tls([cert], key, protocols=["http/1.1"]))
+      .port()
+    let task = g.spawn(() => server.serve())
     let served = try {
       let chan = Channel::connect(
         "127.0.0.1",
@@ -157,9 +149,7 @@ async test "TLS: a client that names no protocol carries no gRPC call" {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
     let port_18272 = server.bind(port=0, tls=server_tls([cert], key)).port()
-    let task = g.spawn(() => {
-      server.serve()
-    })
+    let task = g.spawn(() => server.serve())
     let served = try {
       let chan = Channel::connect(
         "127.0.0.1",

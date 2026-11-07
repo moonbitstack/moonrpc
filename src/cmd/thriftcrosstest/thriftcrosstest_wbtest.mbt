@@ -9,9 +9,7 @@ async test "cross: the service passes its own client, binary" {
     let listener = @net.bind_thrift(host="127.0.0.1", port=0)
     let port_18310 = listener.addr().port()
     let task = g.spawn(() => {
-      @net.serve_thrift_on(listener, processor(), () => {
-        @thrift.Binary::new(b"")
-      })
+      @net.serve_thrift_on(listener, processor(), () => @thrift.Binary::new(b""))
     })
     let proto : &@thrift.Protocol = @thrift.Binary::new(b"")
     let client = @net.ThriftClient::connect("127.0.0.1", port_18310, proto)

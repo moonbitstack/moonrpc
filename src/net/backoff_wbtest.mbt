@@ -47,7 +47,7 @@ async test "backoff: once the wait is over, the channel dials again and finds th
     // The backend comes up while the channel is waiting.
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
-    let task = g.spawn(() => server.serve(port=port))
+    let task = g.spawn(() => server.serve(port~))
     @async.sleep(400)
     let after = chan.unary("/echo.Echo/Say", b"x")
     assert_eq(after.grpc_status, 0)

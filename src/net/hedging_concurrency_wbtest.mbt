@@ -103,10 +103,7 @@ async test "a non-fatal status sends the next hedge at once, not after the delay
     let counts = [0, 0]
     let (ta, tb, p1, p2) = pair(g, counts)
     @async.sleep(300)
-    let chan = ManagedChannel::connect([
-      ("127.0.0.1", p1),
-      ("127.0.0.1", p2),
-    ])
+    let chan = ManagedChannel::connect([("127.0.0.1", p1), ("127.0.0.1", p2)])
     // Ten seconds between hedges; the call is bounded to three, so only the
     // shortcut can answer it.
     let policy = @moonrpc.Hedging::new(
@@ -134,10 +131,7 @@ async test "a pushback to stop sends no further hedge" {
     let counts = [0, 0]
     let (ta, tb, p1, p2) = pair(g, counts, pushback=b"-1")
     @async.sleep(300)
-    let chan = ManagedChannel::connect([
-      ("127.0.0.1", p1),
-      ("127.0.0.1", p2),
-    ])
+    let chan = ManagedChannel::connect([("127.0.0.1", p1), ("127.0.0.1", p2)])
     let policy = @moonrpc.Hedging::new(
       attempts=2,
       delay=@moondate.Span::new(seconds=10L),

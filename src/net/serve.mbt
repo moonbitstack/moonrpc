@@ -983,7 +983,9 @@ async test "graceful_stop lets a call that is already open finish" {
     let port_18079 = server.bind(port=0).port()
     let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:" + port_18079.to_string()))
+    let conn = @socket.Tcp::connect(
+      @socket.Addr::parse("127.0.0.1:" + port_18079.to_string()),
+    )
     conn.write(@http2.preface)
     conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
     let enc = @hpack.Encoder::new()
@@ -1143,7 +1145,9 @@ async test "a call left waiting past its deadline is cut off when the connection
     let port_18080 = server.bind(port=0).port()
     let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:" + port_18080.to_string()))
+    let conn = @socket.Tcp::connect(
+      @socket.Addr::parse("127.0.0.1:" + port_18080.to_string()),
+    )
     conn.write(@http2.preface)
     conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
     let enc = @hpack.Encoder::new()

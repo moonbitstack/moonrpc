@@ -20,7 +20,10 @@ async test "managed channel: round-robin spreads calls across two live backends"
       policy=RoundRobin,
     )
     // Both backends dialed and READY, in resolver order.
-    assert_eq(chan.ready_addresses(), ["127.0.0.1:" + port_18101.to_string(), "127.0.0.1:" + port_18102.to_string()])
+    assert_eq(chan.ready_addresses(), [
+      "127.0.0.1:" + port_18101.to_string(),
+      "127.0.0.1:" + port_18102.to_string(),
+    ])
     // Four calls alternate A, B, A, B — the picker cycles the ready set.
     let r1 = chan.unary("/echo.E/Say", b"x")
     let r2 = chan.unary("/echo.E/Say", b"x")
