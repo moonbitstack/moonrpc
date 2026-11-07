@@ -412,17 +412,53 @@ fn GrpcServer::engine(self : GrpcServer) -> @moonrpc.H2Server {
 pub let port : Int32 = 12000
 
 ///|
+/// The address this server listens on, or `None` before it is listening. With port 0 asked
+/// for, this is where the port the system chose comes back from: a listener reports what it
+/// actually bound, not the 0 it was given.
+///
+/// Kept separate from [`GrpcServer::bind`] because the accept loop can end before the port is
+/// asked for, and a caller that already has the address holds it itself.
+pub fn GrpcServer::addr(self : GrpcServer) -> @socket.Addr? {
+  match self.listener {
+    Some(l) => Some(l.addr())
+    None => None
+  }
+}
+
+///|
+/// Bind the listening socket now and report the address it got, so a caller can reach the
+/// server before the accept loop has started — and so a test asked to listen on port 0 learns
+/// the port the system picked. Connections queue from the moment this returns, so the caller
+/// may connect immediately; `serve` reuses the socket instead of binding a second one.
+pub async fn GrpcServer::bind(
+  self : GrpcServer,
+  host~ : String = "127.0.0.1",
+  port~ : Int32 = port,
+  tls? : @tls.Server,
+) -> @socket.Addr {
+  let server = @tcp.listen(host~, port~, tls?)
+  self.listener = Some(server)
+  server.addr()
+}
+
+///|
 /// Serve gRPC on `host:port` — h2c, or over TLS when `tls` is given, in which case every
 /// accepted connection must have settled on ALPN `h2` — blocking in the accept loop until
 /// the running task is cancelled or `graceful_stop` drains the server. Each connection is
 /// driven by `drive`; a failure on one connection is isolated and does not stop the server.
+///
+/// A socket that [`GrpcServer::bind`] already opened is served as it is, on the address that
+/// bind reported.
 pub async fn GrpcServer::serve(
   self : GrpcServer,
   host~ : String = "127.0.0.1",
   port~ : Int32 = port,
   tls? : @tls.Server,
 ) -> Unit {
-  let server = @tcp.listen(host~, port~, tls?)
+  let server = match self.listener {
+    Some(l) => l
+    None => @tcp.listen(host~, port~, tls?)
+  }
   self.listener = Some(server)
   self.draining = false
   // The listener is closed from this task and nowhere else. Closing a socket that
@@ -609,10 +645,11 @@ async test "unary gRPC call served over the self-built h2c transport" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
-    let task = g.spawn(() => server.serve(port=18071))
+    let port_18071 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let (status, grpc_status, reply) = unary_call(
-      "127.0.0.1", 18071, b"/echo.Echo/Say", b"world",
+      "127.0.0.1", port_18071, b"/echo.Echo/Say", b"world",
     )
     assert_eq(status == b"200", true)
     assert_eq(grpc_status == b"0", true)
@@ -626,10 +663,11 @@ async test "an unregistered method is served UNIMPLEMENTED over h2c" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
-    let task = g.spawn(() => server.serve(port=18072))
+    let port_18072 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let (_status, grpc_status, _reply) = unary_call(
-      "127.0.0.1", 18072, b"/echo.Echo/Missing", b"x",
+      "127.0.0.1", port_18072, b"/echo.Echo/Missing", b"x",
     )
     assert_eq(grpc_status == b"12", true)
     task.cancel()
@@ -724,11 +762,12 @@ async test "server-streaming: a real h2c call receives multiple framed replies i
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
       [req + b"-1", req + b"-2", req + b"-3"]
     })
-    let task = g.spawn(() => server.serve(port=18073))
+    let port_18073 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let (status, grpc_status, replies) = streaming_call(
       "127.0.0.1",
-      18073,
+      port_18073,
       b"/count.C/Up",
       [b"n"],
     )
@@ -755,11 +794,12 @@ async test "client-streaming: a real h2c call sends many messages and gets one r
       }
       buf.to_bytes()
     })
-    let task = g.spawn(() => server.serve(port=18074))
+    let port_18074 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let (status, grpc_status, replies) = streaming_call(
       "127.0.0.1",
-      18074,
+      port_18074,
       b"/sum.S/Add",
       [b"a", b"b", b"c"],
     )
@@ -779,11 +819,12 @@ async test "bidi-streaming: a real h2c call echoes each message and closes with 
       on_message: m => [b"re:" + m],
       on_end: () => [b"bye"],
     })
-    let task = g.spawn(() => server.serve(port=18075))
+    let port_18075 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let (status, grpc_status, replies) = streaming_call(
       "127.0.0.1",
-      18075,
+      port_18075,
       b"/chat.C/Echo",
       [b"one", b"two"],
     )
@@ -841,14 +882,15 @@ async test "reflection: a real h2c bidi call lists and describes a registered se
     let refl = @moonrpc.ReflectionService::new()
     refl.add_file(greet_descriptor())
     server.register_reflection(refl)
-    let task = g.spawn(() => server.serve(port=18076))
+    let port_18076 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let refl_path = b"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo"
 
     // ListServices over the wire.
     let (ls, ls_status, list_replies) = streaming_call(
       "127.0.0.1",
-      18076,
+      port_18076,
       refl_path,
       [@moonrpc.encode_reflection_request(ListServices("*"))],
     )
@@ -863,7 +905,7 @@ async test "reflection: a real h2c bidi call lists and describes a registered se
     // FileContainingSymbol over the wire -> a real FileDescriptorProto.
     let (_fs, fs_status, desc_replies) = streaming_call(
       "127.0.0.1",
-      18076,
+      port_18076,
       refl_path,
       [
         @moonrpc.encode_reflection_request(
@@ -910,13 +952,13 @@ async test "graceful_stop drains in-flight calls and releases the port" {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
     let mut served = false
+    let port_18077 = server.bind(port=0).port()
     let task = g.spawn(() => {
-      server.serve(port=18077)
+      server.serve()
       served = true
     })
-    @async.sleep(300)
     let (status, grpc_status, reply) = unary_call(
-      "127.0.0.1", 18077, b"/echo.Echo/Say", b"qwq",
+      "127.0.0.1", port_18077, b"/echo.Echo/Say", b"qwq",
     )
     assert_eq(status == b"200", true)
     assert_eq(grpc_status == b"0", true)
@@ -938,9 +980,10 @@ async test "graceful_stop lets a call that is already open finish" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
-    let task = g.spawn(() => server.serve(port=18079))
+    let port_18079 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18079"))
+    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:" + port_18079.to_string()))
     conn.write(@http2.preface)
     conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
     let enc = @hpack.Encoder::new()
@@ -1080,13 +1123,14 @@ async test "a call whose deadline passes on the wire is answered DEADLINE_EXCEED
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/slow.S/Wait", req => req)
-    let task = g.spawn(() => server.serve(port=18078))
+    let port_18078 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     // 50 ms of deadline, and 250 ms before the request finishes arriving: the engine
     // reads the driver's clock, so the call is over before the handler could run.
-    assert_eq(timed_call(18078, b"50m", 250) == b"4", true)
+    assert_eq(timed_call(port_18078, b"50m", 250) == b"4", true)
     // The same call inside its deadline is served as usual.
-    assert_eq(timed_call(18078, b"10S", 0) == b"0", true)
+    assert_eq(timed_call(port_18078, b"10S", 0) == b"0", true)
     task.cancel()
   })
 }
@@ -1096,9 +1140,10 @@ async test "a call left waiting past its deadline is cut off when the connection
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register_client_streaming("/slow.S/Collect", (_ctx, _msgs) => b"done")
-    let task = g.spawn(() => server.serve(port=18080))
+    let port_18080 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:18080"))
+    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:" + port_18080.to_string()))
     conn.write(@http2.preface)
     conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
     let enc = @hpack.Encoder::new()

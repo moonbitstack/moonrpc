@@ -8,9 +8,9 @@ async test "health: Check answers the status, and NOT_FOUND for an unknown servi
     health.set_status("greet.Greeter", Serving)
     let server = GrpcServer::new()
     server.register_health(health)
-    let task = g.spawn(() => server.serve(port=18251))
-    @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18251)
+    let port_18251 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let chan = Channel::connect("127.0.0.1", port_18251)
     let known = chan.unary(
       @moonrpc.health_check_path,
       @moonrpc.encode_health_request(b"greet.Greeter"),
@@ -40,9 +40,9 @@ async test "health: Watch reports the status now and again when it changes" {
     health.set_status("greet.Greeter", Serving)
     let server = GrpcServer::new()
     server.register_health(health)
-    let task = g.spawn(() => server.serve(port=18252))
-    @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18252)
+    let port_18252 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let chan = Channel::connect("127.0.0.1", port_18252)
     let watch = g.spawn(() => {
       chan.stream_take(
         @moonrpc.health_watch_path,

@@ -10,15 +10,17 @@ async test "managed channel: round-robin spreads calls across two live backends"
     a.register("/echo.E/Say", req => b"A:" + req)
     let b = GrpcServer::new()
     b.register("/echo.E/Say", req => b"B:" + req)
-    let ta = g.spawn(() => a.serve(port=18101))
-    let tb = g.spawn(() => b.serve(port=18102))
+    let port_18101 = a.bind(port=0).port()
+    let ta = g.spawn(() => a.serve())
+    let port_18102 = b.bind(port=0).port()
+    let tb = g.spawn(() => b.serve())
     @async.sleep(300)
     let chan = ManagedChannel::connect(
-      [("127.0.0.1", 18101), ("127.0.0.1", 18102)],
+      [("127.0.0.1", port_18101), ("127.0.0.1", port_18102)],
       policy=RoundRobin,
     )
     // Both backends dialed and READY, in resolver order.
-    assert_eq(chan.ready_addresses(), ["127.0.0.1:18101", "127.0.0.1:18102"])
+    assert_eq(chan.ready_addresses(), ["127.0.0.1:" + port_18101.to_string(), "127.0.0.1:" + port_18102.to_string()])
     // Four calls alternate A, B, A, B — the picker cycles the ready set.
     let r1 = chan.unary("/echo.E/Say", b"x")
     let r2 = chan.unary("/echo.E/Say", b"x")
@@ -43,9 +45,10 @@ async test "managed channel: hedging commits on the first OK and cancels the pen
       count[0] = count[0] + 1
       b"A:" + req
     })
-    let tb = g.spawn(() => backend.serve(port=18107))
+    let port_18107 = backend.bind(port=0).port()
+    let tb = g.spawn(() => backend.serve())
     @async.sleep(300)
-    let chan = ManagedChannel::connect([("127.0.0.1", 18107)])
+    let chan = ManagedChannel::connect([("127.0.0.1", port_18107)])
     // Three permitted attempts, but a long hedging delay: the first attempt's OK commits
     // before any hedge is due, so only one request reaches the backend.
     let policy = @moonrpc.Hedging::new(
@@ -68,13 +71,15 @@ async test "managed channel: pick_first pins every call to the first backend" {
     a.register("/echo.E/Say", req => b"A:" + req)
     let b = GrpcServer::new()
     b.register("/echo.E/Say", req => b"B:" + req)
-    let ta = g.spawn(() => a.serve(port=18103))
-    let tb = g.spawn(() => b.serve(port=18104))
+    let port_18103 = a.bind(port=0).port()
+    let ta = g.spawn(() => a.serve())
+    let port_18104 = b.bind(port=0).port()
+    let tb = g.spawn(() => b.serve())
     @async.sleep(300)
     // Default policy is PickFirst.
     let chan = ManagedChannel::connect([
-      ("127.0.0.1", 18103),
-      ("127.0.0.1", 18104),
+      ("127.0.0.1", port_18103),
+      ("127.0.0.1", port_18104),
     ])
     let r1 = chan.unary("/echo.E/Say", b"x")
     let r2 = chan.unary("/echo.E/Say", b"x")
@@ -95,8 +100,10 @@ async test "managed channel: dns_connect resolves a name over UDP then calls the
   @async.with_task_group(g => {
     let backend = GrpcServer::new()
     backend.register("/echo.E/Say", req => b"A:" + req)
-    let tb = g.spawn(() => backend.serve(port=18106))
-    let dns = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:15355"))
+    let port_18106 = backend.bind(port=0).port()
+    let tb = g.spawn(() => backend.serve())
+    let dns = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:0"))
+    let dns_port = dns.addr.port()
     let td = g.spawn(() => {
       let buf = FixedArray::make(512, b'\x00')
       let (_, addr) = dns.recvfrom(buf)
@@ -105,9 +112,9 @@ async test "managed channel: dns_connect resolves a name over UDP then calls the
     @async.sleep(300)
     // Resolve example.com -> 127.0.0.1 and dial it at the backend's port.
     let chan = ManagedChannel::dns_connect(
-      "127.0.0.1", 15355, "example.com", 18106,
+      "127.0.0.1", dns_port, "example.com", port_18106,
     )
-    assert_eq(chan.ready_addresses(), ["127.0.0.1:18106"])
+    assert_eq(chan.ready_addresses(), ["127.0.0.1:" + port_18106.to_string()])
     let r = chan.unary("/echo.E/Say", b"x")
     assert_eq(r.messages[0] == b"A:x", true)
     chan.close()
@@ -122,15 +129,16 @@ async test "managed channel: a backend that fails to dial is skipped; calls rout
   @async.with_task_group(g => {
     let a = GrpcServer::new()
     a.register("/echo.E/Say", req => b"A:" + req)
-    let ta = g.spawn(() => a.serve(port=18105))
+    let port_18105 = a.bind(port=0).port()
+    let ta = g.spawn(() => a.serve())
     @async.sleep(300)
     // 18999 has nothing listening: its dial fails and its sub-connection never goes READY.
     let chan = ManagedChannel::connect(
-      [("127.0.0.1", 18999), ("127.0.0.1", 18105)],
+      [("127.0.0.1", 18999), ("127.0.0.1", port_18105)],
       policy=RoundRobin,
     )
     // Only the live backend is ready — the dead one is filtered out.
-    assert_eq(chan.ready_addresses(), ["127.0.0.1:18105"])
+    assert_eq(chan.ready_addresses(), ["127.0.0.1:" + port_18105.to_string()])
     let r1 = chan.unary("/echo.E/Say", b"x")
     let r2 = chan.unary("/echo.E/Say", b"x")
     assert_eq(r1.messages[0] == b"A:x", true)
@@ -147,12 +155,14 @@ async test "managed channel: a backend that dies is left, and a call goes to the
     first.register("/echo.E/Say", req => b"first:" + req)
     let second = GrpcServer::new()
     second.register("/echo.E/Say", req => b"second:" + req)
-    let dying = g.spawn(() => first.serve(port=18221))
-    let surviving = g.spawn(() => second.serve(port=18222))
+    let port_18221 = first.bind(port=0).port()
+    let dying = g.spawn(() => first.serve())
+    let port_18222 = second.bind(port=0).port()
+    let surviving = g.spawn(() => second.serve())
     @async.sleep(300)
     let chan = ManagedChannel::connect([
-      ("127.0.0.1", 18221),
-      ("127.0.0.1", 18222),
+      ("127.0.0.1", port_18221),
+      ("127.0.0.1", port_18222),
     ])
     assert_eq(chan.unary("/echo.E/Say", b"a").messages[0], b"first:a")
     dying.cancel()
@@ -160,7 +170,7 @@ async test "managed channel: a backend that dies is left, and a call goes to the
     let failed = chan.unary("/echo.E/Say", b"b")
     assert_eq(failed.grpc_status, @moonrpc.Status::code(Unavailable))
     assert_eq(chan.unary("/echo.E/Say", b"c").messages[0], b"second:c")
-    assert_eq(chan.ready_addresses(), ["127.0.0.1:18222"])
+    assert_eq(chan.ready_addresses(), ["127.0.0.1:" + port_18222.to_string()])
     surviving.cancel()
   })
 }
@@ -172,12 +182,14 @@ async test "managed channel: a retry policy reaches the next backend within one 
     first.register("/echo.E/Say", req => b"first:" + req)
     let second = GrpcServer::new()
     second.register("/echo.E/Say", req => b"second:" + req)
-    let dying = g.spawn(() => first.serve(port=18223))
-    let surviving = g.spawn(() => second.serve(port=18224))
+    let port_18223 = first.bind(port=0).port()
+    let dying = g.spawn(() => first.serve())
+    let port_18224 = second.bind(port=0).port()
+    let surviving = g.spawn(() => second.serve())
     @async.sleep(300)
     let chan = ManagedChannel::connect([
-      ("127.0.0.1", 18223),
-      ("127.0.0.1", 18224),
+      ("127.0.0.1", port_18223),
+      ("127.0.0.1", port_18224),
     ])
     assert_eq(chan.unary("/echo.E/Say", b"a").messages[0], b"first:a")
     dying.cancel()
@@ -194,9 +206,10 @@ async test "managed channel: with every backend gone it dials again" {
   @async.with_task_group(g => {
     let first = GrpcServer::new()
     first.register("/echo.E/Say", req => b"one:" + req)
-    let gone = g.spawn(() => first.serve(port=18225))
+    let port_18225 = first.bind(port=0).port()
+    let gone = g.spawn(() => first.serve())
     @async.sleep(300)
-    let chan = ManagedChannel::connect([("127.0.0.1", 18225)])
+    let chan = ManagedChannel::connect([("127.0.0.1", port_18225)])
     assert_eq(chan.unary("/echo.E/Say", b"a").messages[0], b"one:a")
     gone.cancel()
     @async.sleep(200)
@@ -206,7 +219,7 @@ async test "managed channel: with every backend gone it dials again" {
     assert_eq(still.grpc_status, @moonrpc.Status::code(Unavailable))
     let again = GrpcServer::new()
     again.register("/echo.E/Say", req => b"two:" + req)
-    let back = g.spawn(() => again.serve(port=18225))
+    let back = g.spawn(() => again.serve(port=port_18225))
     @async.sleep(300)
     assert_eq(chan.unary("/echo.E/Say", b"d").messages[0], b"two:d")
     back.cancel()

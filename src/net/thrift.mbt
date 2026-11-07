@@ -53,6 +53,17 @@ pub impl @thrift.Transport for ThriftClient with fn round_trip(self, body) {
 }
 
 ///|
+/// Bind the listening socket a Thrift server will accept on, and report the address — with
+/// port 0, the one the system picked. Connections queue from the moment this returns, so a
+/// caller may dial before [`serve_thrift_on`] has reached its accept loop.
+pub async fn bind_thrift(
+  host~ : String = "127.0.0.1",
+  port~ : Int32 = 9090,
+) -> @tcp.Listener {
+  @tcp.listen(host~, port~)
+}
+
+///|
 /// Serve `processor` on `host:port` until the listener fails, speaking whichever
 /// protocol `make` builds. Each connection gets its own protocol object and its own
 /// task, so one slow method does not hold up the others.
@@ -62,7 +73,17 @@ pub async fn[P : @thrift.Protocol] serve_thrift(
   processor : @thrift.Processor,
   make : () -> P,
 ) -> Unit {
-  let listener = @tcp.listen(host~, port~)
+  serve_thrift_on(bind_thrift(host~, port~), processor, make)
+}
+
+///|
+/// Serve on a socket that is already bound — the form a caller needs when it must learn the
+/// port before the accept loop starts.
+pub async fn[P : @thrift.Protocol] serve_thrift_on(
+  listener : @tcp.Listener,
+  processor : @thrift.Processor,
+  make : () -> P,
+) -> Unit {
   @async.with_task_group(group => {
     for ;; {
       let (conn, _) = listener.accept() catch { _ => continue }

@@ -6,9 +6,10 @@ async test "channel: concurrent calls on one connection each get their own reply
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.E/Say", req => b"echo:" + req)
-    let task = g.spawn(() => server.serve(port=18201))
+    let port_18201 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18201)
+    let chan = Channel::connect("127.0.0.1", port_18201)
     @async.with_task_group(calls => {
       for i in 0..<8 {
         calls.spawn_bg(() => {
@@ -33,9 +34,10 @@ async test "channel: a stream and unary calls run side by side" {
     server.register_server_streaming("/feed.F/Many", (_ctx, req) => {
       [req + b"1", req + b"2", req + b"3"]
     })
-    let task = g.spawn(() => server.serve(port=18202))
+    let port_18202 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18202)
+    let chan = Channel::connect("127.0.0.1", port_18202)
     @async.with_task_group(calls => {
       calls.spawn_bg(() => {
         for _ in 0..<20 {

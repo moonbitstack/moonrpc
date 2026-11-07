@@ -41,9 +41,10 @@ async test "client interceptors: the token reaches all four kinds of call" {
       on_message: m => [seen_token(ctx) + b":" + m],
       on_end: () => [],
     })
-    let task = g.spawn(() => server.serve(port=18085))
+    let port_18085 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18085, interceptors=[
+    let chan = Channel::connect("127.0.0.1", port_18085, interceptors=[
       with_token(b"T"),
     ])
     assert_eq(chan.unary("/echo.Echo/Say", b"u").messages[0], b"T:u")
@@ -70,9 +71,10 @@ async test "client interceptors: a server-side chain sees the call on the other 
     })
     server.register_unary("/echo.Echo/Say", (_ctx, req) => req)
     server.register_server_streaming("/count.C/Up", (_ctx, req) => [req, req])
-    let task = g.spawn(() => server.serve(port=18091))
+    let port_18091 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18091)
+    let chan = Channel::connect("127.0.0.1", port_18091)
     ignore(chan.unary("/echo.Echo/Say", b"u"))
     ignore(chan.server_streaming("/count.C/Up", b"s"))
     assert_eq(seen, ["/echo.Echo/Say 1", "/count.C/Up 1"])
@@ -86,13 +88,14 @@ async test "client interceptors: a reply is changed on the way back" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
-    let task = g.spawn(() => server.serve(port=18086))
+    let port_18086 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     let shout : @client.Interceptor = (invocation, next) => {
       let reply = next(invocation)
       { ..reply, messages: reply.messages.map(m => m + b"!"), }
     }
-    let chan = Channel::connect("127.0.0.1", 18086, interceptors=[shout])
+    let chan = Channel::connect("127.0.0.1", port_18086, interceptors=[shout])
     assert_eq(chan.unary("/echo.Echo/Say", b"hi").messages[0], b"hi!")
     chan.close()
     task.cancel()
@@ -106,15 +109,16 @@ async test "client interceptors: a MuxChannel and a ManagedChannel run the chain
     server.register_unary("/echo.Echo/Say", (ctx, req) => {
       seen_token(ctx) + b":" + req
     })
-    let task = g.spawn(() => server.serve(port=18087))
+    let port_18087 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let mux = MuxChannel::connect("127.0.0.1", 18087, interceptors=[
+    let mux = MuxChannel::connect("127.0.0.1", port_18087, interceptors=[
       with_token(b"M"),
     ])
     g.spawn_bg(() => mux.read_pump())
     assert_eq(mux.unary("/echo.Echo/Say", b"q").messages[0], b"M:q")
     mux.close()
-    let managed = ManagedChannel::connect([("127.0.0.1", 18087)], interceptors=[
+    let managed = ManagedChannel::connect([("127.0.0.1", port_18087)], interceptors=[
       with_token(b"D"),
     ])
     assert_eq(managed.unary("/echo.Echo/Say", b"w").messages[0], b"D:w")

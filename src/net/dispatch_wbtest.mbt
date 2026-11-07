@@ -17,9 +17,9 @@ async test "dispatch: a slow handler does not hold up another call on the same c
       }),
     )
     server.register("/fast.F/Hit", req => b"fast:" + req)
-    let task = g.spawn(() => server.serve(port=18241))
-    @async.sleep(300)
-    let chan = MuxChannel::connect("127.0.0.1", 18241)
+    let port_18241 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let chan = MuxChannel::connect("127.0.0.1", port_18241)
     g.spawn_bg(() => chan.read_pump())
     let started = @async.now()
     let slow = g.spawn(() => chan.unary("/slow.S/Wait", b"slow"))
@@ -54,9 +54,9 @@ async test "dispatch: a pushed handler answers many times over one call" {
         (out.finish)()
       }),
     )
-    let task = g.spawn(() => server.serve(port=18242))
-    @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18242)
+    let port_18242 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let chan = Channel::connect("127.0.0.1", port_18242)
     let reply = chan.bidi("/tick.T/Every", [b"go"])
     assert_eq(reply.grpc_status, 0)
     assert_eq(reply.messages, [b"tick-1", b"tick-2", b"tick-3"])
@@ -80,9 +80,9 @@ async test "dispatch: a deadline ends a handler that is still working" {
         finished = true
       }),
     )
-    let task = g.spawn(() => server.serve(port=18243))
-    @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18243)
+    let port_18243 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let chan = Channel::connect("127.0.0.1", port_18243)
     let started = @async.now()
     let reply = chan.bidi("/slow.S/Wait", [b"x"], timeout_millis=120)
     let took = @async.now() - started

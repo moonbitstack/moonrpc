@@ -37,11 +37,11 @@ async test "TLS: a channel negotiates h2 and a unary call crosses the encrypted 
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
+    let port_18081 = server.bind(port=0, tls=server_tls([cert], key)).port()
     let task = g.spawn(() => {
-      server.serve(port=18081, tls=server_tls([cert], key))
+      server.serve()
     })
-    @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18081, tls=trusting_tls())
+    let chan = Channel::connect("127.0.0.1", port_18081, tls=trusting_tls())
     assert_eq(chan.conn.alpn(), Some(alpn_h2))
     let reply = chan.unary("/echo.Echo/Say", b"tls")
     assert_eq(reply.grpc_status, 0)
@@ -57,14 +57,14 @@ async test "TLS: a peer that does not offer h2 is not served" {
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
+    let port_18082 = server.bind(port=0, tls=server_tls([cert], key)).port()
     let task = g.spawn(() => {
-      server.serve(port=18082, tls=server_tls([cert], key))
+      server.serve()
     })
-    @async.sleep(300)
     let refused = try {
       let chan = Channel::connect(
         "127.0.0.1",
-        18082,
+        port_18082,
         tls=trusting_tls(protocols=["http/1.1"]),
       )
       chan.close()
@@ -83,11 +83,11 @@ async test "TLS: a MuxChannel carries concurrent calls over TLS" {
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
+    let port_18083 = server.bind(port=0, tls=server_tls([cert], key)).port()
     let task = g.spawn(() => {
-      server.serve(port=18083, tls=server_tls([cert], key))
+      server.serve()
     })
-    @async.sleep(300)
-    let chan = MuxChannel::connect("127.0.0.1", 18083, tls=trusting_tls())
+    let chan = MuxChannel::connect("127.0.0.1", port_18083, tls=trusting_tls())
     assert_eq(chan.conn.alpn(), Some(alpn_h2))
     g.spawn_bg(() => chan.read_pump())
     let first = g.spawn(() => chan.unary("/echo.Echo/Say", b"a"))
@@ -107,12 +107,12 @@ async test "TLS: a ManagedChannel dials a TLS backend" {
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
+    let port_18084 = server.bind(port=0, tls=server_tls([cert], key)).port()
     let task = g.spawn(() => {
-      server.serve(port=18084, tls=server_tls([cert], key))
+      server.serve()
     })
-    @async.sleep(300)
     let chan = ManagedChannel::connect(
-      [("127.0.0.1", 18084)],
+      [("127.0.0.1", port_18084)],
       tls=trusting_tls(),
     )
     let reply = chan.unary("/echo.Echo/Say", b"managed")
@@ -129,17 +129,14 @@ async test "TLS: a handshake that settles on http/1.1 carries no gRPC call" {
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
+    let port_18271 = server.bind(port=0, tls=server_tls([cert], key, protocols=["http/1.1"])).port()
     let task = g.spawn(() => {
-      server.serve(
-        port=18271,
-        tls=server_tls([cert], key, protocols=["http/1.1"]),
-      )
+      server.serve()
     })
-    @async.sleep(300)
     let served = try {
       let chan = Channel::connect(
         "127.0.0.1",
-        18271,
+        port_18271,
         tls=trusting_tls(protocols=[alpn_h2, "http/1.1"]),
       )
       let reply = chan.unary("/echo.Echo/Say", b"x")
@@ -159,14 +156,14 @@ async test "TLS: a client that names no protocol carries no gRPC call" {
     let (cert, key) = self_signed_pair()
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
+    let port_18272 = server.bind(port=0, tls=server_tls([cert], key)).port()
     let task = g.spawn(() => {
-      server.serve(port=18272, tls=server_tls([cert], key))
+      server.serve()
     })
-    @async.sleep(300)
     let served = try {
       let chan = Channel::connect(
         "127.0.0.1",
-        18272,
+        port_18272,
         tls=trusting_tls(protocols=[]),
       )
       let reply = chan.unary("/echo.Echo/Say", b"x")

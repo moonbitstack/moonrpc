@@ -7,9 +7,10 @@ async test "mux channel: two concurrent unary calls multiplex on one connection"
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.E/Say", req => b"echo:" + req)
-    let ts = g.spawn(() => server.serve(port=18108))
+    let port_18108 = server.bind(port=0).port()
+    let ts = g.spawn(() => server.serve())
     @async.sleep(300)
-    let ch = MuxChannel::connect("127.0.0.1", 18108)
+    let ch = MuxChannel::connect("127.0.0.1", port_18108)
     let tp = g.spawn(() => ch.read_pump())
     // Both calls are in flight at once — distinct streams on the same connection.
     let t1 = g.spawn(() => ch.unary("/echo.E/Say", b"one"))
@@ -33,9 +34,10 @@ async test "mux channel: keepalive keeps a live connection healthy by pinging" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.E/Say", req => b"echo:" + req)
-    let ts = g.spawn(() => server.serve(port=18110))
+    let port_18110 = server.bind(port=0).port()
+    let ts = g.spawn(() => server.serve())
     @async.sleep(300)
-    let ch = MuxChannel::connect("127.0.0.1", 18110)
+    let ch = MuxChannel::connect("127.0.0.1", port_18110)
     let tp = g.spawn(() => ch.read_pump())
     // Ping after 120 ms idle; a missing ACK within 300 ms would declare the connection dead.
     let tk = g.spawn(() => {
@@ -69,9 +71,10 @@ async test "mux channel: a streaming reply is read message by message via a bidi
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
       [req + b"-1", req + b"-2", req + b"-3"]
     })
-    let ts = g.spawn(() => server.serve(port=18111))
+    let port_18111 = server.bind(port=0).port()
+    let ts = g.spawn(() => server.serve())
     @async.sleep(300)
-    let ch = MuxChannel::connect("127.0.0.1", 18111)
+    let ch = MuxChannel::connect("127.0.0.1", port_18111)
     let tp = g.spawn(() => ch.read_pump())
     let stream = ch.open_bidi("/count.C/Up")
     stream.send(b"n")
@@ -96,9 +99,10 @@ async test "mux channel: many concurrent calls on one connection each get their 
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.E/Say", req => b"r:" + req)
-    let ts = g.spawn(() => server.serve(port=18109))
+    let port_18109 = server.bind(port=0).port()
+    let ts = g.spawn(() => server.serve())
     @async.sleep(300)
-    let ch = MuxChannel::connect("127.0.0.1", 18109)
+    let ch = MuxChannel::connect("127.0.0.1", port_18109)
     let tp = g.spawn(() => ch.read_pump())
     // Five concurrent calls; each reply must match its own request.
     let payloads = [b"a", b"b", b"c", b"d", b"e"]
@@ -123,9 +127,10 @@ async test "mux channel: a lost connection wakes a stream and fails a unary call
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.E/Say", req => b"echo:" + req)
-    let ts = g.spawn(() => server.serve(port=18112))
+    let port_18112 = server.bind(port=0).port()
+    let ts = g.spawn(() => server.serve())
     @async.sleep(300)
-    let ch = MuxChannel::connect("127.0.0.1", 18112)
+    let ch = MuxChannel::connect("127.0.0.1", port_18112)
     let tp = g.spawn(() => ch.read_pump())
     let bidi = ch.open_bidi("/echo.E/Nothing")
     let waiting = g.spawn(() => bidi.recv())

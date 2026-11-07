@@ -10,9 +10,10 @@ async test "hedging with no delay does not double up on a single backend" {
       count[0] = count[0] + 1
       b"A:" + req
     })
-    let tb = g.spawn(() => backend.serve(port=18193))
+    let port_18193 = backend.bind(port=0).port()
+    let tb = g.spawn(() => backend.serve())
     @async.sleep(300)
-    let chan = ManagedChannel::connect([("127.0.0.1", 18193)])
+    let chan = ManagedChannel::connect([("127.0.0.1", port_18193)])
     let policy = @moonrpc.Hedging::new(
       attempts=3,
       delay=@moondate.Span::new(millis=0L),
@@ -44,12 +45,14 @@ async test "hedging runs two attempts in parallel across two backends" {
       b_hits[0] = b_hits[0] + 1
       b"B:" + req
     })
-    let ta = g.spawn(() => a.serve(port=18194))
-    let tb2 = g.spawn(() => b.serve(port=18195))
+    let port_18194 = a.bind(port=0).port()
+    let ta = g.spawn(() => a.serve())
+    let port_18195 = b.bind(port=0).port()
+    let tb2 = g.spawn(() => b.serve())
     @async.sleep(300)
     let chan = ManagedChannel::connect([
-      ("127.0.0.1", 18194),
-      ("127.0.0.1", 18195),
+      ("127.0.0.1", port_18194),
+      ("127.0.0.1", port_18195),
     ])
     let policy = @moonrpc.Hedging::new(
       attempts=2,
@@ -70,13 +73,11 @@ async test "hedging runs two attempts in parallel across two backends" {
 ///|
 /// Two backends for the A6 cases: the first answers UNAVAILABLE, with `pushback` in
 /// its trailers when given; the second answers OK. Each counts its calls.
-fn pair(
+async fn pair(
   g : @async.TaskGroup[Unit],
-  first : Int32,
-  second : Int32,
   counts : Array[Int32],
   pushback~ : Bytes = b"",
-) -> (@async.Task[Unit], @async.Task[Unit]) {
+) -> (@async.Task[Unit], @async.Task[Unit], Int32, Int32) {
   let a = GrpcServer::new()
   a.register_unary("/echo.E/Say", (ctx, _req) => {
     counts[0] = counts[0] + 1
@@ -91,18 +92,20 @@ fn pair(
     counts[1] = counts[1] + 1
     b"B:" + req
   })
-  (g.spawn(() => a.serve(port=first)), g.spawn(() => b.serve(port=second)))
+  let first = a.bind(port=0).port()
+  let second = b.bind(port=0).port()
+  (g.spawn(() => a.serve()), g.spawn(() => b.serve()), first, second)
 }
 
 ///|
 async test "a non-fatal status sends the next hedge at once, not after the delay" {
   @async.with_task_group(g => {
     let counts = [0, 0]
-    let (ta, tb) = pair(g, 18196, 18197, counts)
+    let (ta, tb, p1, p2) = pair(g, counts)
     @async.sleep(300)
     let chan = ManagedChannel::connect([
-      ("127.0.0.1", 18196),
-      ("127.0.0.1", 18197),
+      ("127.0.0.1", p1),
+      ("127.0.0.1", p2),
     ])
     // Ten seconds between hedges; the call is bounded to three, so only the
     // shortcut can answer it.
@@ -129,11 +132,11 @@ async test "a non-fatal status sends the next hedge at once, not after the delay
 async test "a pushback to stop sends no further hedge" {
   @async.with_task_group(g => {
     let counts = [0, 0]
-    let (ta, tb) = pair(g, 18198, 18199, counts, pushback=b"-1")
+    let (ta, tb, p1, p2) = pair(g, counts, pushback=b"-1")
     @async.sleep(300)
     let chan = ManagedChannel::connect([
-      ("127.0.0.1", 18198),
-      ("127.0.0.1", 18199),
+      ("127.0.0.1", p1),
+      ("127.0.0.1", p2),
     ])
     let policy = @moonrpc.Hedging::new(
       attempts=2,
@@ -157,10 +160,10 @@ async test "a pushback to stop sends no further hedge" {
 async test "a throttled channel sends no further hedge" {
   @async.with_task_group(g => {
     let counts = [0, 0]
-    let (ta, tb) = pair(g, 18200, 18201, counts)
+    let (ta, tb, p1, p2) = pair(g, counts)
     @async.sleep(300)
     let chan = ManagedChannel::connect(
-      [("127.0.0.1", 18200), ("127.0.0.1", 18201)],
+      [("127.0.0.1", p1), ("127.0.0.1", p2)],
       throttling=@moonrpc.Throttling::new(tokens=2, ratio=1.0),
     )
     let policy = @moonrpc.Hedging::new(

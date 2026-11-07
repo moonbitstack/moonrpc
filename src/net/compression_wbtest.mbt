@@ -23,11 +23,11 @@ async test "compression: gzip in both directions completes every call kind" {
       on_message: m => [m],
       on_end: () => [b"bye"],
     })
-    let task = g.spawn(() => server.serve(port=18231))
-    @async.sleep(300)
+    let port_18231 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     let chan = Channel::connect(
       "127.0.0.1",
-      18231,
+      port_18231,
       encoding=@moonrpc.Encoding::Gzip,
     )
     let first = chan.unary("/echo.Echo/Say", bulky)
@@ -52,11 +52,11 @@ async test "compression: deflate in both directions" {
     server.set_encoding(@moonrpc.Encoding::Deflate)
     let bulky = b"q".repeat(4096)
     server.register("/echo.Echo/Say", req => req)
-    let task = g.spawn(() => server.serve(port=18232))
-    @async.sleep(300)
+    let port_18232 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     let chan = Channel::connect(
       "127.0.0.1",
-      18232,
+      port_18232,
       encoding=@moonrpc.Encoding::Deflate,
     )
     assert_eq(chan.unary("/echo.Echo/Say", bulky).messages[0], bulky)
@@ -72,11 +72,11 @@ async test "compression: a plain client still reads a compressed server" {
     server.set_encoding(@moonrpc.Encoding::Gzip)
     let bulky = b"w".repeat(4096)
     server.register("/echo.Echo/Say", req => req + bulky)
-    let task = g.spawn(() => server.serve(port=18233))
-    @async.sleep(300)
+    let port_18233 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     // No encoding asked for: the server must fall back to identity rather than send a
     // gzip body at a caller that never said it could read one.
-    let chan = Channel::connect("127.0.0.1", 18233)
+    let chan = Channel::connect("127.0.0.1", port_18233)
     assert_eq(chan.unary("/echo.Echo/Say", b"p").messages[0], b"p" + bulky)
     chan.close()
     task.cancel()

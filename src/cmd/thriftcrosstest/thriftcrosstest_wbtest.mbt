@@ -6,14 +6,15 @@
 ///|
 async test "cross: the service passes its own client, binary" {
   @async.with_task_group(g => {
+    let listener = @net.bind_thrift(host="127.0.0.1", port=0)
+    let port_18310 = listener.addr().port()
     let task = g.spawn(() => {
-      @net.serve_thrift(host="127.0.0.1", port=18310, processor(), () => {
+      @net.serve_thrift_on(listener, processor(), () => {
         @thrift.Binary::new(b"")
       })
     })
-    @async.sleep(300)
     let proto : &@thrift.Protocol = @thrift.Binary::new(b"")
-    let client = @net.ThriftClient::connect("127.0.0.1", 18310, proto)
+    let client = @net.ThriftClient::connect("127.0.0.1", port_18310, proto)
     defer client.close()
     check(client, proto)
     task.cancel()
@@ -23,14 +24,15 @@ async test "cross: the service passes its own client, binary" {
 ///|
 async test "cross: the service passes its own client, compact" {
   @async.with_task_group(g => {
+    let listener = @net.bind_thrift(host="127.0.0.1", port=0)
+    let port_18311 = listener.addr().port()
     let task = g.spawn(() => {
-      @net.serve_thrift(host="127.0.0.1", port=18311, processor(), () => {
+      @net.serve_thrift_on(listener, processor(), () => {
         @thrift.Compact::new(b"")
       })
     })
-    @async.sleep(300)
     let proto : &@thrift.Protocol = @thrift.Compact::new(b"")
-    let client = @net.ThriftClient::connect("127.0.0.1", 18311, proto)
+    let client = @net.ThriftClient::connect("127.0.0.1", port_18311, proto)
     defer client.close()
     check(client, proto)
     task.cancel()

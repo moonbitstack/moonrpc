@@ -34,9 +34,11 @@ async test "backoff: a failed dial puts the channel on a clock, not on a retry s
 ///|
 async test "backoff: once the wait is over, the channel dials again and finds the backend" {
   @async.with_task_group(g => {
-    // A short wait, so the reconnect happens inside the test.
+    // A short wait, so the reconnect happens inside the test. Nobody is listening yet, so the
+    // first call is refused rather than queued.
+    let port = closed_port()
     let chan = ManagedChannel::connect(
-      [("127.0.0.1", 18262)],
+      [("127.0.0.1", port)],
       backoff=fixed_backoff(200L),
       rand=() => 0.5,
     )
@@ -45,7 +47,7 @@ async test "backoff: once the wait is over, the channel dials again and finds th
     // The backend comes up while the channel is waiting.
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => b"echo:" + req)
-    let task = g.spawn(() => server.serve(port=18262))
+    let task = g.spawn(() => server.serve(port=port))
     @async.sleep(400)
     let after = chan.unary("/echo.Echo/Say", b"x")
     assert_eq(after.grpc_status, 0)
@@ -60,10 +62,10 @@ async test "backoff: a settled channel keeps answering without waiting" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
     server.register("/echo.Echo/Say", req => req)
-    let task = g.spawn(() => server.serve(port=18263))
-    @async.sleep(300)
+    let port_18263 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     let chan = ManagedChannel::connect(
-      [("127.0.0.1", 18263)],
+      [("127.0.0.1", port_18263)],
       backoff=fixed_backoff(5000L),
       rand=() => 0.5,
     )

@@ -11,9 +11,10 @@ async test "channel: unary and Health/Check over a real socket, multiplexed on o
     let health = @moonrpc.HealthService::new()
     health.set_status("pkg.Svc", Serving)
     server.register_health(health)
-    let task = g.spawn(() => server.serve(port=18081))
+    let port_18081 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18081)
+    let chan = Channel::connect("127.0.0.1", port_18081)
     // first call: stream id 1.
     let r1 = chan.unary("/echo.Echo/Say", b"world")
     assert_eq(r1.status == b"200", true)
@@ -41,9 +42,10 @@ async test "channel: a server-streaming call receives every framed reply in orde
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
       [req + b"-1", req + b"-2", req + b"-3"]
     })
-    let task = g.spawn(() => server.serve(port=18082))
+    let port_18082 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18082)
+    let chan = Channel::connect("127.0.0.1", port_18082)
     let reply = chan.server_streaming("/count.C/Up", b"n")
     assert_eq(reply.grpc_status, 0)
     assert_eq(reply.messages.length(), 3)
@@ -68,9 +70,10 @@ async test "channel: a client-streaming call sends many messages for one reply o
       }
       buf.to_bytes()
     })
-    let task = g.spawn(() => server.serve(port=18083))
+    let port_18083 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18083)
+    let chan = Channel::connect("127.0.0.1", port_18083)
     let reply = chan.client_streaming("/sum.S/Add", [b"a", b"b", b"c"])
     assert_eq(reply.grpc_status, 0)
     assert_eq(reply.messages.length(), 1)
@@ -88,9 +91,10 @@ async test "channel: a bidi-streaming call exchanges a run of messages over a so
       on_message: m => [b"re:" + m],
       on_end: () => [b"bye"],
     })
-    let task = g.spawn(() => server.serve(port=18085))
+    let port_18085 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18085)
+    let chan = Channel::connect("127.0.0.1", port_18085)
     let reply = chan.bidi("/chat.C/Talk", [b"hi", b"there"])
     assert_eq(reply.grpc_status, 0)
     // one reply per request (on_message) plus the on_end reply, in order.
@@ -181,9 +185,10 @@ async test "channel: a unary call retries a retryable failure and then succeeds"
         b"ok"
       }
     })
-    let task = g.spawn(() => server.serve(port=18088))
+    let port_18088 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18088)
+    let chan = Channel::connect("127.0.0.1", port_18088)
     let policy = quick(3, 10L)
     let reply = chan.unary("/retry.R/Do", b"x", retry=policy)
     assert_eq(reply.grpc_status, 0)
@@ -207,9 +212,10 @@ async test "channel: retries are exhausted and the last retryable status is retu
       ctx.fail(@moonrpc.Status::code(Unavailable), "down")
       b""
     })
-    let task = g.spawn(() => server.serve(port=18089))
+    let port_18089 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18089)
+    let chan = Channel::connect("127.0.0.1", port_18089)
     let policy = quick(2, 10L)
     let reply = chan.unary("/retry.R/Never", b"x", retry=policy)
     assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
@@ -230,9 +236,10 @@ async test "channel: retries stop at the absolute deadline, not once per attempt
       ctx.fail(@moonrpc.Status::code(Unavailable), "down")
       b""
     })
-    let task = g.spawn(() => server.serve(port=18090))
+    let port_18090 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18090)
+    let chan = Channel::connect("127.0.0.1", port_18090)
     let policy = quick(5, 200L)
     let reply = chan.unary("/r.R/Down", b"x", timeout_millis=120, retry=policy)
     // The deadline fires during the first backoff; the call ends DEADLINE_EXCEEDED
@@ -283,9 +290,10 @@ async test "channel: -bin metadata base64s on the wire and round-trips as raw by
       }
       b"ok"
     })
-    let task = g.spawn(() => server.serve(port=18086))
+    let port_18086 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18086)
+    let chan = Channel::connect("127.0.0.1", port_18086)
     let reply = chan.unary("/m.M/Echo", b"", metadata=[
       { name: b"x-bin", value: raw, },
     ])
@@ -312,9 +320,10 @@ async test "channel: a failing call carries a google.rpc.Status in grpc-status-d
       ctx.add_error_detail(b"detail-any-bytes")
       b""
     })
-    let task = g.spawn(() => server.serve(port=18087))
+    let port_18087 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18087)
+    let chan = Channel::connect("127.0.0.1", port_18087)
     let reply = chan.unary("/e.E/Fail", b"")
     assert_eq(reply.grpc_status, @moonrpc.Status::code(NotFound))
     // The grpc-status-details-bin trailer carries a serialized google.rpc.Status,
@@ -360,9 +369,10 @@ async test "channel stream_take: collects streamed replies inline without a pump
     server.register_server_streaming("/count.C/Up", (_ctx, req) => {
       [req + b"-1", req + b"-2", req + b"-3"]
     })
-    let task = g.spawn(() => server.serve(port=18132))
+    let port_18132 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18132)
+    let chan = Channel::connect("127.0.0.1", port_18132)
     let got = chan.stream_take("/count.C/Up", b"n", 2)
     assert_eq(got.length() >= 2, true)
     assert_eq(got[0] == b"n-1", true)
@@ -378,9 +388,10 @@ async test "channel: each retry says how many attempts went before it" {
     let seen : Array[String] = []
     let server = GrpcServer::new()
     failing(server, "/retry.R/Count", seen)
-    let task = g.spawn(() => server.serve(port=18091))
+    let port_18091 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18091, rand=() => 0.5)
+    let chan = Channel::connect("127.0.0.1", port_18091, rand=() => 0.5)
     let reply = chan.unary("/retry.R/Count", b"x", retry=quick(4, 5L))
     assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
     assert_eq(seen, ["-", "1", "2", "3"])
@@ -395,9 +406,10 @@ async test "channel: a pushback to stop ends the call after one attempt" {
     let seen : Array[String] = []
     let server = GrpcServer::new()
     failing(server, "/retry.R/Stop", seen, pushback=b"-1")
-    let task = g.spawn(() => server.serve(port=18092))
+    let port_18092 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18092)
+    let chan = Channel::connect("127.0.0.1", port_18092)
     let reply = chan.unary("/retry.R/Stop", b"x", retry=quick(4, 5L))
     assert_eq(reply.grpc_status, @moonrpc.Status::code(Unavailable))
     assert_eq(seen.length(), 1)
@@ -412,12 +424,13 @@ async test "channel: a throttled channel does not retry" {
     let seen : Array[String] = []
     let server = GrpcServer::new()
     failing(server, "/retry.R/Throttled", seen)
-    let task = g.spawn(() => server.serve(port=18093))
+    let port_18093 = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
     @async.sleep(300)
     // Two tokens: the first failure leaves one, which is not over the half.
     let chan = Channel::connect(
       "127.0.0.1",
-      18093,
+      port_18093,
       throttling=@moonrpc.Throttling::new(tokens=2, ratio=1.0),
     )
     let _ = chan.unary("/retry.R/Throttled", b"x", retry=quick(4, 5L))
