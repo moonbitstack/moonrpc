@@ -9,3 +9,6 @@ src/examples/browser/**/pkg.generated.mbti
 docs/engine/
 src/examples/guide/**/pkg.generated.mbti
 scripts/interop/bin/
+
+# A suite run's log, when one is fetched for reading.
+suite.log
