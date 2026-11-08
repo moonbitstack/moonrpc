@@ -1,0 +1,26 @@
+# What this module claims, as the conformance suite reads it. The runner only exercises what is
+# declared here, so the file is a statement of scope rather than a filter applied afterwards.
+#
+# Declared: Connect over HTTP/1.1 and HTTP/2 (cleartext), the proto and JSON codecs, identity and
+# gzip, all five call shapes, trailers, and half-duplex bidi over HTTP/1.1.
+#
+# Not declared, because they are not implemented: Connect over GET (an idempotent call has to be
+# a GET with the message in query parameters), a message receive limit, TLS, and every
+# compression other than gzip.
+features:
+  versions: [HTTP_VERSION_1, HTTP_VERSION_2]
+  protocols: [PROTOCOL_CONNECT]
+  codecs: [CODEC_PROTO, CODEC_JSON]
+  compressions: [COMPRESSION_IDENTITY, COMPRESSION_GZIP]
+  streamTypes:
+    - STREAM_TYPE_UNARY
+    - STREAM_TYPE_CLIENT_STREAM
+    - STREAM_TYPE_SERVER_STREAM
+    - STREAM_TYPE_HALF_DUPLEX_BIDI_STREAM
+    - STREAM_TYPE_FULL_DUPLEX_BIDI_STREAM
+  supportsH2c: true
+  supportsTls: false
+  supportsTrailers: true
+  supportsHalfDuplexBidiOverHttp1: true
+  supportsConnectGet: false
+  supportsMessageReceiveLimit: false

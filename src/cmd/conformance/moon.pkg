@@ -1,0 +1,16 @@
+// The reference server, as the Connect conformance suite starts one: read where to listen from
+// the suite's handshake, announce the port that was bound, and serve until killed.
+import {
+  "moonbitstack/moonrpc/conformance" @reference,
+  "moonbitstack/moonrpc/net",
+  "moonbitstack/moonrpc/proto",
+  "moonbitlang/async",
+  "moonbitlang/async/fs",
+  "moonbitlang/core/buffer",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

@@ -1,0 +1,366 @@
+// The reference `ConformanceService`: six methods, answering whatever a test definition asks for
+// — a message, an error, headers and trailers — and echoing the request it saw so the suite can
+// check that nothing on the way in or out was mangled.
+//
+// The service is the same code the gRPC suite drives, minus the framing: a handler takes and
+// returns wire bytes here, and the Connect dispatch is what puts them on a socket. That is why
+// the same file answers over HTTP/1.1 and HTTP/2 without knowing which one it is on.
+
+///|
+/// The service, and the schema a JSON caller's body is read with.
+pub struct Service {
+  schema : @proto.Schema
+}
+
+///|
+/// Compile the definitions the service is specified by. The `.proto` sources are the ones in
+/// `idl/`, generated into `idl.mbt`; compiling them means the JSON codec and the handlers agree
+/// on a field number because both come from the same file.
+pub fn Service::new() -> Service raise @proto.PbError {
+  { schema: @proto.Schema::compile(sources()), }
+}
+
+///|
+pub fn Service::schema(self : Service) -> @proto.Schema {
+  self.schema
+}
+
+///|
+/// The six routes, keyed by the path a Connect caller posts to.
+pub fn Service::routes(_self : Service) -> Array[(String, @connect.Route)] {
+  [
+    (
+      unary_path,
+      {
+        input: unary_request,
+        output: unary_response,
+        handler: @stream.Handler::Unary((ctx, req) => answer_unary(ctx, req)),
+      },
+    ),
+    (
+      server_stream_path,
+      {
+        input: server_stream_request,
+        output: server_stream_response,
+        handler: @stream.Handler::ServerStreaming((ctx, req) => {
+          answer_server_stream(ctx, req)
+        }),
+      },
+    ),
+    (
+      client_stream_path,
+      {
+        input: client_stream_request,
+        output: client_stream_response,
+        handler: @stream.Handler::ClientStreaming((ctx, messages) => {
+          answer_client_stream(ctx, messages)
+        }),
+      },
+    ),
+    (
+      bidi_path,
+      {
+        input: bidi_request,
+        output: bidi_response,
+        handler: @stream.Handler::Bidi(ctx => bidi_handler(ctx)),
+      },
+    ),
+    (
+      idempotent_path,
+      {
+        input: idempotent_request,
+        output: idempotent_response,
+        handler: @stream.Handler::Unary((ctx, req) => answer_unary(ctx, req)),
+      },
+    ),
+    (
+      unimplemented_path,
+      {
+        input: unimplemented_request,
+        output: unimplemented_response,
+        handler: @stream.Handler::Unary((ctx, _req) => {
+          ctx.fail(
+            @wire.Status::code(@wire.Status::Unimplemented),
+            "this method is not implemented",
+          )
+          b""
+        }),
+      },
+    ),
+  ]
+}
+
+// -- where each method lives -------------------------------------------------
+
+///|
+let service_prefix : String = "/connectrpc.conformance.v1.ConformanceService/"
+
+///|
+let unary_path : String = service_prefix + "Unary"
+
+///|
+let server_stream_path : String = service_prefix + "ServerStream"
+
+///|
+let client_stream_path : String = service_prefix + "ClientStream"
+
+///|
+let bidi_path : String = service_prefix + "BidiStream"
+
+///|
+let idempotent_path : String = service_prefix + "IdempotentUnary"
+
+///|
+let unimplemented_path : String = service_prefix + "Unimplemented"
+
+// -- the message each method takes and gives --------------------------------
+
+///|
+let package_prefix : String = ".connectrpc.conformance.v1."
+
+///|
+let unary_request : String = package_prefix + "UnaryRequest"
+
+///|
+let unary_response : String = package_prefix + "UnaryResponse"
+
+///|
+let server_stream_request : String = package_prefix + "ServerStreamRequest"
+
+///|
+let server_stream_response : String = package_prefix + "ServerStreamResponse"
+
+///|
+let client_stream_request : String = package_prefix + "ClientStreamRequest"
+
+///|
+let client_stream_response : String = package_prefix + "ClientStreamResponse"
+
+///|
+let bidi_request : String = package_prefix + "BidiStreamRequest"
+
+///|
+let bidi_response : String = package_prefix + "BidiStreamResponse"
+
+///|
+let idempotent_request : String = package_prefix + "IdempotentUnaryRequest"
+
+///|
+let idempotent_response : String = package_prefix + "IdempotentUnaryResponse"
+
+///|
+let unimplemented_request : String = package_prefix + "UnimplementedRequest"
+
+///|
+let unimplemented_response : String = package_prefix + "UnimplementedResponse"
+
+///|
+/// The `type_url` a request is echoed under, which is what a reader uses to decode it again.
+fn type_url(message : String) -> String {
+  "type.googleapis.com/connectrpc.conformance.v1." + message
+}
+
+// -- the handlers ------------------------------------------------------------
+
+///|
+/// One message back, or the error the definition named.
+fn answer_unary(ctx : @stream.RpcContext, request : Bytes) -> Bytes {
+  let definition = decode_unary_def(definition_of(request))
+  apply_headers(ctx, definition.headers)
+  apply_trailers(ctx, definition.trailers)
+  match definition.error {
+    Some(error) => {
+      ctx.fail(error.code, message_text(error))
+      b""
+    }
+    None => {
+      let info = encode_request_info(
+        seen_headers(ctx),
+        ctx.deadline_millis,
+        [request],
+        type_url("UnaryRequest"),
+      )
+      encode_payload_response(
+        encode_payload(definition.data, definition.has_data, info),
+      )
+    }
+  }
+}
+
+///|
+/// The messages a definition asked for, in order, the first one carrying the request echo.
+fn answer_server_stream(
+  ctx : @stream.RpcContext,
+  request : Bytes,
+) -> Array[Bytes] {
+  let definition = decode_stream_def(definition_of(request))
+  apply_headers(ctx, definition.headers)
+  apply_trailers(ctx, definition.trailers)
+  let out : Array[Bytes] = []
+  for i = 0; i < definition.data.length(); i = i + 1 {
+    let info = if i == 0 {
+      encode_request_info(
+        seen_headers(ctx),
+        ctx.deadline_millis,
+        [request],
+        type_url("ServerStreamRequest"),
+      )
+    } else {
+      b""
+    }
+    out.push(
+      encode_payload_response(encode_payload(definition.data[i], true, info)),
+    )
+  }
+  // An error is raised after the messages, which is where the specification puts it.
+  match definition.error {
+    Some(error) => ctx.fail(error.code, message_text(error))
+    None => ()
+  }
+  out
+}
+
+///|
+/// One message back, echoing every request the caller sent.
+fn answer_client_stream(
+  ctx : @stream.RpcContext,
+  messages : Array[Bytes],
+) -> Bytes {
+  let definition = if messages.length() > 0 {
+    decode_unary_def(definition_of(messages[0]))
+  } else {
+    empty_unary_def()
+  }
+  apply_headers(ctx, definition.headers)
+  apply_trailers(ctx, definition.trailers)
+  match definition.error {
+    Some(error) => {
+      ctx.fail(error.code, message_text(error))
+      b""
+    }
+    None => {
+      let info = encode_request_info(
+        seen_headers(ctx),
+        ctx.deadline_millis,
+        messages,
+        type_url("ClientStreamRequest"),
+      )
+      encode_payload_response(
+        encode_payload(definition.data, definition.has_data, info),
+      )
+    }
+  }
+}
+
+///|
+/// A bidirectional call: one answer per request when the definition asked for full duplex, and
+/// the whole set once the caller has finished when it did not.
+fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
+  let definition : Ref[StreamDef?] = Ref(None)
+  let duplex : Ref[Bool] = Ref(false)
+  let received : Ref[Array[Bytes]] = Ref([])
+  let index : Ref[Int32] = Ref(0)
+  let set_up : Ref[Bool] = Ref(false)
+  @stream.BidiHandler::{
+    on_message: request => {
+      if !set_up.val {
+        set_up.val = true
+        let parsed = decode_stream_def(definition_of(request))
+        duplex.val = full_duplex_of(request)
+        apply_headers(ctx, parsed.headers)
+        apply_trailers(ctx, parsed.trailers)
+        definition.val = Some(parsed)
+      }
+      let parsed = match definition.val {
+        Some(d) => d
+        None => return []
+      }
+      if duplex.val {
+        // One request, one answer: this is the case a whole-body dispatch cannot serve.
+        received.val = [request]
+        let at = index.val
+        index.val = at + 1
+        if at < parsed.data.length() {
+          let info = encode_request_info(
+            seen_headers(ctx),
+            ctx.deadline_millis,
+            received.val,
+            type_url("BidiStreamRequest"),
+          )
+          [encode_payload_response(encode_payload(parsed.data[at], true, info))]
+        } else {
+          match parsed.error {
+            Some(error) => {
+              ctx.fail(error.code, message_text(error))
+              []
+            }
+            None => []
+          }
+        }
+      } else {
+        received.val.push(request)
+        []
+      }
+    },
+    on_end: () => {
+      if duplex.val {
+        return []
+      }
+      let parsed = match definition.val {
+        Some(d) => d
+        None => empty_stream_def()
+      }
+      let out : Array[Bytes] = []
+      for i = 0; i < parsed.data.length(); i = i + 1 {
+        let info = if i == 0 {
+          encode_request_info(
+            seen_headers(ctx),
+            ctx.deadline_millis,
+            received.val,
+            type_url("BidiStreamRequest"),
+          )
+        } else {
+          b""
+        }
+        out.push(
+          encode_payload_response(encode_payload(parsed.data[i], true, info)),
+        )
+      }
+      if parsed.data.length() == 0 {
+        match parsed.error {
+          Some(error) => ctx.fail(error.code, message_text(error))
+          None => ()
+        }
+      }
+      out
+    },
+  }
+}
+
+///|
+/// The text an error carries. An error with no message of its own is sent with an empty one,
+/// which the suite treats as "do not check".
+fn message_text(error : ErrorSpec) -> String {
+  match error.message {
+    Some(text) => text
+    None => ""
+  }
+}
+
+///|
+/// A definition that asks for nothing, which is what a request without one means.
+fn empty_unary_def() -> UnaryDef {
+  {
+    headers: [],
+    data: b"",
+    has_data: false,
+    error: None,
+    trailers: [],
+    delay_ms: 0,
+  }
+}
+
+///|
+fn empty_stream_def() -> StreamDef {
+  { headers: [], data: [], delay_ms: 0, error: None, trailers: [], }
+}

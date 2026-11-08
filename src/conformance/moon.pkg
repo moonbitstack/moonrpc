@@ -1,0 +1,14 @@
+// The reference service the Connect conformance suite drives: the messages of
+// `connectrpc.conformance.v1` and the six RPCs that answer them. Pure — the handlers take and
+// return wire bytes, so the same service is served by either HTTP version.
+import {
+  "moonbitstack/moonrpc/connect",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/wire",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "moonbitstack/moonhttp/header",
+} for "wbtest"

@@ -1,0 +1,74 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/conformance"
+
+import {
+  "moonbitstack/moonrpc/connect",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+}
+
+// Values
+pub fn apply_headers(@stream.RpcContext, Array[HeaderEntry]) -> Unit
+
+pub fn apply_trailers(@stream.RpcContext, Array[HeaderEntry]) -> Unit
+
+pub fn decode_stream_def(Bytes) -> StreamDef
+
+pub fn decode_unary_def(Bytes) -> UnaryDef
+
+pub fn definition_of(Bytes) -> Bytes
+
+pub fn encode_header(HeaderEntry) -> Bytes
+
+pub fn encode_payload(Bytes, Bool, Bytes) -> Bytes
+
+pub fn encode_payload_response(Bytes) -> Bytes
+
+pub fn encode_request_info(Array[HeaderEntry], Int32?, Array[Bytes], String) -> Bytes
+
+pub fn full_duplex_of(Bytes) -> Bool
+
+pub fn seen_headers(@stream.RpcContext) -> Array[HeaderEntry]
+
+pub fn sources() -> Array[(String, String)]
+
+// Errors
+
+// Types and methods
+pub(all) struct ErrorSpec {
+  mut code : Int32
+  mut message : String?
+}
+
+pub(all) struct HeaderEntry {
+  mut name : String
+  values : Array[String]
+}
+
+pub struct Service {
+  schema : @proto.Schema
+}
+pub fn Service::new() -> Self raise @proto.PbError
+pub fn Service::routes(Self) -> Array[(String, @connect.Route)]
+pub fn Service::schema(Self) -> @proto.Schema
+
+pub(all) struct StreamDef {
+  headers : Array[HeaderEntry]
+  data : Array[Bytes]
+  mut delay_ms : Int32
+  mut error : ErrorSpec?
+  trailers : Array[HeaderEntry]
+}
+
+pub(all) struct UnaryDef {
+  headers : Array[HeaderEntry]
+  mut data : Bytes
+  mut has_data : Bool
+  mut error : ErrorSpec?
+  trailers : Array[HeaderEntry]
+  mut delay_ms : Int32
+}
+
+// Type aliases
+
+// Traits
