@@ -161,14 +161,25 @@ fn response_headers(
   for h in ctx.resp_headers {
     out.push(h)
   }
-  // A unary reply has no trailer channel in this protocol, so the trailing metadata travels
-  // beside the initial metadata rather than being dropped.
+  // A unary reply carries its trailing metadata as response headers named `Trailer-<name>`,
+  // which is how the protocol spells a trailer on a call whose body is one message and whose
+  // framing is a length rather than a chunk. A reader strips the prefix and hands what is left
+  // to the caller as a trailer; without it the entry would read as an ordinary header.
   if !content.streaming {
     for h in ctx.resp_trailers {
-      out.push(h)
+      out.push({ name: trailer_name(h.name), value: h.value, })
     }
   }
   out
+}
+
+///|
+/// The header name a trailer is written under: `Trailer-` and the trailer's own name.
+fn trailer_name(name : Bytes) -> Bytes {
+  let out = Buffer()
+  out.write_bytes(b"Trailer-")
+  out.write_bytes(name)
+  out.to_bytes()
 }
 
 ///|
@@ -274,6 +285,10 @@ pub struct Session {
   priv bidi : @stream.BidiHandler?
   priv mut failure : (@wire.Status, String)?
   priv mut ended : Bool
+  // Whether the end-stream envelope has been written. A call whose handler fails mid-stream is
+  // closed there and then: the caller may still be sending, and waiting for it to stop would
+  // deadlock against a caller waiting for the error.
+  priv mut closed : Bool
 }
 
 ///|
@@ -311,7 +326,11 @@ pub fn Server::start(
   if refuse is None {
     match route {
       None =>
-        refuse = Some((@wire.Status::Unimplemented, "no method at " + path, 0))
+        // The protocol answers a path it does not serve with 404, which a caller reads back as
+        // `unimplemented`; the status is the part the protocol decides, the code is not.
+        refuse = Some(
+          (@wire.Status::Unimplemented, "no method at " + path, 404),
+        )
       Some(r) =>
         match r.handler {
           Pushed(_) =>
@@ -349,7 +368,15 @@ pub fn Server::start(
     bidi,
     failure: None,
     ended: false,
+    closed: false,
   }
+}
+
+///|
+/// Whether the call is over: the end-stream envelope has been written, so the driver can end
+/// the response without waiting for the request to end.
+pub fn Session::closed(self : Session) -> Bool {
+  self.closed
 }
 
 ///|
@@ -424,6 +451,12 @@ pub fn Session::feed(self : Session, data : Bytes) -> Bytes {
       None => break
     }
     self.dispatch(message, out)
+    // A handler that failed while reading has said the last word on this call; the caller gets
+    // the end marker now rather than after it decides to stop sending.
+    if self.ctx.status_fail is Some(_) && self.failure is None {
+      self.write_end(out)
+      break
+    }
   }
   out.to_bytes()
 }
@@ -441,7 +474,13 @@ pub fn Session::finish(self : Session) -> Response {
     Some((status, message)) =>
       // Streaming already sent its head, so the outcome travels in the end envelope instead.
       if !self.content.streaming {
-        return failure(self.content, status, message)
+        return failure(
+          self.content,
+          status,
+          message,
+          headers=self.ctx.resp_headers,
+          trailers=self.ctx.resp_trailers,
+        )
       }
     None => ()
   }
@@ -458,10 +497,12 @@ fn Session::inflate(self : Session, envelope : Envelope) -> Bytes? {
     return Some(envelope.payload)
   }
   if !header_lists(self.headers, b"connect-content-encoding", "gzip") {
+    // A message flagged as compressed on a call that declared no encoding it decodes is a
+    // disagreement between the envelope and the head, not a feature this server lacks.
     self.failure = Some(
       (
-        @wire.Status::Unimplemented,
-        "this server does not decode that content encoding",
+        @wire.Status::Internal,
+        "a compressed message arrived, but the call named no encoding",
       ),
     )
     return None
@@ -586,26 +627,60 @@ fn Session::finish_unary(self : Session) -> Response {
     }
   }
   match self.failure {
-    Some((status, msg)) => return failure(self.content, status, msg)
+    Some((status, msg)) =>
+      return failure(
+        self.content,
+        status,
+        msg,
+        headers=self.ctx.resp_headers,
+        trailers=self.ctx.resp_trailers,
+      )
     None => ()
   }
   let replies = match self.run(messages) {
     Some(r) => r
-    None => return failure(self.content, Internal, "the handler did not answer")
+    None =>
+      return failure(
+        self.content,
+        Internal,
+        "the handler did not answer",
+        headers=self.ctx.resp_headers,
+        trailers=self.ctx.resp_trailers,
+      )
   }
   let (status, why) = self.outcome()
   if status != @wire.Status::Ok {
-    return failure(self.content, status, why, details=self.details())
+    return failure(
+      self.content,
+      status,
+      why,
+      details=self.details(),
+      headers=self.ctx.resp_headers,
+      trailers=self.ctx.resp_trailers,
+    )
   }
   guard replies.length() > 0 else {
-    return failure(self.content, Internal, "the handler answered nothing")
+    return failure(
+      self.content,
+      Internal,
+      "the handler answered nothing",
+      headers=self.ctx.resp_headers,
+      trailers=self.ctx.resp_trailers,
+    )
   }
   let encoded = self.server.encode_message(
     replies[0],
     self.content.codec,
     self.output_name(),
   ) catch {
-    e => return failure(self.content, status_of_error(e), message_of_error(e))
+    e =>
+      return failure(
+        self.content,
+        status_of_error(e),
+        message_of_error(e),
+        headers=self.ctx.resp_headers,
+        trailers=self.ctx.resp_trailers,
+      )
   }
   let (body, _) = maybe_compress(self.headers, encoded, b'\x00')
   let headers = response_headers(self.ctx, self.content)
@@ -618,6 +693,12 @@ fn Session::finish_unary(self : Session) -> Response {
 ///|
 fn Session::finish_streaming(self : Session) -> Response {
   let body = Buffer()
+  // A call the handler already closed owes nothing more: the rest of the request is not read
+  // and the envelopes still waiting for one are not parsed.
+  if self.closed {
+    let head = self.head()
+    return { status: head.status, headers: head.headers, body: b"", }
+  }
   if self.pending.to_bytes().length() > 0 && self.failure is None {
     self.failure = Some(
       (@wire.Status::Internal, "a truncated envelope ended the request"),
@@ -642,6 +723,19 @@ fn Session::finish_streaming(self : Session) -> Response {
       }
     None => ()
   }
+  if !self.closed {
+    body.write_bytes(self.end_marker())
+  }
+  let head = self.head()
+  { status: head.status, headers: head.headers, body: body.to_bytes(), }
+}
+
+///|
+/// The envelope that closes a streaming call: the outcome, and the trailing metadata a handler
+/// attached. Writing it marks the call over, so a second caller — the end of the request, or a
+/// failure noticed while the caller was still sending — does not write a second one.
+fn Session::end_marker(self : Session) -> Bytes {
+  self.closed = true
   let (status, why) = self.outcome()
   let members : Map[String, Json] = Map([])
   if status != @wire.Status::Ok {
@@ -669,14 +763,16 @@ fn Session::finish_streaming(self : Session) -> Response {
     }
     members["metadata"] = Json::object(encoded)
   }
-  body.write_bytes(
-    encode_envelope(
-      @utf8.encode(Json::object(members).stringify()),
-      flags=flag_end_stream,
-    ),
+  encode_envelope(
+    @utf8.encode(Json::object(members).stringify()),
+    flags=flag_end_stream,
   )
-  let head = self.head()
-  { status: head.status, headers: head.headers, body: body.to_bytes(), }
+}
+
+///|
+/// Close the call into `out`: the end marker, and nothing after it.
+fn Session::write_end(self : Session, out : Buffer) -> Unit {
+  out.write_bytes(self.end_marker())
 }
 
 ///|
@@ -754,24 +850,28 @@ fn Session::run(self : Session, messages : Array[Bytes]) -> Array[Bytes]? {
       match route.handler {
         Unary(f) => {
           if messages.length() != 1 {
-            self.failure = Some(
-              (
-                @wire.Status::Unimplemented,
-                "a unary call carries exactly one message",
-              ),
-            )
+            if self.failure is None {
+              self.failure = Some(
+                (
+                  @wire.Status::Unimplemented,
+                  "a unary call carries exactly one message",
+                ),
+              )
+            }
             return None
           }
           Some([f(ctx, messages[0])])
         }
         ServerStreaming(f) => {
           if messages.length() != 1 {
-            self.failure = Some(
-              (
-                @wire.Status::Unimplemented,
-                "a server-streaming call carries exactly one request message",
-              ),
-            )
+            if self.failure is None {
+              self.failure = Some(
+                (
+                  @wire.Status::Unimplemented,
+                  "a server-streaming call carries exactly one request message",
+                ),
+              )
+            }
             return None
           }
           let out = []
@@ -831,18 +931,29 @@ fn failure(
   status : @wire.Status,
   message : String,
   details~ : Array[(String, Json)] = [],
+  headers~ : Array[@header.Header] = [],
+  trailers~ : Array[@header.Header] = [],
   http~ : Int32 = 0,
 ) -> Response {
   let body = error_json(status, message, details~)
   let http_status = if http == 0 { http_status_of(status) } else { http }
   if !content.streaming {
-    let headers : Array[@header.Header] = [
+    let fields : Array[@header.Header] = [
       { name: b"content-type", value: @utf8.encode("application/json"), },
       { name: b"connect-protocol-version", value: b"1", },
     ]
+    // A failure is still an answer from a handler, so the metadata it set travels with it —
+    // the initial metadata as itself, the trailing metadata in the spelling a unary reply gives
+    // it, which is the only trailer channel a one-message body has.
+    for h in headers {
+      fields.push(h)
+    }
+    for h in trailers {
+      fields.push({ name: trailer_name(h.name), value: h.value, })
+    }
     return {
       status: http_status,
-      headers,
+      headers: fields,
       body: @utf8.encode(body.stringify()),
     }
   }

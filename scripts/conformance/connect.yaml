@@ -25,8 +25,7 @@ features:
   supportsConnectGet: false
   supportsMessageReceiveLimit: false
 
-# Not declared and not run: the `Timeouts` group. It asks the server to miss a deadline — a small
-# `connect-timeout-ms` with a `response_delay_ms` larger than it — and expects DEADLINE_EXCEEDED.
-# A handler here cannot wait: the dispatch is synchronous, and the only handler shape that sleeps
-# is `Pushed`, which this transport does not serve yet. The workflow skips that suite by name,
-# so the gap is visible in the job rather than hidden in a pass.
+# Also run, though nothing here declares it: the `Timeouts` group. It asks the server to miss a
+# deadline — a small `connect-timeout-ms` with a `response_delay_ms` larger than it — and expects
+# DEADLINE_EXCEEDED. The reference service reaches that answer by comparing the two rather than
+# by sleeping, so the group passes without a handler the dispatch would have to wait for.

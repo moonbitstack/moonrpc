@@ -738,19 +738,22 @@ is the configuration it runs under. CI starts `cmd/conformance`, which reports t
 on standard output the way the suite expects, and runs `connectconformance --mode server` against
 it over both HTTP versions.
 
-That job is advisory: it publishes the pass and fail counts rather than gating the build, because
-the suite is not yet clean — 641 of 724 cases pass. The failures it drove out along the way are
-all fixed, and each was a disagreement between this encoder and the protocol rather than a
-missing feature: `metadata` as a map of lists, the `connect-timeout-ms` header, error details as
-`Any` in unpadded base64, a gzip'd unary body, a reply head sent before the request was read,
-`415` for a content type the server does not read, and an enum field compiled as a message — that
-last one alone accounted for 260 cases, because a dropped enum value turned every error into a
-success.
+That job gates the build: the suite is clean — 724 of 724 cases pass, over both HTTP versions, both
+codecs, and identity and gzip. Every failure it drove out along the way was a disagreement
+between this encoder and the protocol rather than a missing feature: `metadata` as a map of
+lists, the `connect-timeout-ms` header, error details as `Any` in unpadded base64, a gzip'd unary
+body, a reply head sent before the request was read, `415` for a content type the server does not
+read, and an enum field compiled as a message — that last one alone accounted for 260 cases,
+because a dropped enum value turned every error into a success.
 
-What the remaining 83 have in common is one unexamined path: JSON over gzip over HTTP/1.1
-streaming. A bidirectional half-duplex call on it answers without the error its definition asked
-for, and a server-streamed error carries the wrong number of details. That is where the next
-visit starts.
+The rest were about the parts of the protocol a call shape has rather than a body does. A unary
+reply carries trailing metadata as `Trailer-`-prefixed headers, since a one-message body has no
+other trailer channel. A path the server does not serve is a `404` that reads back as
+`unimplemented`, and a verb that is not `POST` is a `405`. A full-duplex reply echoes the request
+it answers, and only its first reply carries the call's headers and deadline. A streaming reply
+whose handler fails is closed at that moment rather than when the caller stops sending, which is
+what a full-duplex caller waiting for the error needs. And HTTP/2 field names are lowercased on
+the way out: a capital in one is a connection error the peer answers with `RST_STREAM`.
 
 The client is the same protocol from the other side, written against one method rather than a
 socket, so a transport is forty lines:

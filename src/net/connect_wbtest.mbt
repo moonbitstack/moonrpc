@@ -84,7 +84,7 @@ async test "connect over HTTP/1.1: a unary call answers the message it was given
 }
 
 ///|
-async test "connect over HTTP/1.1: an unknown method is a 501 with an error body" {
+async test "connect over HTTP/1.1: an unknown method is a 404 with an error body" {
   @async.with_task_group(g => {
     let server = echo_connect_server()
     let port = server.bind(port=0).port()
@@ -92,7 +92,7 @@ async test "connect over HTTP/1.1: an unknown method is a 501 with an error body
     let (conn, http) = h1_connect(port)
     defer conn.close()
     let (status, answer) = h1_exchange(conn, http, "/test.Echo/Missing", b"")
-    assert_eq(status, 501)
+    assert_eq(status, 404)
     assert_true(@utf8.decode_lossy(answer).contains("unimplemented"))
     task.cancel()
   })
@@ -209,13 +209,13 @@ async test "connect over HTTP/2: a unary call answers the message it was given" 
 }
 
 ///|
-async test "connect over HTTP/2: an unknown method is 501 with an error body" {
+async test "connect over HTTP/2: an unknown method is a 404 with an error body" {
   @async.with_task_group(g => {
     let server = echo_connect_server()
     let port = server.bind(port=0).port()
     let task = g.spawn(() => server.serve())
     let (status, answer) = h2_call("127.0.0.1", port, "/test.Echo/None", b"")
-    assert_eq(status, "501")
+    assert_eq(status, "404")
     assert_true(@utf8.decode_lossy(answer).contains("unimplemented"))
     task.cancel()
   })

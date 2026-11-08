@@ -135,6 +135,22 @@ async fn serve_h1_connection(
     }
     match event {
       @http1.Event::Request(request) => {
+        // A Connect call is a POST; any other verb is answered with the one status that says
+        // so, before a body is read.
+        if request.verb != "POST" {
+          let refusal = @http1.Response::of(
+            405,
+            fields=[{ name: b"allow", value: b"POST", }],
+            body=@http1.Body::Sized(0),
+          )
+          conn.write(http.send(@http1.Event::Response(refusal))) catch {
+            _ => break
+          }
+          conn.write(http.send(@http1.Event::End([]))) catch {
+            _ => break
+          }
+          break
+        }
         head = Some(request)
         version = request.version
         body.reset()
@@ -157,6 +173,14 @@ async fn serve_h1_connection(
               conn.write(http.send(@http1.Event::Data(reply))) catch {
                 _ => break
               }
+            }
+            // A handler that failed while the caller was still sending has closed the call:
+            // the response ends here, not when the caller stops sending.
+            if s.closed() {
+              conn.write(http.send(@http1.Event::End([]))) catch {
+                _ => break
+              }
+              break
             }
           }
           None => ()

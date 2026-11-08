@@ -649,11 +649,9 @@ jobs:
           tar xzf "$RUNNER_TEMP/runner.tar.gz" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/connectconformance" --version
 
-      # Advisory for now: the run reports where the implementation stands, and the job stays
-      # green so that the rest of the matrix keeps gating. The numbers it prints are copied into
-      # the README's Connect chapter, so a regression is visible as a change there.
+      # Gating: the suite is the criterion, so a regression here fails the build the way a test
+      # does. Every case it runs is declared in `scripts/conformance/connect.yaml`.
       - name: run the suite
-        continue-on-error: true
         run: |
           "$RUNNER_TEMP/connectconformance" \
             --mode server \

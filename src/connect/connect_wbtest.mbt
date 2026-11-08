@@ -131,3 +131,18 @@ test "connect: a body that is not an error reads as unknown without a message" {
   assert_eq(status, @wire.Status::Unknown)
   assert_eq(message, "")
 }
+
+///|
+test "connect: a unary reply's Trailer- headers come back as trailers" {
+  let (headers, trailers) = split_unary_headers([
+    { name: b"content-type", value: b"application/json", },
+    { name: b"trailer-x-done", value: b"yes", },
+    { name: b"x-plain", value: b"1", },
+  ])
+  // The prefix is matched whatever case the transport spelled it in, and it is stripped: the
+  // caller sees the name the server used, not the transport's spelling of it.
+  assert_eq(trailers.length(), 1)
+  assert_eq(trailers[0].name, b"x-done")
+  assert_eq(trailers[0].value, b"yes")
+  assert_eq(headers.length(), 2)
+}

@@ -5,7 +5,7 @@ import {
   "moonbitstack/moonrpc/net",
   "moonbitstack/moonrpc/proto",
   "moonbitlang/async",
-  "moonbitlang/async/fs",
+  "moonbitlang/async/stdio",
   "moonbitlang/core/buffer",
 }
 

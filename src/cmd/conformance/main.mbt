@@ -1,6 +1,6 @@
 // The reference service, served the way the conformance suite starts a server under test: the
 // suite launches this process, and the process answers by writing a `ServerCompatResponse` —
-// the host and the port it bound — to standard output, delimited by a varint length.
+// the host and the port it bound — to standard output, behind a four-octet big-endian length.
 //
 // The suite's request is not read. It says which protocol and HTTP version to support, and this
 // server supports all of them on one listener: whether a connection speaks HTTP/1.1 or HTTP/2 is
@@ -33,15 +33,15 @@ fn main {
 
 ///|
 /// Tell the suite where to connect: a `ServerCompatResponse` with `host` in field 1 and `port`
-/// in field 2, behind a varint length.
+/// in field 2, behind the fixed-width length the suite's reader takes.
 async fn announce(port : Int32) -> Unit {
   let body = @proto.PbWriter::new()
   body.string_(1, "127.0.0.1")
   body.uint32(2, port.reinterpret_as_uint())
   let message = body.to_bytes()
-  let out = @fs.open("/dev/stdout", mode=@fs.WriteOnly)
-  defer out.close()
-  out.write(delimited(message))
+  // The port goes to standard output as bytes, not text: the length in front of the message is
+  // binary, and `@fs` has no portable name for the stream this process was started with.
+  @stdio.stdout.write(delimited(message))
 }
 
 ///|

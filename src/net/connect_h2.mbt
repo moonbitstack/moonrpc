@@ -145,6 +145,15 @@ async fn serve_h2_connection(
             feed_h2_call(conn, encoder, call, data) catch {
               _ => ()
             }
+            // A handler that failed while the caller was still sending has closed the call:
+            // the response ends here, not when the caller gives up on a reply that never comes.
+            if h2_call_closed(call) {
+              call.want_end = true
+              flush_h2(conn, encoder, call) catch {
+                _ => ()
+              }
+              calls.remove(stream_id)
+            }
             if end_stream {
               finish_h2_call(conn, encoder, call) catch {
                 _ => ()
@@ -172,6 +181,21 @@ async fn serve_h2_connection(
 }
 
 ///|
+/// The same fields with lowercase names. HTTP/2 requires them — a name with a capital in it is
+/// a connection error the peer reports as `PROTOCOL_ERROR` — while a handler names the metadata
+/// it sets the way HTTP/1.1 spells it, so the fold happens at the one place that needs it.
+fn lower_fields(fields : Array[@header.Header]) -> Array[@header.Header] {
+  let out : Array[@header.Header] = []
+  for h in fields {
+    out.push({
+      name: @utf8.encode(@utf8.decode_lossy(h.name).to_lower()),
+      value: h.value,
+    })
+  }
+  out
+}
+
+///|
 /// The value of the first field named `name`.
 fn field_value(headers : Array[@header.Header], name : Bytes) -> Bytes? {
   for h in headers {
@@ -180,6 +204,15 @@ fn field_value(headers : Array[@header.Header], name : Bytes) -> Bytes? {
     }
   }
   None
+}
+
+///|
+/// Whether the call in flight has written its end marker.
+fn h2_call_closed(call : H2Call) -> Bool {
+  match call.session {
+    Some(session) => session.closed()
+    None => false
+  }
 }
 
 ///|
@@ -196,10 +229,12 @@ async fn open_h2_call(
     None => b""
   }
   if verb != b"POST" {
-    let head = encoder.encode([
-      { name: b":status", value: b"405", },
-      { name: b"allow", value: b"POST", },
-    ])
+    let head = encoder.encode(
+      lower_fields([
+        { name: b":status", value: b"405", },
+        { name: b"allow", value: b"POST", },
+      ]),
+    )
     conn.write(
       @http2.Frame::Headers(
         stream_id=call.id,
@@ -233,6 +268,9 @@ async fn feed_h2_call(
   call : H2Call,
   data : Bytes,
 ) -> Unit {
+  if call.end_sent {
+    return
+  }
   match call.session {
     Some(session) =>
       if session.streaming() && !session.refused() {
@@ -284,7 +322,7 @@ async fn finish_h2_call(
         conn.write(
           @http2.Frame::Headers(
             stream_id=call.id,
-            fragment=encoder.encode(fields),
+            fragment=encoder.encode(lower_fields(fields)),
             end_stream=answer.body.length() == 0,
             end_headers=true,
             priority=None,
@@ -337,7 +375,7 @@ async fn flush_h2(
           conn.write(
             @http2.Frame::Headers(
               stream_id=call.id,
-              fragment=encoder.encode(fields),
+              fragment=encoder.encode(lower_fields(fields)),
               end_stream=false,
               end_headers=true,
               priority=None,

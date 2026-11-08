@@ -53,6 +53,25 @@ fn reply_headers(headers : Array[@header.Header]) -> Array[@header.Header] {
 }
 
 ///|
+/// A unary reply's headers, split into the ones that are headers and the ones a `Trailer-`
+/// prefix marks as trailing metadata. That prefix is how the protocol gives a call whose body
+/// is a single message a trailer channel without chunking it.
+fn split_unary_headers(
+  headers : Array[@header.Header],
+) -> (Array[@header.Header], Array[@header.Header]) {
+  let plain : Array[@header.Header] = []
+  let trailers : Array[@header.Header] = []
+  for h in headers {
+    if @utf8.decode_lossy(h.name).to_lower().has_prefix("trailer-") {
+      trailers.push({ name: h.name[8:].to_owned(), value: h.value, })
+    } else {
+      plain.push(h)
+    }
+  }
+  (plain, trailers)
+}
+
+///|
 /// The headers a call sends: the content type the body is in, and the caller's metadata.
 fn request_headers(
   content : Content,
@@ -141,7 +160,7 @@ pub async fn[T : Transport] Client::unary(
   let all = match timeout_millis {
     Some(millis) =>
       append(headers, {
-        name: b"connect-timeout",
+        name: b"connect-timeout-ms",
         value: @utf8.encode(millis.to_string()),
       })
     None => headers
@@ -153,7 +172,8 @@ pub async fn[T : Transport] Client::unary(
     let (code, message) = error_of_status(status, body)
     raise @wire.StatusError(code, message)
   }
-  { messages: [body], headers: reply_headers(raw_headers), trailers: [], }
+  let (headers, trailers) = split_unary_headers(raw_headers)
+  { messages: [body], headers: reply_headers(headers), trailers, }
 }
 
 ///|
@@ -170,7 +190,7 @@ pub async fn[T : Transport] Client::server_stream(
   let all = match timeout_millis {
     Some(millis) =>
       append(headers, {
-        name: b"connect-timeout",
+        name: b"connect-timeout-ms",
         value: @utf8.encode(millis.to_string()),
       })
     None => headers

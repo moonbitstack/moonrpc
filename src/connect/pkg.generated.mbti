@@ -108,6 +108,7 @@ pub fn Server::start(Self, String, Array[@header.Header]) -> Session
 pub struct Session {
   // private fields
 }
+pub fn Session::closed(Self) -> Bool
 pub fn Session::feed(Self, Bytes) -> Bytes
 pub fn Session::finish(Self) -> Response
 pub fn Session::head(Self) -> Response

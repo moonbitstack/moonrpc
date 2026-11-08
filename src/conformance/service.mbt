@@ -219,18 +219,25 @@ fn answer_server_stream(
       encode_payload_response(encode_payload(definition.data[i], true, info)),
     )
   }
-  // An error is raised after the messages, which is where the specification puts it.
+  // An error is raised after the messages, which is where the specification puts it. The
+  // request echo travels in the error only when the call sent no message: with data, the echo
+  // already went out in the first reply, and a second copy is a detail the suite does not
+  // expect — it counts them.
   match definition.error {
     Some(error) =>
       fail_with(
         ctx,
         error,
-        encode_request_info(
-          seen_headers(ctx),
-          ctx.deadline_millis,
-          [request],
-          type_url("ServerStreamRequest"),
-        ),
+        if definition.data.length() == 0 {
+          encode_request_info(
+            seen_headers(ctx),
+            ctx.deadline_millis,
+            [request],
+            type_url("ServerStreamRequest"),
+          )
+        } else {
+          b""
+        },
       )
     None => ()
   }
@@ -285,6 +292,22 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
   let received : Ref[Array[Bytes]] = Ref([])
   let index : Ref[Int32] = Ref(0)
   let set_up : Ref[Bool] = Ref(false)
+  // Whether the definition's error has already closed the call, so that the end of the stream
+  // does not raise it a second time.
+  let raised : Ref[Bool] = Ref(false)
+  let echo = fn() -> Bytes {
+    encode_request_info(
+      seen_headers(ctx),
+      ctx.deadline_millis,
+      received.val,
+      type_url("BidiStreamRequest"),
+    )
+  }
+  // A full-duplex reply echoes the request it answers and nothing else: the headers and the
+  // deadline belong to the call, so they travel only in the first reply.
+  let echo_one = fn(request : Bytes) -> Bytes {
+    encode_request_info([], None, [request], type_url("BidiStreamRequest"))
+  }
   @stream.BidiHandler::{
     on_message: request => {
       if !set_up.val {
@@ -309,28 +332,18 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
         // One request, one answer: this is the case a whole-body dispatch cannot serve.
         received.val = [request]
         let at = index.val
-        index.val = at + 1
         if at < parsed.data.length() {
-          let info = encode_request_info(
-            seen_headers(ctx),
-            ctx.deadline_millis,
-            received.val,
-            type_url("BidiStreamRequest"),
-          )
+          index.val = at + 1
+          let info = if at == 0 { echo() } else { echo_one(request) }
           [encode_payload_response(encode_payload(parsed.data[at], true, info))]
         } else {
+          // The definition's messages are all answered, so the error it asked for is what is
+          // left to send — one message too many is how a full-duplex caller asks for it.
           match parsed.error {
             Some(error) => {
-              fail_with(
-                ctx,
-                error,
-                encode_request_info(
-                  seen_headers(ctx),
-                  ctx.deadline_millis,
-                  received.val,
-                  type_url("BidiStreamRequest"),
-                ),
-              )
+              raised.val = true
+              // An echo travels in the error only when no message went out before it.
+              fail_with(ctx, error, if at == 0 { echo() } else { b"" })
               []
             }
             None => []
@@ -342,9 +355,6 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
       }
     },
     on_end: () => {
-      if duplex.val {
-        return []
-      }
       let parsed = match definition.val {
         Some(d) => d
         None => empty_stream_def()
@@ -356,36 +366,33 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
         )
         return out
       }
-      for i = 0; i < parsed.data.length(); i = i + 1 {
-        let info = if i == 0 {
-          encode_request_info(
-            seen_headers(ctx),
-            ctx.deadline_millis,
-            received.val,
-            type_url("BidiStreamRequest"),
-          )
-        } else {
-          b""
-        }
+      // Whatever has not been answered yet: for a half-duplex call that is the whole set, and
+      // for a full-duplex one whose caller stopped early it is the tail.
+      let from = index.val
+      index.val = parsed.data.length()
+      for i = from; i < parsed.data.length(); i = i + 1 {
+        let info = if i == 0 { echo() } else { b"" }
         out.push(
           encode_payload_response(encode_payload(parsed.data[i], true, info)),
         )
       }
-      if parsed.data.length() == 0 {
-        match parsed.error {
-          Some(error) =>
+      match parsed.error {
+        // A half-duplex call raises its error once the caller has finished, whether or not it
+        // sent messages first; a full-duplex one has already raised it, or has none to raise.
+        Some(error) =>
+          if !raised.val {
+            raised.val = true
             fail_with(
               ctx,
               error,
-              encode_request_info(
-                seen_headers(ctx),
-                ctx.deadline_millis,
-                received.val,
-                type_url("BidiStreamRequest"),
-              ),
+              if from == 0 && parsed.data.length() == 0 {
+                echo()
+              } else {
+                b""
+              },
             )
-          None => ()
-        }
+          }
+        None => ()
       }
       out
     },

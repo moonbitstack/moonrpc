@@ -108,14 +108,14 @@ test "connect server: a handler that fails answers its HTTP status and an error 
 }
 
 ///|
-test "connect server: an unknown path is unimplemented, not a 404 without a body" {
+test "connect server: an unknown path is a 404 that reads back as unimplemented" {
   let server = echo_server()
   let response = server.serve({
     path: "/test.Echo/Missing",
     headers: [header("content-type", "application/proto")],
     body: b"",
   })
-  assert_eq(response.status, 501)
+  assert_eq(response.status, 404)
   let body = parse_json(response.body)
   assert_eq(error_of_json(body).0, @wire.Status::Unimplemented)
 }
@@ -430,4 +430,69 @@ test "connect session: a request that ends mid-envelope fails the call" {
     _ => Json::null()
   }
   assert_eq(error_of_json(error).0, @wire.Status::Internal)
+}
+
+///|
+test "connect server: a unary reply writes its trailing metadata as Trailer- headers" {
+  let server = Server::new(schema=say_schema())
+  server.add("/test.Echo/Say", {
+    input: ".test.SayRequest",
+    output: ".test.SayReply",
+    handler: @stream.Handler::Unary((ctx, req) => {
+      ctx.add_trailer(b"x-done", b"yes")
+      req
+    }),
+  })
+  let response = server.serve({
+    path: "/test.Echo/Say",
+    headers: [header("content-type", "application/proto")],
+    body: say_request("a"),
+  })
+  assert_eq(response.status, 200)
+  let trailers : Array[(String, String)] = []
+  for h in response.headers {
+    let name = @utf8.decode_lossy(h.name)
+    if name.has_prefix("Trailer-") {
+      trailers.push((name, @utf8.decode_lossy(h.value)))
+    }
+  }
+  // The prefix is the whole point: a reader that follows the protocol strips it and calls the
+  // rest a trailer, so an unprefixed name would arrive as an ordinary header.
+  assert_eq(trailers, [("Trailer-x-done", "yes")])
+}
+
+///|
+test "connect server: a handler that fails mid-stream closes the call there and then" {
+  let server = Server::new()
+  server.add("/test.Chat/Talk", {
+    input: ".test.SayRequest",
+    output: ".test.SayReply",
+    handler: @stream.Handler::Bidi(ctx => @stream.BidiHandler::{
+      on_message: _message => {
+        ctx.fail(@wire.Status::code(@wire.Status::Internal), "not today")
+        []
+      },
+      on_end: () => [],
+    }),
+  })
+  let session = server.start("/test.Chat/Talk", [
+    header("content-type", "application/connect+proto"),
+  ])
+  let answer = session.feed(encode_envelope(say_request("a")))
+  // The caller is still sending; the end marker must not wait for it to stop.
+  assert_true(session.closed())
+  let (envelopes, _) = split_envelopes(answer)
+  assert_eq(envelopes.length(), 1)
+  assert_true(envelopes[0].is_end_stream())
+  let error = match parse_json(envelopes[0].payload) {
+    Object(members) =>
+      match members.get("error") {
+        Some(value) => value
+        None => Json::null()
+      }
+    _ => Json::null()
+  }
+  assert_eq(error_of_json(error).0, @wire.Status::Internal)
+  // And the end of the request owes nothing further.
+  assert_eq(session.finish().body.length(), 0)
 }
