@@ -45,15 +45,17 @@ async fn announce(port : Int32) -> Unit {
 }
 
 ///|
-/// A message with its length in front, which is the framing the suite's handshake uses.
+/// A message behind a four-octet big-endian length, which is the framing the suite's handshake
+/// uses — the same one protobuf's `writeDelimitedTo` writes in Java and Go's `WriteDelimitedMessage`
+/// reads here. It is not a varint: the reader takes the first four octets as a fixed-width
+/// integer, so a varint prefix is read as a length in the hundreds of megabytes.
 fn delimited(message : Bytes) -> Bytes {
   let out = @buffer.Buffer()
-  let mut length = message.length().reinterpret_as_uint()
-  while length >= 0x80U {
-    out.write_byte(((length & 0x7FU).reinterpret_as_int() | 0x80).to_byte())
-    length = length >> 7
-  }
-  out.write_byte(length.reinterpret_as_int().to_byte())
+  let length = message.length()
+  out.write_byte(((length >> 24) & 0xFF).to_byte())
+  out.write_byte(((length >> 16) & 0xFF).to_byte())
+  out.write_byte(((length >> 8) & 0xFF).to_byte())
+  out.write_byte((length & 0xFF).to_byte())
   out.write_bytes(message)
   out.to_bytes()
 }
