@@ -77,7 +77,9 @@ jobs:
       - name: the generated IDL is up to date
         if: runner.os == 'Linux'
         run: |
-          python3 scripts/gen_conformance_idl.py && git diff --exit-code
+          python3 scripts/gen_conformance_idl.py
+          moon fmt
+          git diff --exit-code
 
       - name: the skills are valid
         if: runner.os == 'Linux'
@@ -651,5 +653,5 @@ jobs:
         run: |
           "$RUNNER_TEMP/connectconformance" \
             --mode server \
-            --config scripts/conformance/connect.yaml \
+            --conf scripts/conformance/connect.yaml \
             -- ./_build/native/debug/build/cmd/conformance/conformance
