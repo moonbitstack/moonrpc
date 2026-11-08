@@ -200,3 +200,87 @@ test "conformance: a server stream answers one envelope per message it was asked
   assert_eq(second, b"two")
   assert_eq(envelopes[2].is_end_stream(), true)
 }
+
+///|
+/// A body read as JSON, or null when it is not JSON at all.
+fn parse_json(body : Bytes) -> Json {
+  @json.parse(@utf8.decode_lossy(body)) catch {
+    _ => Json::null()
+  }
+}
+
+///|
+/// A `StreamResponseDefinition` carrying only an error.
+fn stream_error_definition(code : Int32, message : String) -> Bytes {
+  let w = @proto.PbWriter::new()
+  let error = @proto.PbWriter::new()
+  error.int32(1, code)
+  error.string_(2, message)
+  w.message_(4, error.to_bytes())
+  w.to_bytes()
+}
+
+///|
+/// A `BidiStreamRequest` carrying `definition` and no response data.
+fn wrap_bidi_request(definition : Bytes, full_duplex : Bool) -> Bytes {
+  let w = @proto.PbWriter::new()
+  w.message_(1, definition)
+  if full_duplex {
+    w.bool_(2, true)
+  }
+  w.to_bytes()
+}
+
+///|
+test "conformance: a half-duplex bidi call fails with the error its definition named" {
+  let server = test_server(test_service())
+  let body = @connect.encode_envelope(
+      wrap_bidi_request(stream_error_definition(7, "half duplex failed"), false),
+    ) +
+    @connect.encode_envelope(b"", flags=@connect.flag_end_stream)
+  let answer = server.serve({
+    path: "/connectrpc.conformance.v1.ConformanceService/BidiStream",
+    headers: [header("content-type", "application/connect+proto")],
+    body,
+  })
+  let (envelopes, _) = @connect.split_envelopes(answer.body)
+  assert_eq(envelopes.length(), 1)
+  assert_eq(envelopes[0].is_end_stream(), true)
+  let end = parse_json(envelopes[0].payload)
+  let error = match end {
+    Object(members) =>
+      match members.get("error") {
+        Some(value) => value
+        None => Json::null()
+      }
+    _ => Json::null()
+  }
+  let (status, message) = @connect.error_of_json(error)
+  assert_eq(status, @wire.Status::PermissionDenied)
+  assert_eq(message, "half duplex failed")
+}
+
+///|
+test "conformance: a full-duplex bidi call with no responses fails too" {
+  let server = test_server(test_service())
+  let body = @connect.encode_envelope(
+      wrap_bidi_request(stream_error_definition(7, "full duplex failed"), true),
+    ) +
+    @connect.encode_envelope(b"", flags=@connect.flag_end_stream)
+  let answer = server.serve({
+    path: "/connectrpc.conformance.v1.ConformanceService/BidiStream",
+    headers: [header("content-type", "application/connect+proto")],
+    body,
+  })
+  let (envelopes, _) = @connect.split_envelopes(answer.body)
+  let end = parse_json(envelopes[envelopes.length() - 1].payload)
+  let error = match end {
+    Object(members) =>
+      match members.get("error") {
+        Some(value) => value
+        None => Json::null()
+      }
+    _ => Json::null()
+  }
+  assert_eq(@connect.error_of_json(error).0, @wire.Status::PermissionDenied)
+}

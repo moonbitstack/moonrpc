@@ -220,24 +220,9 @@ async fn open_h2_call(
   }
   let session = engine.start(path, call.headers)
   call.session = Some(session)
-  if session.streaming() && !session.refused() {
-    let answer = session.head()
-    let fields : Array[@header.Header] = [{ name: b":status", value: b"200", }]
-    for h in answer.headers {
-      fields.push(h)
-    }
-    conn.write(
-      @http2.Frame::Headers(
-        stream_id=call.id,
-        fragment=encoder.encode(fields),
-        end_stream=false,
-        end_headers=true,
-        priority=None,
-        padding=0,
-      ).encode(),
-    )
-    call.head_sent = true
-  }
+  // The reply head waits for the first envelope, in `flush_h2`: the headers to send are the ones
+  // a handler sets from the request, and the request has not been read yet.
+  ignore(encoder)
 }
 
 ///|

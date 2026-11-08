@@ -174,6 +174,10 @@ fn answer_unary(ctx : @stream.RpcContext, request : Bytes) -> Bytes {
     [request],
     type_url("UnaryRequest"),
   )
+  if too_late(ctx, definition.delay_ms) {
+    ctx.fail(code_deadline_exceeded, "the deadline passed before the response")
+    return b""
+  }
   match definition.error {
     Some(error) => {
       fail_with(ctx, error, info)
@@ -196,6 +200,10 @@ fn answer_server_stream(
   apply_headers(ctx, definition.headers)
   apply_trailers(ctx, definition.trailers)
   let out : Array[Bytes] = []
+  if too_late(ctx, definition.delay_ms) {
+    ctx.fail(code_deadline_exceeded, "the deadline passed before the response")
+    return out
+  }
   for i = 0; i < definition.data.length(); i = i + 1 {
     let info = if i == 0 {
       encode_request_info(
@@ -248,6 +256,14 @@ fn answer_client_stream(
     messages,
     type_url("ClientStreamRequest"),
   )
+  if too_late(ctx, definition.delay_ms) {
+    ctx.fail(code_deadline_exceeded, "the deadline passed before the response")
+    return b""
+  }
+  if too_late(ctx, definition.delay_ms) {
+    ctx.fail(code_deadline_exceeded, "the deadline passed before the response")
+    return b""
+  }
   match definition.error {
     Some(error) => {
       fail_with(ctx, error, info)
@@ -284,6 +300,12 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
         None => return []
       }
       if duplex.val {
+        if too_late(ctx, parsed.delay_ms) {
+          ctx.fail(
+            code_deadline_exceeded, "the deadline passed before the response",
+          )
+          return []
+        }
         // One request, one answer: this is the case a whole-body dispatch cannot serve.
         received.val = [request]
         let at = index.val
@@ -328,6 +350,12 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
         None => empty_stream_def()
       }
       let out : Array[Bytes] = []
+      if too_late(ctx, parsed.delay_ms) {
+        ctx.fail(
+          code_deadline_exceeded, "the deadline passed before the response",
+        )
+        return out
+      }
       for i = 0; i < parsed.data.length(); i = i + 1 {
         let info = if i == 0 {
           encode_request_info(
@@ -363,6 +391,24 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
     },
   }
 }
+
+///|
+/// Whether a response that waits `delay_ms` would arrive after the caller's deadline. A server
+/// that slept would find out the same way — by waking up too late — and the answer it must give
+/// is the same, so the wait is not performed to reach it.
+fn too_late(ctx : @stream.RpcContext, delay_ms : Int32) -> Bool {
+  if delay_ms <= 0 {
+    return false
+  }
+  match ctx.deadline_millis {
+    Some(deadline) => delay_ms > deadline
+    None => false
+  }
+}
+
+///|
+/// The code a missed deadline carries: `CODE_DEADLINE_EXCEEDED`.
+let code_deadline_exceeded : Int32 = 4
 
 ///|
 /// Fail the call the way a definition asked, with the request echo attached as a detail: the

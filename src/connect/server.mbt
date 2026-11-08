@@ -295,8 +295,12 @@ pub fn Server::start(
   let ctx = context_of(path, headers)
   let mut refuse : (@wire.Status, String)? = match parsed {
     Some(_) => None
+    // A request this server cannot read is `unknown`: the protocol reserves the code for "the
+    // request did not say what kind of body it carries".
     None =>
-      Some((@wire.Status::Internal, "content-type is a Connect content type"))
+      Some(
+        (@wire.Status::Unknown, "content-type is not a Connect content type"),
+      )
   }
   if refuse is None {
     match route {
@@ -537,7 +541,26 @@ fn Session::write_reply(self : Session, out : Buffer, reply : Bytes) -> Unit {
 
 ///|
 fn Session::finish_unary(self : Session) -> Response {
-  let bytes = self.body.to_bytes()
+  // A unary body is compressed as a whole — `content-encoding` — where a streaming body is
+  // compressed envelope by envelope. The header names the algorithm for the one message this
+  // call carries.
+  let raw = self.body.to_bytes()
+  let bytes = match header_value(self.headers, b"content-encoding") {
+    Some(encoding) =>
+      if encoding.to_lower() == "gzip" {
+        @gzip.gunzip(raw[:]) catch {
+          _ => {
+            self.failure = Some(
+              (@wire.Status::Internal, "the request body would not inflate"),
+            )
+            b""
+          }
+        }
+      } else {
+        raw
+      }
+    None => raw
+  }
   let messages : Array[Bytes] = []
   if self.failure is None {
     match self.decode(bytes) {
