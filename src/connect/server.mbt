@@ -756,7 +756,7 @@ fn Session::run(self : Session, messages : Array[Bytes]) -> Array[Bytes]? {
           if messages.length() != 1 {
             self.failure = Some(
               (
-                @wire.Status::Internal,
+                @wire.Status::Unimplemented,
                 "a unary call carries exactly one message",
               ),
             )
@@ -768,7 +768,7 @@ fn Session::run(self : Session, messages : Array[Bytes]) -> Array[Bytes]? {
           if messages.length() != 1 {
             self.failure = Some(
               (
-                @wire.Status::Internal,
+                @wire.Status::Unimplemented,
                 "a server-streaming call carries exactly one request message",
               ),
             )

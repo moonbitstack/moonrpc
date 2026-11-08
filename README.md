@@ -739,11 +739,18 @@ on standard output the way the suite expects, and runs `connectconformance --mod
 it over both HTTP versions.
 
 That job is advisory: it publishes the pass and fail counts rather than gating the build, because
-the suite is not yet clean. The first run it produced named four disagreements between this
-encoder and the protocol — `metadata` as a map of lists, the `connect-timeout-ms` header, error
-details carried as `Any`, and an empty body as an empty message — and those are fixed. What is
-left is concentrated: the `Timeouts` group needs a handler that can miss a deadline, and the
-dispatch is synchronous, so a call answers before the deadline it was given.
+the suite is not yet clean — 641 of 724 cases pass. The failures it drove out along the way are
+all fixed, and each was a disagreement between this encoder and the protocol rather than a
+missing feature: `metadata` as a map of lists, the `connect-timeout-ms` header, error details as
+`Any` in unpadded base64, a gzip'd unary body, a reply head sent before the request was read,
+`415` for a content type the server does not read, and an enum field compiled as a message — that
+last one alone accounted for 260 cases, because a dropped enum value turned every error into a
+success.
+
+What the remaining 83 have in common is one unexamined path: JSON over gzip over HTTP/1.1
+streaming. A bidirectional half-duplex call on it answers without the error its definition asked
+for, and a server-streamed error carries the wrong number of details. That is where the next
+visit starts.
 
 The client is the same protocol from the other side, written against one method rather than a
 socket, so a transport is forty lines:
