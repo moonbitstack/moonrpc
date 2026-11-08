@@ -738,6 +738,13 @@ is the configuration it runs under. CI starts `cmd/conformance`, which reports t
 on standard output the way the suite expects, and runs `connectconformance --mode server` against
 it over both HTTP versions.
 
+That job is advisory: it publishes the pass and fail counts rather than gating the build, because
+the suite is not yet clean. The first run it produced named four disagreements between this
+encoder and the protocol — `metadata` as a map of lists, the `connect-timeout-ms` header, error
+details carried as `Any`, and an empty body as an empty message — and those are fixed. What is
+left is concentrated: the `Timeouts` group needs a handler that can miss a deadline, and the
+dispatch is synchronous, so a call answers before the deadline it was given.
+
 The client is the same protocol from the other side, written against one method rather than a
 socket, so a transport is forty lines:
 
