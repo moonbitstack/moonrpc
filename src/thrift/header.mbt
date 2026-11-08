@@ -301,6 +301,16 @@ fn Header::inner(self : Header) -> &Protocol {
 }
 
 ///|
+/// The protocol id that names the inner encoder `inner` returns.
+fn Header::out_protocol(self : Header) -> Int32 {
+  if self.use_compact {
+    header_protocol_compact
+  } else {
+    header_protocol_binary
+  }
+}
+
+///|
 pub impl Protocol for Header with fn reset(self, input) {
   self.broken = false
   if input.length() == 0 {
@@ -332,7 +342,11 @@ pub impl Protocol for Header with fn reset(self, input) {
 pub impl Protocol for Header with fn output(self) {
   encode_header_frame(
     self.inner().output(),
-    protocol=self.write_protocol,
+    // The id names the protocol the payload behind it is in, and `inner` picks that from
+    // `use_compact` — set by this side's own choice before it writes, or, for a server, by the
+    // frame it just read. Naming `write_protocol` here instead answered a compact caller with
+    // compact bytes under a "binary" label.
+    protocol=self.out_protocol(),
     seqid=self.seqid,
     transforms=self.transforms,
     headers=self.write_headers,

@@ -260,3 +260,39 @@ async test "thrift: a ONEWAY call goes out through send and reads nothing back" 
   assert_eq((field_type, field_id), (type_i32, 1))
   assert_eq(reader.read_i32(), 7)
 }
+
+///|
+test "thrift header: a server answers in the protocol the caller used" {
+  let processor = Processor::new()
+  processor.add("ping", proto => {
+    ignore(proto.read_field_begin())
+    let n = proto.read_i32()
+    ignore(proto.read_field_begin())
+    proto.write_field_begin(type_i32, 0)
+    proto.write_i32(n + 1)
+  })
+  // The caller speaks compact; the server was built with the default, which is binary. The
+  // frame it answers with has to name the protocol its payload is actually in — a reader
+  // trusts that field, so a server that answered "binary" in compact bytes would be
+  // unreadable to the Apache peer that called it.
+  let caller = Header::new()
+  caller.set_protocol(header_protocol_compact)
+  let client : &Protocol = caller
+  ping_message(client)
+  let server = Header::new()
+  let service : &Protocol = server
+  let reply = processor.process(service, caller.output())
+  let frame = decode_header_frame(reply)
+  assert_eq(frame.protocol, header_protocol_compact)
+  // And it reads back: the payload behind that field is compact.
+  let reader = Header::new()
+  let back : &Protocol = reader
+  back.reset(reply)
+  let (name, kind, _) = back.read_message_begin()
+  assert_eq(name, "ping")
+  assert_eq(kind, message_reply)
+  ignore(back.read_struct_begin())
+  let (field_type, _) = back.read_field_begin()
+  assert_eq(field_type, type_i32)
+  assert_eq(back.read_i32(), 43)
+}

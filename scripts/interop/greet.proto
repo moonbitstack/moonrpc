@@ -19,6 +19,11 @@ message HelloReply {
   string message = 1;
   Mood mood = 2;
   int64 total = 3;
+  // What the server saw arrive with the call: the `x-test-*` metadata as `name=value`, and
+  // how much of the caller's deadline was left when the handler ran. Both exist so a foreign
+  // client can check that headers and the timeout survive the trip.
+  repeated string echo_headers = 4;
+  int64 deadline_ms = 5;
 }
 
 message Upto {
@@ -29,9 +34,15 @@ message Number {
   int32 value = 1;
 }
 
+// A message big enough to need more than one HTTP/2 frame in each direction.
+message Batch {
+  repeated int32 values = 1;
+}
+
 service Greeter {
   rpc SayHello (HelloRequest) returns (HelloReply);
   rpc CountTo (Upto) returns (stream Number);
   rpc Sum (stream Number) returns (Number);
   rpc Echo (stream Number) returns (stream Number);
+  rpc BatchEcho (Batch) returns (Batch);
 }

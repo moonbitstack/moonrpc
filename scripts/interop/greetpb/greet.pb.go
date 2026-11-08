@@ -128,10 +128,15 @@ func (x *HelloRequest) GetExtras() map[string]int64 {
 }
 
 type HelloReply struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	Mood          Mood                   `protobuf:"varint,2,opt,name=mood,proto3,enum=greet.Mood" json:"mood,omitempty"`
-	Total         int64                  `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Message string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Mood    Mood                   `protobuf:"varint,2,opt,name=mood,proto3,enum=greet.Mood" json:"mood,omitempty"`
+	Total   int64                  `protobuf:"varint,3,opt,name=total,proto3" json:"total,omitempty"`
+	// What the server saw arrive with the call: the `x-test-*` metadata as `name=value`, and
+	// how much of the caller's deadline was left when the handler ran. Both exist so a foreign
+	// client can check that headers and the timeout survive the trip.
+	EchoHeaders   []string `protobuf:"bytes,4,rep,name=echo_headers,json=echoHeaders,proto3" json:"echo_headers,omitempty"`
+	DeadlineMs    int64    `protobuf:"varint,5,opt,name=deadline_ms,json=deadlineMs,proto3" json:"deadline_ms,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -183,6 +188,20 @@ func (x *HelloReply) GetMood() Mood {
 func (x *HelloReply) GetTotal() int64 {
 	if x != nil {
 		return x.Total
+	}
+	return 0
+}
+
+func (x *HelloReply) GetEchoHeaders() []string {
+	if x != nil {
+		return x.EchoHeaders
+	}
+	return nil
+}
+
+func (x *HelloReply) GetDeadlineMs() int64 {
+	if x != nil {
+		return x.DeadlineMs
 	}
 	return 0
 }
@@ -275,6 +294,51 @@ func (x *Number) GetValue() int32 {
 	return 0
 }
 
+// A message big enough to need more than one HTTP/2 frame in each direction.
+type Batch struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []int32                `protobuf:"varint,1,rep,packed,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Batch) Reset() {
+	*x = Batch{}
+	mi := &file_greet_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Batch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Batch) ProtoMessage() {}
+
+func (x *Batch) ProtoReflect() protoreflect.Message {
+	mi := &file_greet_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Batch.ProtoReflect.Descriptor instead.
+func (*Batch) Descriptor() ([]byte, []int) {
+	return file_greet_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Batch) GetValues() []int32 {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
 var File_greet_proto protoreflect.FileDescriptor
 
 const file_greet_proto_rawDesc = "" +
@@ -286,24 +350,30 @@ const file_greet_proto_rawDesc = "" +
 	"\x06extras\x18\x03 \x03(\v2\x1f.greet.HelloRequest.ExtrasEntryR\x06extras\x1a9\n" +
 	"\vExtrasEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"]\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\xa1\x01\n" +
 	"\n" +
 	"HelloReply\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x1f\n" +
 	"\x04mood\x18\x02 \x01(\x0e2\v.greet.MoodR\x04mood\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x03R\x05total\"\x14\n" +
+	"\x05total\x18\x03 \x01(\x03R\x05total\x12!\n" +
+	"\fecho_headers\x18\x04 \x03(\tR\vechoHeaders\x12\x1f\n" +
+	"\vdeadline_ms\x18\x05 \x01(\x03R\n" +
+	"deadlineMs\"\x14\n" +
 	"\x04Upto\x12\f\n" +
 	"\x01n\x18\x01 \x01(\x05R\x01n\"\x1e\n" +
 	"\x06Number\x12\x14\n" +
-	"\x05value\x18\x01 \x01(\x05R\x05value*$\n" +
+	"\x05value\x18\x01 \x01(\x05R\x05value\"\x1f\n" +
+	"\x05Batch\x12\x16\n" +
+	"\x06values\x18\x01 \x03(\x05R\x06values*$\n" +
 	"\x04Mood\x12\r\n" +
 	"\tMOOD_CALM\x10\x00\x12\r\n" +
-	"\tMOOD_GLAD\x10\x012\xb7\x01\n" +
+	"\tMOOD_GLAD\x10\x012\xe0\x01\n" +
 	"\aGreeter\x122\n" +
 	"\bSayHello\x12\x13.greet.HelloRequest\x1a\x11.greet.HelloReply\x12'\n" +
 	"\aCountTo\x12\v.greet.Upto\x1a\r.greet.Number0\x01\x12%\n" +
 	"\x03Sum\x12\r.greet.Number\x1a\r.greet.Number(\x01\x12(\n" +
-	"\x04Echo\x12\r.greet.Number\x1a\r.greet.Number(\x010\x01B&Z$moonbitstack/moonrpc-interop/greetpbb\x06proto3"
+	"\x04Echo\x12\r.greet.Number\x1a\r.greet.Number(\x010\x01\x12'\n" +
+	"\tBatchEcho\x12\f.greet.Batch\x1a\f.greet.BatchB&Z$moonbitstack/moonrpc-interop/greetpbb\x06proto3"
 
 var (
 	file_greet_proto_rawDescOnce sync.Once
@@ -318,29 +388,32 @@ func file_greet_proto_rawDescGZIP() []byte {
 }
 
 var file_greet_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_greet_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_greet_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_greet_proto_goTypes = []any{
 	(Mood)(0),            // 0: greet.Mood
 	(*HelloRequest)(nil), // 1: greet.HelloRequest
 	(*HelloReply)(nil),   // 2: greet.HelloReply
 	(*Upto)(nil),         // 3: greet.Upto
 	(*Number)(nil),       // 4: greet.Number
-	nil,                  // 5: greet.HelloRequest.ExtrasEntry
+	(*Batch)(nil),        // 5: greet.Batch
+	nil,                  // 6: greet.HelloRequest.ExtrasEntry
 }
 var file_greet_proto_depIdxs = []int32{
 	0, // 0: greet.HelloRequest.mood:type_name -> greet.Mood
-	5, // 1: greet.HelloRequest.extras:type_name -> greet.HelloRequest.ExtrasEntry
+	6, // 1: greet.HelloRequest.extras:type_name -> greet.HelloRequest.ExtrasEntry
 	0, // 2: greet.HelloReply.mood:type_name -> greet.Mood
 	1, // 3: greet.Greeter.SayHello:input_type -> greet.HelloRequest
 	3, // 4: greet.Greeter.CountTo:input_type -> greet.Upto
 	4, // 5: greet.Greeter.Sum:input_type -> greet.Number
 	4, // 6: greet.Greeter.Echo:input_type -> greet.Number
-	2, // 7: greet.Greeter.SayHello:output_type -> greet.HelloReply
-	4, // 8: greet.Greeter.CountTo:output_type -> greet.Number
-	4, // 9: greet.Greeter.Sum:output_type -> greet.Number
-	4, // 10: greet.Greeter.Echo:output_type -> greet.Number
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
+	5, // 7: greet.Greeter.BatchEcho:input_type -> greet.Batch
+	2, // 8: greet.Greeter.SayHello:output_type -> greet.HelloReply
+	4, // 9: greet.Greeter.CountTo:output_type -> greet.Number
+	4, // 10: greet.Greeter.Sum:output_type -> greet.Number
+	4, // 11: greet.Greeter.Echo:output_type -> greet.Number
+	5, // 12: greet.Greeter.BatchEcho:output_type -> greet.Batch
+	8, // [8:13] is the sub-list for method output_type
+	3, // [3:8] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
 	3, // [3:3] is the sub-list for extension extendee
 	0, // [0:3] is the sub-list for field type_name
@@ -357,7 +430,7 @@ func file_greet_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_greet_proto_rawDesc), len(file_greet_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

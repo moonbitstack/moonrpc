@@ -9,8 +9,11 @@
 pub fn CallReply::details(self : CallReply) -> @proto.StatusDetails? {
   for h in self.trailers {
     if h.name == b"grpc-status-details-bin" {
-      let body = @wire.metadata_value_from_wire(h.name, h.value)
-      return @proto.decode_status_details(body[:])
+      // `trailers` already holds the decoded bytes: the reply reader applies the `-bin`
+      // base64 to every binary value as the block arrives. Decoding it again here reads the
+      // protobuf body as if it were base64 text, which decodes to nothing — the trailer is
+      // there, and the status inside it is not.
+      return @proto.decode_status_details(h.value[:])
     }
   }
   None

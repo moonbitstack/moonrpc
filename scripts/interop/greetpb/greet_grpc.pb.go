@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Greeter_SayHello_FullMethodName = "/greet.Greeter/SayHello"
-	Greeter_CountTo_FullMethodName  = "/greet.Greeter/CountTo"
-	Greeter_Sum_FullMethodName      = "/greet.Greeter/Sum"
-	Greeter_Echo_FullMethodName     = "/greet.Greeter/Echo"
+	Greeter_SayHello_FullMethodName  = "/greet.Greeter/SayHello"
+	Greeter_CountTo_FullMethodName   = "/greet.Greeter/CountTo"
+	Greeter_Sum_FullMethodName       = "/greet.Greeter/Sum"
+	Greeter_Echo_FullMethodName      = "/greet.Greeter/Echo"
+	Greeter_BatchEcho_FullMethodName = "/greet.Greeter/BatchEcho"
 )
 
 // GreeterClient is the client API for Greeter service.
@@ -33,6 +34,7 @@ type GreeterClient interface {
 	CountTo(ctx context.Context, in *Upto, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Number], error)
 	Sum(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[Number, Number], error)
 	Echo(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[Number, Number], error)
+	BatchEcho(ctx context.Context, in *Batch, opts ...grpc.CallOption) (*Batch, error)
 }
 
 type greeterClient struct {
@@ -98,6 +100,16 @@ func (c *greeterClient) Echo(ctx context.Context, opts ...grpc.CallOption) (grpc
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Greeter_EchoClient = grpc.BidiStreamingClient[Number, Number]
 
+func (c *greeterClient) BatchEcho(ctx context.Context, in *Batch, opts ...grpc.CallOption) (*Batch, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Batch)
+	err := c.cc.Invoke(ctx, Greeter_BatchEcho_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GreeterServer is the server API for Greeter service.
 // All implementations must embed UnimplementedGreeterServer
 // for forward compatibility.
@@ -106,6 +118,7 @@ type GreeterServer interface {
 	CountTo(*Upto, grpc.ServerStreamingServer[Number]) error
 	Sum(grpc.ClientStreamingServer[Number, Number]) error
 	Echo(grpc.BidiStreamingServer[Number, Number]) error
+	BatchEcho(context.Context, *Batch) (*Batch, error)
 	mustEmbedUnimplementedGreeterServer()
 }
 
@@ -127,6 +140,9 @@ func (UnimplementedGreeterServer) Sum(grpc.ClientStreamingServer[Number, Number]
 }
 func (UnimplementedGreeterServer) Echo(grpc.BidiStreamingServer[Number, Number]) error {
 	return status.Error(codes.Unimplemented, "method Echo not implemented")
+}
+func (UnimplementedGreeterServer) BatchEcho(context.Context, *Batch) (*Batch, error) {
+	return nil, status.Error(codes.Unimplemented, "method BatchEcho not implemented")
 }
 func (UnimplementedGreeterServer) mustEmbedUnimplementedGreeterServer() {}
 func (UnimplementedGreeterServer) testEmbeddedByValue()                 {}
@@ -192,6 +208,24 @@ func _Greeter_Echo_Handler(srv interface{}, stream grpc.ServerStream) error {
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type Greeter_EchoServer = grpc.BidiStreamingServer[Number, Number]
 
+func _Greeter_BatchEcho_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Batch)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GreeterServer).BatchEcho(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Greeter_BatchEcho_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GreeterServer).BatchEcho(ctx, req.(*Batch))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Greeter_ServiceDesc is the grpc.ServiceDesc for Greeter service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -202,6 +236,10 @@ var Greeter_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SayHello",
 			Handler:    _Greeter_SayHello_Handler,
+		},
+		{
+			MethodName: "BatchEcho",
+			Handler:    _Greeter_BatchEcho_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

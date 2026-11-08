@@ -7,6 +7,7 @@
 //     greetd [port] <cert> <key>        serve over TLS, ALPN h2
 //     greetd check [port]               call a running greetd, generated client
 //     greetd check [port] <ca>          the same over TLS
+//     greetd check [port] gzip          the same with every message compressed
 
 ///|
 async fn serve(port : Int32, tls : @tls.Server?) -> Unit {
@@ -86,11 +87,22 @@ fn[T : @moonrpc.Message] bytes_of(messages : Array[T]) -> String {
 ///|
 /// Every method once through `GreeterClient` and once as raw bytes on the
 /// same `Channel`: the replies and statuses must agree.
-async fn check(port : Int32, ca : String?) -> Unit {
-  let channel = match ca {
-    Some(path) =>
+async fn check(port : Int32, ca : String?, gzip : Bool) -> Unit {
+  // Compression is a property of the channel, not of a call: a caller that asks for gzip
+  // compresses every message it sends and advertises that it reads gzip back.
+  let channel = match (ca, gzip) {
+    (Some(path), true) =>
+      @net.Channel::connect(
+        "127.0.0.1",
+        port,
+        tls=read_client_tls(path),
+        encoding=@moonrpc.Encoding::Gzip,
+      )
+    (Some(path), false) =>
       @net.Channel::connect("127.0.0.1", port, tls=read_client_tls(path))
-    None => @net.Channel::connect("127.0.0.1", port)
+    (None, true) =>
+      @net.Channel::connect("127.0.0.1", port, encoding=@moonrpc.Encoding::Gzip)
+    (None, false) => @net.Channel::connect("127.0.0.1", port)
   }
   defer channel.close()
   let client = GreeterClient::new(channel)
@@ -117,6 +129,30 @@ async fn check(port : Int32, ca : String?) -> Unit {
     @moonrpc.Message::encode({ ..request, name: "", }),
   )
   same("SayHello refused", refused, "\{raw.grpc_status} \{raw.grpc_message}")
+  // The rich half of the error: a `google.rpc.Status` in `grpc-status-details-bin`, carrying
+  // a `google.protobuf.StringValue`. A client that only read `grpc-message` would never know
+  // the difference between a server that sends details and one that does not.
+  let details = match raw.details() {
+    Some(d) => d
+    None => abort("the refused call carried no grpc-status-details-bin")
+  }
+  if details.details.length() != 1 {
+    abort("the refused call carried \{details.details.length()} details, not 1")
+  }
+  let url = match @moonrpc.detail_type_url(details.details[0][:]) {
+    Some(text) => text
+    None => abort("the detail carried no type url")
+  }
+  let body = match @moonrpc.detail_body(details.details[0][:]) {
+    Some(bytes) => bytes
+    None => abort("the detail carried no body")
+  }
+  same(
+    "SayHello detail", url, "type.googleapis.com/google.protobuf.StringValue",
+  )
+  let reader = @moonrpc.PbReader::new(body)
+  ignore(reader.read_tag())
+  same("SayHello detail text", reader.read_string(), "name is required")
   let numbers = client.count_to({ n: 3, })
   let raw = channel.server_streaming(
     "/greet.Greeter/CountTo",
@@ -136,6 +172,33 @@ async fn check(port : Int32, ca : String?) -> Unit {
     ins.map(m => @moonrpc.Message::encode(m)),
   )
   same("Echo", bytes_of(back), raw.messages.map(hex).join(" "))
+  // Metadata and the deadline are the two things a call carries beside its messages. The
+  // server echoes both, so a value that never left, or one the far end dropped, shows up here
+  // rather than in a test that only ever sends messages.
+  let tagged = client.say_hello(
+    request,
+    metadata=[
+      { name: b"x-test-a", value: b"1", },
+      { name: b"x-test-b", value: b"2", },
+    ],
+    timeout_millis=1500,
+  )
+  same("SayHello echo", tagged.echo_headers.join(","), "x-test-a=1,x-test-b=2")
+  if tagged.deadline_ms <= 0 || tagged.deadline_ms > 1500 {
+    abort(
+      "the deadline the server saw was \{tagged.deadline_ms}, not 0 < it <= 1500",
+    )
+  }
+  println("deadline \{tagged.deadline_ms}")
+  // A message that needs more than one HTTP/2 frame in each direction: the flow-control
+  // window has to be credited mid-message, which a small echo never asks for.
+  let batch : Batch = { values: Array::makei(40000, i => i), }
+  let echoed = client.batch_echo(batch)
+  same("BatchEcho size", echoed.values.length().to_string(), "40000")
+  if echoed.values[39999] != 39999 {
+    abort("BatchEcho did not come back whole")
+  }
+  println("batch  \{echoed.values.length()} values")
   println("client and channel agree")
 }
 
@@ -150,12 +213,15 @@ fn main {
     [p, ..] => @string.parse_int(p[:]) catch { _ => @net.port }
     [] => @net.port
   }
-  // A certificate and its key, or a CA bundle, follow the port when the run is over TLS.
-  let files = if rest.length() > 1 { rest[1:] } else { [] }
+  // A certificate and its key, or a CA bundle, follow the port when the run is over TLS; the
+  // word `gzip` asks the channel to compress, wherever it sits.
+  let given = if rest.length() > 1 { rest[1:] } else { [] }
+  let gzip = given.contains("gzip")
+  let files = given.filter(f => f != "gzip")
   @async.run_async_main(() => {
     if checking {
       let ca = if files.length() > 0 { Some(files[0]) } else { None }
-      check(port, ca)
+      check(port, ca, gzip)
     } else {
       let tls = if files.length() > 1 {
         Some(read_server_tls(files[0], files[1]))

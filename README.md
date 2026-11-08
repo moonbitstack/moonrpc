@@ -351,17 +351,32 @@ against independent peers in plaintext and over TLS:
 | Partner | Direction | Calls | Compression | Interceptors | TLS | Result |
 |:--|:--|:--|:--|:--|:--|:--|
 | `grpcurl` (grpc-go) | client | reflection `list`／`describe`, all four | `gzip` | — | yes | pass |
-| grpc-go | client | all four | `gzip` | client chain | yes | pass |
-| grpc-go | server | all four, through the generated `GreeterClient` | identity | server chain | yes | pass |
-| Apache Thrift (Go) | client | `ping`, `add`, `double`, binary and compact | identity | — | no | pass |
-| Apache Thrift (Go) | server | `ping`, `add`, `double`, through `thriftd check` | identity | — | no | pass |
-| Apache Thrift cross test | client | `ThriftTest`: all 23 methods, binary and compact | identity | — | no | pass |
+| grpc-go | client | all four, plus `x-test-*` metadata, a deadline, a rich error detail and a 160 KB message | `gzip` | client chain | yes | pass |
+| grpc-go | server | the same calls, through the generated `GreeterClient` | `gzip` | server chain | yes | pass |
+| Apache Thrift (Go) | client | `ping`, `add`, `double`, `fail`, `note` (ONEWAY) — framed and header transports, binary and compact protocols, the zlib transform | identity | — | no | pass |
+| Apache Thrift (Go) | server | the same calls, through `thriftd check` | identity | — | no | pass |
+| Apache Thrift cross test | client | `ThriftTest`: all 23 methods, framed, binary and compact | identity | — | no | pass |
 | Apache Thrift cross test | server | `ThriftTest`: all 23 methods, driven from this side | identity | — | no | pass |
 
 `cmd/greetd` is the server the first two call; the third runs the same generated client
 against a grpc-go server and requires the two answers to match byte for byte. The
 grpc-go side lives in `scripts/interop`, generated from the same `greet.proto` shape the
-annotations declare. The Thrift rows are the protocol stack, below.
+annotations declare.
+
+What each of those calls carries is part of the matrix, not beside it: a message alone would
+exercise the framing and nothing else. `SayHello` answers with the `x-test-*` metadata the
+caller attached and the deadline it was given, so a header the far end dropped, or a
+`grpc-timeout` that never arrived, fails the job. An empty name comes back `INVALID_ARGUMENT`
+with a `google.protobuf.StringValue` in `grpc-status-details-bin` — the detail is what grpc-go's
+`status.Details()` decodes, and one direction checks it with grpc-go's runtime and the other
+with this library's reader. `BatchEcho` carries 40000 `int32`s, which is 160 KB: both
+directions need more than one HTTP/2 frame and a window update in the middle of the message,
+which a call that fits in a frame never asks for.
+
+The Thrift rows are the protocol stack, below: TFramedTransport and Apache's header transport,
+with TBinaryProtocol or TCompactProtocol inside either, and the zlib transform the header
+transport can carry. `note` is a ONEWAY method — it must leave no reply on the wire, which the
+call that follows would otherwise read as its own.
 
 ## Conformance
 
@@ -521,14 +536,22 @@ async fn serve_and_call_thrift() -> Unit raise {
 }
 ```
 
-[`cmd/thriftd`](src/cmd/thriftd/) serves `ping`, `add`, `double` and `fail`; `thriftd check`
-calls them, and a `compact` argument picks the protocol on either side. CI runs an Apache
-Thrift Go client against it and the moonrpc client against an Apache Thrift Go server, in
-the binary and in the compact protocol. Both cover the strict message header, `bool`,
-`byte`, `i16`, `i32`, `i64`, `double`, `string`, structs, lists, sets and maps, with a
-depth guard on `skip`. `fail` answers a value in field 0 or an exception in field 1, so
-the shape a `throws` clause gives a reply is checked against Apache's client and server
-as well.
+[`cmd/thriftd`](src/cmd/thriftd/) serves `ping`, `add`, `double`, `fail` and a ONEWAY `note`;
+`thriftd check` calls them, and words after the port pick the bytes on either side —
+`framed` or `header`, `binary` or `compact`, `zlib` for the header transport's transform. CI
+runs an Apache Thrift Go client against it and the moonrpc client against an Apache Thrift Go
+server, in every one of those combinations, and Apache's own cross test drives all 23 methods
+of `ThriftTest` in both directions. Between them they cover the strict message header, `bool`,
+`byte`, `i16`, `i32`, `i64`, `double`, `string`, structs, lists, sets and maps, with a depth
+guard on `skip`. `fail` answers a value in field 0 or an exception in field 1, so the shape a
+`throws` clause gives a reply is checked against Apache's client and server as well.
+
+The header transport is the row that only a foreign peer can settle. Its frame names the inner
+protocol, so a server that wrote compact bytes under a `binary` label would be unreadable to
+every Apache client, and a peer that trusted the label is the only thing that notices — its
+read of our reply fails, where our own two halves would agree with each other. `note` is the
+other: a ONEWAY call must leave nothing behind, and the call after it is what would read a
+stray reply frame if the server wrote one.
 
 The three pieces of Thrift that a hand-written service trips over are settled here.
 A `uuid` is sixteen raw bytes with no length in front — a type of its own, not a `binary`.
@@ -943,8 +966,9 @@ async fn throttled_call(host : String) -> Unit raise {
   `metadata_value_from_wire` reads unpadded), and the suite pins the padded form.
 - Thrift: the JSON protocol, and an unframed (`TBufferedTransport`) peer — this reader takes a
   body that arrives whole, so an unframed message, which has no length in front of it, has
-  nothing to read to. The binary, compact and header transports and both directions of the
-  reference cross test are in place.
+  nothing to read to. Everything else is served and driven by a real Apache peer: the framed and
+  header transports, the binary and compact protocols inside either, the zlib transform, ONEWAY
+  methods, and both directions of Apache's own cross test.
 - Connect: not declared to the conformance suite, and therefore not tested by it — Connect over
   `GET` (an idempotent call with its message in query parameters), a message receive limit, TLS,
   and compressions other than gzip. `scripts/conformance/connect.yaml` is the statement of scope

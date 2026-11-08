@@ -10,6 +10,11 @@
 #
 # The checkout must already hold the generated Go bindings and both built binaries; the
 # CI job does that, and so does `scripts/interop/build_thrift_peers.sh`.
+#
+# Only the framed transport is driven here, because Apache's Go test client has no header
+# transport to drive (its `-transport` flag takes buffered, framed, http and zlib). The header
+# transport is covered instead by `scripts/interop/thriftclient` and `thriftserver`, which use
+# Apache's Go *library* — the same implementation, called directly.
 set -euo pipefail
 
 REF=${1:?the Apache Thrift checkout that holds test/go/bin}

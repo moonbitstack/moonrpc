@@ -1,14 +1,20 @@
-// A Thrift service over TBinaryProtocol or TCompactProtocol, framed, on one socket.
+// A Thrift service over TBinaryProtocol or TCompactProtocol, framed or behind the header
+// transport, on one socket.
 //
-//     thriftd [port] [compact]          serve on 127.0.0.1 (default 9090)
-//     thriftd check [port] [compact]    call it with the same library
+//     thriftd [port] [framed|header] [binary|compact]          serve on 127.0.0.1 (9090)
+//     thriftd check [port] [framed|header] [binary|compact]    call it with this library
 //
-// The handlers below only see `Protocol`, so the same service answers in either
-// protocol; the flag picks the bytes on the wire, not the service.
+// The handlers below only see `Protocol`, so the same service answers in either protocol and
+// either transport; the words pick the bytes on the wire, not the service. The header
+// transport carries the inner protocol in each frame, so it can answer both at once.
 
 ///|
 fn processor() -> @thrift.Processor {
   let processor = @thrift.Processor::new()
+  // What the last ONEWAY call said. A oneway method answers nothing, so the only way to see
+  // that it arrived is to ask a later call what it saw — which is also what makes the test a
+  // test of the transport rather than of the handler.
+  let last_note = Ref("")
   processor.add("ping", proto => {
     ignore(proto.read_field_begin())
     let text = proto.read_string()
@@ -36,6 +42,19 @@ fn processor() -> @thrift.Processor {
   })
   // A method that may answer an exception instead of a value: field 0 for success,
   // field 1 for the failure its `throws` clause numbers.
+  // A method the IDL would declare `oneway`: it runs, and no reply goes back. Over a framed
+  // transport that means no frame at all, so a server that answered would put a stray frame in
+  // front of the caller's next reply.
+  processor.add_oneway("note", proto => {
+    ignore(proto.read_field_begin())
+    last_note.val = proto.read_string()
+    ignore(proto.read_field_begin())
+  })
+  processor.add("last_note", proto => {
+    ignore(proto.read_field_begin())
+    proto.write_field_begin(@thrift.type_string, 0)
+    proto.write_string(last_note.val)
+  })
   processor.add("fail", proto => {
     ignore(proto.read_field_begin())
     let text = proto.read_string()
@@ -89,27 +108,53 @@ fn read_boom(
 }
 
 ///|
-fn binary_protocol() -> &@thrift.Protocol {
-  @thrift.Binary::new(b"")
+/// The transport a run speaks: a length in front of every message, or the header transport's
+/// frame — which carries its own length, the inner protocol's name, and optional headers.
+priv enum Wire {
+  Framed
+  Header
 }
 
 ///|
-fn compact_protocol() -> &@thrift.Protocol {
-  @thrift.Compact::new(b"")
-}
-
-///|
-fn protocol_of(compact : Bool) -> &@thrift.Protocol {
-  if compact {
-    compact_protocol()
-  } else {
-    binary_protocol()
+/// The protocol for one call: the plain one, or the header transport with `protocol` inside.
+/// `zlib` asks the header transport to compress every frame with its zlib transform, which is
+/// the one transform this build reads and writes.
+fn protocol_of(wire : Wire, compact : Bool, zlib : Bool) -> &@thrift.Protocol {
+  match wire {
+    Framed =>
+      if compact {
+        (@thrift.Compact::new(b"") : &@thrift.Protocol)
+      } else {
+        (@thrift.Binary::new(b"") : &@thrift.Protocol)
+      }
+    Header => {
+      let header = header_protocol(compact)
+      if zlib {
+        header.add_transform(@thrift.header_transform_zlib)
+      }
+      (header : &@thrift.Protocol)
+    }
   }
 }
 
 ///|
-async fn check(port : Int32, compact : Bool) -> Unit {
-  let proto = protocol_of(compact)
+/// A fresh header-protocol endpoint, which is what the accept loop asks for once per
+/// connection: a protocol object carries the connection's state.
+fn header_protocol(compact : Bool) -> @thrift.Header {
+  let header = @thrift.Header::new()
+  header.set_protocol(
+    if compact {
+      @thrift.header_protocol_compact
+    } else {
+      @thrift.header_protocol_binary
+    },
+  )
+  header
+}
+
+///|
+async fn check(port : Int32, wire : Wire, compact : Bool, zlib : Bool) -> Unit {
+  let proto = protocol_of(wire, compact, zlib)
   let client = @net.ThriftClient::connect("127.0.0.1", port, proto)
   defer client.close()
   let pong = @thrift.call(
@@ -192,39 +237,84 @@ async fn check(port : Int32, compact : Bool) -> Unit {
     Ok(_) => abort("fail with `no` answered a value")
     Err(message) => println("fail  \{message}")
   }
+  // A oneway call answers nothing, so nothing may be left in front of the next reply; the
+  // observation call that follows is what would read a stray frame if the server answered one.
+  @thrift.oneway_call(client, proto, "note", 6, proto => {
+    proto.write_field_begin(@thrift.type_string, 1)
+    proto.write_string("moonrpc")
+  }) catch {
+    e => abort("note failed: \{e}")
+  }
+  let seen = @thrift.call(
+    client,
+    proto,
+    "last_note",
+    7,
+    proto => {
+      proto.write_field_begin(@thrift.type_string, 1)
+      proto.write_string("")
+    },
+    proto => proto.read_string(),
+  ) catch {
+    e => abort("last_note failed: \{e}")
+  }
+  if seen != "moonrpc" {
+    abort("oneway note was not seen: \{seen}")
+  }
+  println("note  \{seen}")
 }
 
 ///|
 fn main {
   let mut checking = false
   let mut compact = false
+  let mut wire = Framed
+  let mut zlib = false
   let mut port = 9090
   let args = @env.args()
-  for i in 1..<args.length() {
+  for i = 1; i < args.length(); i = i + 1 {
     let arg = args[i]
-    if arg == "check" {
-      checking = true
-    } else if arg == "compact" {
-      compact = true
-    } else {
-      port = @string.parse_int(arg[:]) catch { _ => port }
+    // Every word is optional and order-free: a port, a transport, a protocol, and `check` to
+    // turn the same command into a client.
+    match arg {
+      "check" => checking = true
+      "framed" => wire = Framed
+      "header" => wire = Header
+      "compact" => compact = true
+      "binary" => compact = false
+      "zlib" => zlib = true
+      _ => port = @string.parse_int(arg[:]) catch { _ => port }
     }
+  }
+  let protocol_word = if compact { "compact" } else { "binary" }
+  let wire_word = match wire {
+    Framed => "framed"
+    Header => "header"
   }
   @async.run_async_main(() => {
     if checking {
-      check(port, compact)
+      check(port, wire, compact, zlib)
     } else {
       println(
-        "thrift serving on 127.0.0.1:\{port} (\{if compact { "compact" } else { "binary" }})",
+        "thrift serving on 127.0.0.1:\{port} (\{wire_word}, \{protocol_word})",
       )
-      if compact {
-        @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
-          @thrift.Compact::new(b"")
-        })
-      } else {
-        @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
-          @thrift.Binary::new(b"")
-        })
+      match (wire, compact) {
+        (Framed, true) =>
+          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
+            @thrift.Compact::new(b"")
+          })
+        (Framed, false) =>
+          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
+            @thrift.Binary::new(b"")
+          })
+        (Header, true) =>
+          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
+            header_protocol(true)
+          })
+        (Header, false) =>
+          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
+            header_protocol(false)
+          })
       }
     }
   })

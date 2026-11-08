@@ -1,6 +1,9 @@
 // A grpc-go server implementing the same greeter as moonrpc's `cmd/greetd`, so the
 // moonrpc generated client can call it and the two answers must agree. Plaintext or
-// TLS, gzip, and an interceptor chain on every call.
+// TLS, gzip, and an interceptor chain on every call. The reply echoes the caller's
+// `x-test-*` metadata and the deadline it was given, a refused name carries a rich
+// error detail, and a Batch comes back whole — the four things a message-only test
+// never sees.
 package main
 
 import (
@@ -10,6 +13,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"sort"
+	"strings"
+	"time"
 
 	greetpb "moonbitstack/moonrpc-interop/greetpb"
 
@@ -17,7 +23,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	_ "google.golang.org/grpc/encoding/gzip"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 var (
@@ -32,17 +40,48 @@ type server struct {
 
 func (s *server) SayHello(ctx context.Context, req *greetpb.HelloRequest) (*greetpb.HelloReply, error) {
 	if req.GetName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "name is required")
+		// A rich status: the detail is the half of a failure a caller can read, and a server
+		// that only sets a code leaves it with nothing to decode.
+		withDetails, err := status.New(codes.InvalidArgument, "name is required").
+			WithDetails(wrapperspb.String("name is required"))
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return nil, withDetails.Err()
 	}
 	var total int64
 	for _, v := range req.GetExtras() {
 		total += v
 	}
+	// What the caller sent beside the message, and how much of its deadline is left: the two
+	// things a request that never leaves the message path cannot check.
+	var echo []string
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		for key, values := range md {
+			if !strings.HasPrefix(key, "x-test-") {
+				continue
+			}
+			for _, v := range values {
+				echo = append(echo, key+"="+v)
+			}
+		}
+	}
+	sort.Strings(echo)
+	deadline := int64(-1)
+	if d, ok := ctx.Deadline(); ok {
+		deadline = time.Until(d).Milliseconds()
+	}
 	return &greetpb.HelloReply{
-		Message: "Hello, " + req.GetName(),
-		Mood:    req.GetMood(),
-		Total:   total,
+		Message:     "Hello, " + req.GetName(),
+		Mood:        req.GetMood(),
+		Total:       total,
+		EchoHeaders: echo,
+		DeadlineMs:  deadline,
 	}, nil
+}
+
+func (s *server) BatchEcho(_ context.Context, req *greetpb.Batch) (*greetpb.Batch, error) {
+	return &greetpb.Batch{Values: req.GetValues()}, nil
 }
 
 func (s *server) CountTo(req *greetpb.Upto, stream greetpb.Greeter_CountToServer) error {

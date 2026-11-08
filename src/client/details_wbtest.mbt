@@ -16,15 +16,8 @@ test "client details: a grpc-status-details-bin trailer decodes to its status" {
     grpc_message: "no token",
     headers: [],
     messages: [],
-    trailers: [
-      {
-        name: b"grpc-status-details-bin",
-        value: @wire.metadata_value_to_wire(
-          b"grpc-status-details-bin",
-          packed.to_bytes(),
-        ),
-      },
-    ],
+    // The value as `CallReply` holds it: the reader has already undone the `-bin` base64.
+    trailers: [{ name: b"grpc-status-details-bin", value: packed.to_bytes(), }],
     committed: true,
     unprocessed: false,
   }

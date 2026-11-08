@@ -1,5 +1,6 @@
-// An Apache Thrift server implementing the same two methods as moonrpc's `thriftd`,
-// so the moonrpc client can call it. TBinaryProtocol over TFramedTransport.
+// An Apache Thrift server implementing the same methods as moonrpc's `thriftd`, so the
+// moonrpc client can call it: binary or compact, over TFramedTransport or Apache's header
+// transport, with a ONEWAY method that answers nothing.
 package main
 
 import (
@@ -7,9 +8,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/apache/thrift/lib/go/thrift"
 )
+
+// lastNote is what the last ONEWAY call carried. A oneway method has no reply to put it in, so
+// the only way for a caller to see that it arrived is to ask a later call.
+var lastNote struct {
+	sync.Mutex
+	text string
+}
 
 type processor struct{}
 
@@ -64,6 +73,17 @@ func (processor) Process(ctx context.Context, in, out thrift.TProtocol) (bool, t
 	_ = in.ReadStructEnd(ctx)
 	_ = in.ReadMessageEnd(ctx)
 
+	// A ONEWAY call is answered with nothing at all: not an empty result, not a reply frame.
+	// Writing one would leave a stray frame in front of the reply to the caller's next call.
+	if mtype == thrift.ONEWAY {
+		if name == "note" {
+			lastNote.Lock()
+			lastNote.text, _ = values[1].(string)
+			lastNote.Unlock()
+		}
+		return true, nil
+	}
+
 	if err := out.WriteMessageBegin(ctx, name, thrift.REPLY, seqid); err != nil {
 		return false, thrift.WrapTException(err)
 	}
@@ -90,6 +110,16 @@ func (processor) Process(ctx context.Context, in, out thrift.TProtocol) (bool, t
 			return false, thrift.WrapTException(err)
 		}
 		if err := out.WriteI32(ctx, values[1].(int32)+values[2].(int32)); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+	case "last_note":
+		lastNote.Lock()
+		seen := lastNote.text
+		lastNote.Unlock()
+		if err := out.WriteFieldBegin(ctx, "success", thrift.STRING, 0); err != nil {
+			return false, thrift.WrapTException(err)
+		}
+		if err := out.WriteString(ctx, seen); err != nil {
 			return false, thrift.WrapTException(err)
 		}
 	case "fail":
@@ -152,16 +182,44 @@ func (processor) AddToProcessorMap(string, thrift.TProcessorFunction) {}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9091", "listen address")
-	compact := flag.Bool("compact", false, "speak TCompactProtocol instead of TBinaryProtocol")
+	protocol := flag.String("protocol", "binary", "TBinaryProtocol or TCompactProtocol")
+	transport := flag.String("transport", "framed", "framed transport, or Apache's header transport")
+	compact := flag.Bool("compact", false, "compatibility: same as -protocol compact")
 	flag.Parse()
+	if *compact {
+		*protocol = "compact"
+	}
+	if *protocol != "binary" && *protocol != "compact" {
+		log.Fatalf("protocol %q is not one this probe speaks: binary or compact", *protocol)
+	}
 	socket, err := thrift.NewTServerSocket(*addr)
 	if err != nil {
 		log.Fatalf("socket: %v", err)
 	}
-	transportFactory := thrift.NewTFramedTransportFactoryConf(thrift.NewTTransportFactory(), &thrift.TConfiguration{})
-	var protocolFactory thrift.TProtocolFactory = thrift.NewTBinaryProtocolFactoryConf(&thrift.TConfiguration{})
-	if *compact {
-		protocolFactory = thrift.NewTCompactProtocolFactoryConf(&thrift.TConfiguration{})
+	conf := &thrift.TConfiguration{}
+	var transportFactory thrift.TTransportFactory
+	var protocolFactory thrift.TProtocolFactory
+	switch *transport {
+	case "framed":
+		transportFactory = thrift.NewTFramedTransportFactoryConf(thrift.NewTTransportFactory(), conf)
+		if *protocol == "compact" {
+			protocolFactory = thrift.NewTCompactProtocolFactoryConf(conf)
+		} else {
+			protocolFactory = thrift.NewTBinaryProtocolFactoryConf(conf)
+		}
+	case "header":
+		// The header transport carries the inner protocol's name in each frame, so the factory
+		// below is the pairing Apache's own tests use: the transport factory frames, the
+		// protocol factory decides what goes inside.
+		transportFactory = thrift.NewTHeaderTransportFactoryConf(thrift.NewTTransportFactory(), conf)
+		if *protocol == "compact" {
+			conf.THeaderProtocolID = thrift.THeaderProtocolIDPtrMust(thrift.THeaderProtocolCompact)
+		} else {
+			conf.THeaderProtocolID = thrift.THeaderProtocolIDPtrMust(thrift.THeaderProtocolBinary)
+		}
+		protocolFactory = thrift.NewTHeaderProtocolFactoryConf(conf)
+	default:
+		log.Fatalf("transport %q is not one this probe speaks: framed or header", *transport)
 	}
 	server := thrift.NewTSimpleServer4(processor{}, socket, transportFactory, protocolFactory)
 	fmt.Printf("apache thrift greeter listening on %s\n", *addr)

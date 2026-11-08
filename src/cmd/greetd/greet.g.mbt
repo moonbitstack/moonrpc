@@ -4,7 +4,9 @@
 pub fn[R :  @moonrpc.Registrar] Greeter::register(self : Greeter, server : R) -> Unit {
   server.register_handler(
     "/greet.Greeter/SayHello",
-    @moonrpc.unary((_ctx, req : HelloRequest) => Greeter::say_hello(self, req)),
+    @moonrpc.unary(
+      (ctx, req : HelloRequest) => Greeter::say_hello(self, ctx, req)
+    ),
   )
   server.register_handler(
     "/greet.Greeter/CountTo",
@@ -21,6 +23,10 @@ pub fn[R :  @moonrpc.Registrar] Greeter::register(self : Greeter, server : R) ->
   server.register_handler(
     "/greet.Greeter/Echo",
     @moonrpc.bidi((_ctx, req : Array[Number]) => Greeter::echo(self, req)),
+  )
+  server.register_handler(
+    "/greet.Greeter/BatchEcho",
+    @moonrpc.unary((_ctx, req : Batch) => Greeter::batch_echo(self, req)),
   )
 }
 
@@ -115,6 +121,26 @@ pub async fn[C :  @moonrpc.Caller] GreeterClient::echo(
 }
 
 ///|
+pub async fn[C :  @moonrpc.Caller] GreeterClient::batch_echo(
+  self : GreeterClient[C],
+  req : Batch,
+  metadata? : Array[@moonrpc.Header],
+  timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
+) -> Batch {
+  self
+    .channel
+    .invoke(
+      "/greet.Greeter/BatchEcho",
+      [@moonrpc.Message::encode(req)],
+      metadata.unwrap_or([]),
+      timeout_millis,
+      retry,
+    )
+    .reply()
+}
+
+///|
 pub fn descriptor() -> @moonrpc.FileDescriptor {
   @moonrpc.FileDescriptor::new(
     "greet.proto",
@@ -159,6 +185,13 @@ pub fn descriptor() -> @moonrpc.FileDescriptor {
             type_name=".greet.Mood",
           ),
           @moonrpc.FieldDescriptor::new("total", 3, TypeInt64),
+          @moonrpc.FieldDescriptor::new(
+            "echo_headers",
+            4,
+            TypeString,
+            label=LabelRepeated,
+          ),
+          @moonrpc.FieldDescriptor::new("deadline_ms", 5, TypeInt64),
         ],
       ),
       @moonrpc.MessageDescriptor::new(
@@ -166,6 +199,16 @@ pub fn descriptor() -> @moonrpc.FileDescriptor {
       ),
       @moonrpc.MessageDescriptor::new(
         "Number", [@moonrpc.FieldDescriptor::new("value", 1, TypeInt32)]
+      ),
+      @moonrpc.MessageDescriptor::new(
+        "Batch", [
+          @moonrpc.FieldDescriptor::new(
+            "values",
+            1,
+            TypeInt32,
+            label=LabelRepeated,
+          ),
+        ],
       ),
     ],
     enums=[
@@ -208,6 +251,13 @@ pub fn descriptor() -> @moonrpc.FileDescriptor {
             output_type: ".greet.Number",
             client_streaming: true,
             server_streaming: true,
+          },
+          {
+            name: "BatchEcho",
+            input_type: ".greet.Batch",
+            output_type: ".greet.Batch",
+            client_streaming: false,
+            server_streaming: false,
           },
         ],
       },
@@ -294,6 +344,12 @@ pub impl @moonrpc.Message for HelloReply with fn encode(self) {
   if self.total != 0L {
     w.int64(3, self.total)
   }
+  for x in self.echo_headers {
+    w.string_(4, x)
+  }
+  if self.deadline_ms != 0L {
+    w.int64(5, self.deadline_ms)
+  }
   w.to_bytes()
 }
 
@@ -303,15 +359,25 @@ pub impl @moonrpc.Message for HelloReply with fn decode(b) {
   let v_message :Ref[String] = Ref("")
   let v_mood :Ref[Mood] = Ref(@moonrpc.Enum::of(0))
   let v_total :Ref[Int64] = Ref(0L)
+  let v_echo_headers :Array[String] = []
+  let v_deadline_ms :Ref[Int64] = Ref(0L)
   while !r.eof() {
     match r.read_tag() {
       (1, LengthDelim) => v_message.val = r.read_string()
       (2, Varint) => v_mood.val = @moonrpc.Enum::of(r.read_int32())
       (3, Varint) => v_total.val = r.read_int64()
+      (4, LengthDelim) => v_echo_headers.push(r.read_string())
+      (5, Varint) => v_deadline_ms.val = r.read_int64()
       (_, wire) => r.skip(wire)
     }
   }
-  HelloReply::{ message: v_message.val, mood: v_mood.val, total: v_total.val }
+  HelloReply::{
+    message: v_message.val,
+    mood: v_mood.val,
+    total: v_total.val,
+    echo_headers: v_echo_headers,
+    deadline_ms: v_deadline_ms.val,
+  }
 }
 
 ///|
@@ -356,4 +422,37 @@ pub impl @moonrpc.Message for Number with fn decode(b) {
     }
   }
   Number::{ value: v_value.val }
+}
+
+///|
+pub impl @moonrpc.Message for Batch with fn encode(self) {
+  let w = @moonrpc.PbWriter::new()
+  if !self.values.is_empty() {
+    let p = @moonrpc.PbWriter::new()
+    for x in self.values {
+      p.write_varint(x.to_int64().reinterpret_as_uint64())
+    }
+    w.write_tag(1, LengthDelim)
+    w.write_len_delim(p.to_bytes())
+  }
+  w.to_bytes()
+}
+
+///|
+pub impl @moonrpc.Message for Batch with fn decode(b) {
+  let r = @moonrpc.PbReader::new(b)
+  let v_values :Array[Int32] = []
+  while !r.eof() {
+    match r.read_tag() {
+      (1, LengthDelim) => {
+        let sub = @moonrpc.PbReader::new(r.read_len_delim())
+        while !sub.eof() {
+          v_values.push(sub.read_int32())
+        }
+      }
+      (1, Varint) => v_values.push(r.read_int32())
+      (_, wire) => r.skip(wire)
+    }
+  }
+  Batch::{ values: v_values }
 }

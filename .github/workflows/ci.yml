@@ -272,8 +272,11 @@ jobs:
           echo "TLS interop OK"
 
   # A genuine grpc-go client calling the moonrpc server: all four cardinalities, an
-  # interceptor chain, gzip, and plaintext and TLS. grpcurl already proves the wire;
-  # this proves the same wire to a hand-written Go program using the full call API.
+  # interceptor chain, gzip, and plaintext and TLS. grpcurl already proves the wire; this
+  # proves the same wire to a hand-written Go program using the full call API — including the
+  # parts of a call that are not a message: metadata the server echoes, the deadline it sees,
+  # a rich error detail grpc-go's own runtime decodes, and a 160 KB message that needs a
+  # window update.
   grpc-go-client-interop:
     name: real gRPC interop (grpc-go client)
     runs-on: ubuntu-26.04
@@ -330,7 +333,14 @@ jobs:
             if (exec 3<>/dev/tcp/127.0.0.1/12000) 2>/dev/null; then exec 3>&-; break; fi
             sleep 1
           done
-          ./scripts/interop/bin/client -addr 127.0.0.1:12000
+          # The Apache peer also checks what a call carries beside its messages: the metadata
+          # the server echoed, the deadline it saw, the rich error detail, and a message that
+          # needs a window update. Its exit status is the assertion; these greps name them.
+          ./scripts/interop/bin/client -addr 127.0.0.1:12000 | tee /tmp/go-client.txt
+          grep -q 'SayHello echoes x-test' /tmp/go-client.txt
+          grep -q 'SayHello saw a deadline' /tmp/go-client.txt
+          grep -q 'the detail is the message the server sent' /tmp/go-client.txt
+          grep -q 'BatchEcho returns every value' /tmp/go-client.txt
           echo "== gzip =="
           ./scripts/interop/bin/client -addr 127.0.0.1:12000 -gzip
           kill $SRV 2>/dev/null || true
@@ -347,8 +357,9 @@ jobs:
           echo "grpc-go client interop OK"
 
   # The other direction: a real grpc-go server, and the moonrpc generated client
-  # (`greetd check`) against it, plaintext and TLS. Both answers must match byte for
-  # byte, which is what `client and channel agree` asserts.
+  # (`greetd check`) against it, plaintext and TLS. Both answers must match byte for byte,
+  # which is what `client and channel agree` asserts, and the same four non-message parts of
+  # a call are read back here with this library's decoder rather than grpc-go's.
   grpc-go-server-interop:
     name: real gRPC interop (grpc-go server)
     runs-on: ubuntu-26.04
@@ -407,6 +418,18 @@ jobs:
           done
           "$CLIENT" check 12002 | tee /tmp/go-check.txt
           grep -q 'client and channel agree' /tmp/go-check.txt
+          # This side reads the same four things back: the echoed metadata, the deadline it
+          # set, the detail grpc-go packed, and the batch that needed a window update.
+          grep -q 'SayHello echo  x-test-a=1,x-test-b=2' /tmp/go-check.txt
+          grep -q '^deadline [0-9]' /tmp/go-check.txt
+          grep -q 'SayHello detail  type.googleapis.com/google.protobuf.StringValue' /tmp/go-check.txt
+          grep -q 'BatchEcho size  40000' /tmp/go-check.txt
+          echo "== gzip =="
+          # The other compression direction: this client compresses every request and
+          # advertises gzip back, so a server that cannot decode a compressed message, or one
+          # that answers identity, shows up here.
+          "$CLIENT" check 12002 gzip | tee /tmp/go-check-gzip.txt
+          grep -q 'BatchEcho size  40000' /tmp/go-check-gzip.txt
           kill $SRV 2>/dev/null || true
           wait $SRV 2>/dev/null || true
           trap - EXIT
@@ -420,6 +443,7 @@ jobs:
           done
           "$CLIENT" check 12003 "$TLS/ca.pem" | tee /tmp/go-tls-check.txt
           grep -q 'client and channel agree' /tmp/go-tls-check.txt
+          grep -q 'BatchEcho size  40000' /tmp/go-tls-check.txt
           echo "grpc-go server interop OK"
 
   # The canonical grpc.channelz.v1.Channelz service, through Server Reflection and a
@@ -494,9 +518,11 @@ jobs:
           grep -q 'NotFound' /tmp/cz-err.txt
           echo "channelz interop OK"
 
-  # Apache Thrift in both directions: a real Thrift Go client calls `thriftd`, and the
-  # moonrpc client (`thriftd check`) calls a real Thrift Go server. TBinaryProtocol over
-  # TFramedTransport, strict message headers, the same two methods each way.
+  # Apache Thrift in both directions, over every transport and protocol this stack serves: a
+  # real Thrift Go peer calls `thriftd`, and the moonrpc client (`thriftd check`) calls a real
+  # Thrift Go server. TFramedTransport and Apache's header transport, TBinaryProtocol and
+  # TCompactProtocol inside either, the zlib transform the header transport can carry, strict
+  # message headers, exceptions, and a ONEWAY method that must leave no reply behind.
   thrift-interop:
     name: Apache Thrift interop (both directions)
     runs-on: ubuntu-26.04
@@ -526,7 +552,7 @@ jobs:
           go build -o bin/ ./...
           cd ../..
 
-      - name: Apache Thrift, both directions, both protocols
+      - name: Apache Thrift, both directions, every transport and protocol
         run: |
           set -euo pipefail
           THRIFTD=./_build/native/debug/build/cmd/thriftd/thriftd.exe
@@ -538,38 +564,53 @@ jobs:
             echo "nothing listening on $1" >&2
             return 1
           }
-          # $1 protocol name, $2 argument for thriftd, $3 flag for the Go peers (Go's
-          # flag package wants the dash), $4 server port, $5 Go server port
-          run_protocol() {
-            echo "== $1: Go client -> moonrpc server =="
-            "$THRIFTD" "$4" $2 & SRV=$!
+          # $1 transport, $2 protocol, $3 port for the moonrpc server, $4 port for the Go
+          # server, $5 extra words for `thriftd check` (empty, or `zlib`).
+          run_matrix() {
+            label="$1/$2${5:+/$5}"
+            tag="$1-$2${5:+-$5}"
+            echo "== $label: Go client -> moonrpc server =="
+            "$THRIFTD" "$3" "$1" "$2" & SRV=$!
             trap 'kill $SRV 2>/dev/null || true' EXIT
-            wait_for "$4"
-            ./scripts/interop/bin/thriftclient -addr 127.0.0.1:"$4" $3 | tee /tmp/thrift-go-client-$1.txt
-            grep -q 'apache thrift client interop OK' /tmp/thrift-go-client-$1.txt
-            grep -q 'double returns 3' /tmp/thrift-go-client-$1.txt
-            grep -q 'an exception arrives in field 1' /tmp/thrift-go-client-$1.txt
+            wait_for "$3"
+            # The Apache peer reads the header transport, its inner protocol, the zlib
+            # transform, and that a ONEWAY call leaves nothing in front of the next reply.
+            ./scripts/interop/bin/thriftclient -addr 127.0.0.1:"$3" \
+              -transport "$1" -protocol "$2" ${5:+-zlib} \
+              | tee "/tmp/thrift-go-client-$tag.txt"
+            grep -q 'apache thrift client interop OK' "/tmp/thrift-go-client-$tag.txt"
+            grep -q 'double returns 3' "/tmp/thrift-go-client-$tag.txt"
+            grep -q 'an exception arrives in field 1' "/tmp/thrift-go-client-$tag.txt"
+            grep -q 'a oneway call arrives' "/tmp/thrift-go-client-$tag.txt"
             kill $SRV 2>/dev/null || true
             wait $SRV 2>/dev/null || true
             trap - EXIT
 
-            echo "== $1: moonrpc client -> Go server =="
-            ./scripts/interop/bin/thriftserver -addr 127.0.0.1:"$5" $3 & SRV=$!
+            echo "== $label: moonrpc client -> Go server =="
+            ./scripts/interop/bin/thriftserver -addr 127.0.0.1:"$4" \
+              -transport "$1" -protocol "$2" & SRV=$!
             trap 'kill $SRV 2>/dev/null || true' EXIT
-            wait_for "$5"
-            "$THRIFTD" check "$5" $2 | tee /tmp/thrift-moonbit-client-$1.txt
-            grep -q 'pong:moonrpc' /tmp/thrift-moonbit-client-$1.txt
-            grep -q '42' /tmp/thrift-moonbit-client-$1.txt
-            grep -q 'double 3' /tmp/thrift-moonbit-client-$1.txt
-            grep -q 'boom:no' /tmp/thrift-moonbit-client-$1.txt
+            wait_for "$4"
+            "$THRIFTD" check "$4" "$1" "$2" $5 \
+              | tee "/tmp/thrift-moonbit-client-$tag.txt"
+            grep -q 'pong:moonrpc' "/tmp/thrift-moonbit-client-$tag.txt"
+            grep -q 'add   42' "/tmp/thrift-moonbit-client-$tag.txt"
+            grep -q 'double 3' "/tmp/thrift-moonbit-client-$tag.txt"
+            grep -q 'boom:no' "/tmp/thrift-moonbit-client-$tag.txt"
+            grep -q 'note  moonrpc' "/tmp/thrift-moonbit-client-$tag.txt"
             kill $SRV 2>/dev/null || true
             wait $SRV 2>/dev/null || true
             trap - EXIT
           }
-          # The binary protocol, then the compact one. The same service answers both,
-          # which is what makes the abstraction worth having.
-          run_protocol binary '' '' 9090 9091
-          run_protocol compact compact -compact 9092 9093
+          # Every transport this stack serves, with every protocol it serves inside it, plus
+          # the zlib transform the header transport can carry. The same service answers all
+          # of them, which is what makes the abstraction worth having.
+          run_matrix framed binary 9090 9091 ''
+          run_matrix framed compact 9092 9093 ''
+          run_matrix header binary 9094 9095 ''
+          run_matrix header compact 9096 9097 ''
+          run_matrix header binary 9098 9099 'zlib'
+          run_matrix header compact 9100 9101 'zlib'
           echo "Apache Thrift interop OK"
 
   # Apache Thrift's own cross test, in both directions and both protocols: their Go client
