@@ -681,9 +681,22 @@ fn Session::details(self : Session) -> Array[(String, Json)] {
         (_, wire) => reader.skip(wire) catch { _ => break }
       }
     }
-    out.push((last_segment(type_url), Json::string(@base64.encode(value[:]))))
+    // The protocol writes an error detail's bytes in unpadded base64; a padded value is
+    // rejected by a reader that follows it, which is how this was found.
+    out.push((last_segment(type_url), Json::string(unpadded(value))))
   }
   out
+}
+
+///|
+/// `text` without the `=` padding base64 adds, which is the spelling the protocol uses.
+fn unpadded(value : Bytes) -> String {
+  let text = @base64.encode(value[:])
+  let mut end = text.length()
+  while end > 0 && text[end - 1] == '=' {
+    end = end - 1
+  }
+  text.exact_view(start=0, end~).to_owned()
 }
 
 ///|
