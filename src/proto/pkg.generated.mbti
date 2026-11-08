@@ -5,9 +5,12 @@ import {
   "moonbitlang/core/buffer",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
+  "moonbitstack/moonproto/desc",
 }
 
 // Values
+pub fn compile_proto(Array[(String, String)]) -> Array[FileDescriptor] raise PbError
+
 pub fn decode_file_descriptor_set(Bytes) -> Array[FileDescriptor] raise PbError
 
 pub fn decode_status_details(BytesView) -> StatusDetails?
@@ -20,6 +23,8 @@ pub fn encode_file_descriptor_set(Array[FileDescriptor]) -> Bytes
 
 pub fn json_name(FieldDescriptor) -> String
 
+pub fn proto_file_of(@desc.FileDescriptorProto, Array[String]) -> FileDescriptor
+
 // Errors
 #derive(Eq)
 pub suberror PbError {
@@ -27,6 +32,7 @@ pub suberror PbError {
   BadWireType(Int32)
   Overflow
   BadUtf8
+  BadSchema(String)
 }
 pub fn PbError::equal(Self, Self) -> Bool
 pub fn PbError::not_equal(Self, Self) -> Bool
@@ -213,6 +219,7 @@ pub(all) struct Schema {
   messages : Map[String, MessageDescriptor]
   enums : Map[String, EnumDescriptor]
 }
+pub fn Schema::compile(Array[(String, String)]) -> Self raise PbError
 pub fn Schema::empty() -> Self
 pub fn Schema::of(Array[FileDescriptor]) -> Self
 pub fn Schema::to_bytes(Self, String, @json.Json) -> Bytes raise PbError

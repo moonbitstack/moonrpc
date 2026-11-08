@@ -8,4 +8,6 @@ import {
   "moonbitstack/moonvar/leb128",
   "moonbitstack/moonvar/fixed",
   "moonbitlang/core/encoding/utf8",
+  "moonbitstack/moonproto/desc" @mpdesc,
+  "moonbitstack/moonproto/parser" @mpparser,
 }

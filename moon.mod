@@ -54,6 +54,7 @@ description = "gRPC for MoonBit."
 import {
   "moonbitlang/async@0.22.5",
   "moonbitstack/moonbase@0.4.3",
+  "moonbitstack/moonproto@0.1.0",
   "moonbitstack/moonzip@0.3.7",
   "moonbitstack/moonhttp@0.15.9",
   "moonbitstack/moonurl@0.2.5",

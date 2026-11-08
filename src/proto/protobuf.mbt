@@ -66,6 +66,8 @@ pub suberror PbError {
   BadWireType(Int32)
   Overflow
   BadUtf8
+  // A `.proto` source, or a descriptor, that does not describe anything.
+  BadSchema(String)
 }
 
 ///|
@@ -76,6 +78,7 @@ pub impl Show for PbError with fn output(self, logger) {
     BadWireType(n) => logger.write_string("BadWireType(" + n.to_string() + ")")
     Overflow => logger.write_string("Overflow")
     BadUtf8 => logger.write_string("BadUtf8")
+    BadSchema(why) => logger.write_string("BadSchema(" + why + ")")
   }
 }
 
