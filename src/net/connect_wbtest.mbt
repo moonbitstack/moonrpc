@@ -294,3 +294,141 @@ async test "connect client: a failing call raises the status the server answered
     task.cancel()
   })
 }
+
+///|
+/// A bidi route answering every message with itself in capitals, and `bye` at the close.
+fn chat_connect_server() -> ConnectServer {
+  let server = ConnectServer::new()
+  server.add("/test.Chat/Up", {
+    input: "",
+    output: "",
+    handler: @stream.Handler::Bidi(_ctx => @stream.BidiHandler::{
+      on_message: m => [m],
+      on_end: () => [b"bye"],
+    }),
+  })
+  server
+}
+
+///|
+/// Open an HTTP/2 connection and write the request head for `path`.
+async fn h2_open(conn : @tcp.Conn, path : String) -> @hpack.Decoder {
+  conn.write(@http2.preface)
+  conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
+  let encoder = @hpack.Encoder::new()
+  let block = encoder.encode([
+    { name: b":method", value: b"POST", },
+    { name: b":scheme", value: b"http", },
+    { name: b":authority", value: b"127.0.0.1", },
+    { name: b":path", value: @utf8.encode(path), },
+    { name: b"content-type", value: b"application/connect+proto", },
+  ])
+  conn.write(
+    @http2.Frame::Headers(
+      stream_id=1,
+      fragment=block,
+      end_stream=false,
+      end_headers=true,
+      priority=None,
+      padding=0,
+    ).encode(),
+  )
+  @hpack.Decoder::new()
+}
+
+///|
+/// Read until a DATA frame carrying a whole envelope arrives, and return its payload. Settings
+/// and window updates on the way are answered, which is what keeps the peer willing to send.
+async fn h2_next_envelope(
+  conn : @tcp.Conn,
+  decoder : @hpack.Decoder,
+  scratch : Buffer,
+) -> Bytes {
+  for ;; {
+    let frame = read_frame(conn) catch { _ => return b"" }
+    match frame {
+      @http2.Frame::Data(data~, end_stream~, ..) => {
+        scratch.write_bytes(data)
+        let whole = scratch.to_bytes()
+        match @connect.decode_envelope(whole[:]) {
+          Some((envelope, next)) => {
+            let rest = whole[next:].to_owned()
+            scratch.reset()
+            scratch.write_bytes(rest)
+            if end_stream {
+              return envelope.payload + b"|end"
+            }
+            return envelope.payload
+          }
+          None => ()
+        }
+      }
+      @http2.Frame::Settings(ack~, ..) =>
+        if !ack {
+          conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
+          conn.write(
+            @http2.Frame::WindowUpdate(stream_id=0, increment=1 << 20).encode(),
+          )
+          conn.write(
+            @http2.Frame::WindowUpdate(stream_id=1, increment=1 << 20).encode(),
+          )
+        }
+      @http2.Frame::Headers(fragment~, ..) => {
+        let fields : Array[@header.Header] = decoder.decode(fragment) catch {
+          _ => []
+        }
+        // The reply head arrives before the first message; nothing to do but read on.
+        ignore(fields)
+      }
+      @http2.Frame::GoAway(..) => return b""
+      _ => ()
+    }
+  }
+}
+
+///|
+async test "connect over HTTP/2: a bidi call is answered before the request ends" {
+  @async.with_task_group(g => {
+    let server = chat_connect_server()
+    let port = server.bind(port=0).port()
+    let task = g.spawn(() => server.serve())
+    let conn = @tcp.dial("127.0.0.1", port~)
+    defer conn.close()
+    let decoder = h2_open(conn, "/test.Chat/Up")
+    let scratch = Buffer()
+    // The first message goes out, and the request stays open.
+    conn.write(
+      @http2.Frame::Data(
+        stream_id=1,
+        data=@connect.encode_envelope(b"one"),
+        end_stream=false,
+        padding=0,
+      ).encode(),
+    )
+    let first = h2_next_envelope(conn, decoder, scratch)
+    assert_eq(first, b"one")
+    // Only now the second one, and then the close: the answer to the first arrived while the
+    // request was still open, which is what a driver that waited for the close could not do.
+    conn.write(
+      @http2.Frame::Data(
+        stream_id=1,
+        data=@connect.encode_envelope(b"two"),
+        end_stream=false,
+        padding=0,
+      ).encode(),
+    )
+    let second = h2_next_envelope(conn, decoder, scratch)
+    assert_eq(second, b"two")
+    conn.write(
+      @http2.Frame::Data(
+        stream_id=1,
+        data=@connect.encode_envelope(b"", flags=@connect.flag_end_stream),
+        end_stream=true,
+        padding=0,
+      ).encode(),
+    )
+    let goodbye = h2_next_envelope(conn, decoder, scratch)
+    assert_eq(goodbye, b"bye")
+    task.cancel()
+  })
+}

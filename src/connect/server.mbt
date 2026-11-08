@@ -116,14 +116,17 @@ fn metadata_of(headers : Array[@header.Header]) -> Array[@header.Header] {
 ///|
 /// The context a handler sees: the path, the caller's metadata, the deadline the caller asked
 /// for, and the slots it fills before returning.
-fn context_of(request : Request) -> @stream.RpcContext {
-  let timeout = match header_value(request.headers, b"connect-timeout") {
+fn context_of(
+  path : String,
+  headers : Array[@header.Header],
+) -> @stream.RpcContext {
+  let timeout = match header_value(headers, b"connect-timeout") {
     Some(text) => parse_millis(text)
     None => None
   }
   {
-    path: request.path,
-    metadata: metadata_of(request.headers),
+    path,
+    metadata: metadata_of(headers),
     deadline_millis: timeout,
     resp_headers: [],
     resp_trailers: [],
@@ -163,50 +166,6 @@ fn response_headers(
     for h in ctx.resp_trailers {
       out.push(h)
     }
-  }
-  out
-}
-
-///|
-/// Decode one request body into the messages a handler takes: a unary body is one message, a
-/// streaming one is a run of envelopes whose last is the end-stream envelope.
-fn Server::request_messages(
-  self : Server,
-  request : Request,
-  content : Content,
-  route : Route,
-) -> Array[Bytes] raise {
-  if !content.streaming {
-    return [self.decode_message(request.body, content.codec, route.input)]
-  }
-  let (envelopes, at) = split_envelopes(request.body)
-  if at != request.body.length() {
-    raise @wire.StatusError(Internal, "a truncated envelope ended the request")
-  }
-  let out : Array[Bytes] = []
-  for envelope in envelopes {
-    if envelope.is_end_stream() {
-      break
-    }
-    let payload = if envelope.is_compressed() {
-      if header_lists(request.headers, b"connect-content-encoding", "gzip") {
-        @gzip.gunzip(envelope.payload[:]) catch {
-          _ =>
-            raise @wire.StatusError(
-              Internal,
-              "a compressed message would not inflate",
-            )
-        }
-      } else {
-        raise @wire.StatusError(
-          Unimplemented,
-          "this server does not decode that content encoding",
-        )
-      }
-    } else {
-      envelope.payload
-    }
-    out.push(self.decode_message(payload, content.codec, route.input))
   }
   out
 }
@@ -271,67 +230,470 @@ fn Server::encode_message(
 ///|
 /// Compress `body` when the caller said it reads gzip, and say so in the reply's headers.
 fn maybe_compress(
-  request : Request,
   headers : Array[@header.Header],
   body : Bytes,
-  streaming : Bool,
   flags : Byte,
-) -> (Bytes, Array[@header.Header], Byte) {
-  if !header_lists(request.headers, b"connect-accept-encoding", "gzip") {
-    return (body, headers, flags)
+) -> (Bytes, Byte) {
+  if !header_lists(headers, b"connect-accept-encoding", "gzip") {
+    return (body, flags)
   }
   let compressed = @gzip.gzip(body)
-  let out = []
-  for h in headers {
-    out.push(h)
-  }
-  if streaming {
-    out.push({ name: b"connect-content-encoding", value: b"gzip", })
-  } else {
-    out.push({ name: b"connect-content-encoding", value: b"gzip", })
-  }
-  (compressed, out, (flags.to_int() | flag_compressed.to_int()).to_byte())
+  (compressed, (flags.to_int() | flag_compressed.to_int()).to_byte())
+}
+
+// -- a call in progress -----------------------------------------------------
+//
+// `serve` reads a whole request and writes a whole answer, which is right for every call whose
+// shape is "one request, then the replies". A bidirectional call is not that shape: the caller
+// may send a message and wait for the answer to it before sending the next, and a server that
+// waits for the close deadlocks against it. `Session` is the same dispatch cut at the points a
+// call actually has: the head is known at the start, a message may arrive at any time, and the
+// end is both the last thing read and the last thing written.
+
+///|
+/// One call in progress.
+pub struct Session {
+  priv server : Server
+  priv content : Content
+  priv headers : Array[@header.Header]
+  priv ctx : @stream.RpcContext
+  priv route : Route?
+  // A failure decided before a handler could run: the caller gets this and nothing else.
+  priv refuse : (@wire.Status, String)?
+  // A non-streaming body is read whole; a streaming one is cut into envelopes as it arrives.
+  priv body : Buffer
+  priv pending : Buffer
+  priv messages : Array[Bytes]
+  priv bidi : @stream.BidiHandler?
+  priv mut failure : (@wire.Status, String)?
+  priv mut ended : Bool
 }
 
 ///|
-/// Answer one request.
-pub fn Server::serve(self : Server, request : Request) -> Response {
-  let content = match header_value(request.headers, b"content-type") {
-    Some(text) =>
-      match Content::parse(text) {
-        Some(c) => c
-        None =>
-          return failure(
-            request,
-            { codec: Proto, streaming: false, },
-            @wire.Status::Internal,
-            "content-type is not a Connect content type",
-          )
+/// Begin a call: work out the codec, find the route, and build the context a handler sees. No
+/// handler runs yet — a streaming call has nothing to give it.
+pub fn Server::start(
+  self : Server,
+  path : String,
+  headers : Array[@header.Header],
+) -> Session {
+  let parsed = match header_value(headers, b"content-type") {
+    Some(text) => Content::parse(text)
+    None => None
+  }
+  let content = match parsed {
+    Some(c) => c
+    None => { codec: Proto, streaming: false, }
+  }
+  let route = self.routes.get(path)
+  let ctx = context_of(path, headers)
+  let mut refuse : (@wire.Status, String)? = match parsed {
+    Some(_) => None
+    None =>
+      Some((@wire.Status::Internal, "content-type is a Connect content type"))
+  }
+  if refuse is None {
+    match route {
+      None =>
+        refuse = Some((@wire.Status::Unimplemented, "no method at " + path))
+      Some(r) =>
+        match r.handler {
+          Pushed(_) =>
+            refuse = Some(
+              (
+                @wire.Status::Unimplemented,
+                "a pushed handler needs a driver that can await it",
+              ),
+            )
+          _ => ()
+        }
+    }
+  }
+  // A bidirectional handler is built now, because its first answer may come before the request
+  // ends and there would be nowhere to build it later.
+  let bidi = match route {
+    Some(r) =>
+      match r.handler {
+        Bidi(factory) => Some(factory(ctx))
+        _ => None
       }
-    None =>
-      return failure(
-        request,
-        { codec: Proto, streaming: false, },
-        @wire.Status::Internal,
-        "content-type is missing",
-      )
+    None => None
   }
-  let route = match self.routes.get(request.path) {
-    Some(r) => r
-    None =>
-      return failure(
-        request,
-        content,
+  {
+    server: self,
+    content,
+    headers,
+    ctx,
+    route,
+    refuse,
+    body: Buffer(),
+    pending: Buffer(),
+    messages: [],
+    bidi,
+    failure: None,
+    ended: false,
+  }
+}
+
+///|
+pub fn Session::streaming(self : Session) -> Bool {
+  self.content.streaming
+}
+
+///|
+/// Whether the call was refused before a handler could run. A driver asks this before sending a
+/// head: a refused streaming call carries its whole answer in `finish`, not in `head`.
+pub fn Session::refused(self : Session) -> Bool {
+  self.refuse is Some(_)
+}
+
+///|
+/// The head to send now, for a streaming call. A non-streaming call's status is not known until
+/// its handler has run, so its driver waits for `finish` instead.
+pub fn Session::head(self : Session) -> Response {
+  match self.refuse {
+    Some((status, message)) => failure(self.content, status, message)
+    None => {
+      let headers = response_headers(self.ctx, self.content)
+      if header_lists(self.headers, b"connect-accept-encoding", "gzip") {
+        headers.push({ name: b"connect-content-encoding", value: b"gzip", })
+      }
+      { status: 200, headers, body: b"", }
+    }
+  }
+}
+
+///|
+/// Take the next piece of the request body and hand back whatever may be written now: the
+/// envelopes answering the messages that just became whole. A piece that ends in the middle of
+/// an envelope answers nothing, and the rest of it waits for the next piece.
+pub fn Session::feed(self : Session, data : Bytes) -> Bytes {
+  if self.refuse is Some(_) || self.failure is Some(_) {
+    return b""
+  }
+  if !self.content.streaming {
+    self.body.write_bytes(data)
+    return b""
+  }
+  self.pending.write_bytes(data)
+  let out = Buffer()
+  for ;; {
+    let whole = self.pending.to_bytes()
+    let (envelope, next) = match decode_envelope(whole[:]) {
+      Some(pair) => pair
+      None => break
+    }
+    let rest = whole[next:].to_owned()
+    self.pending.reset()
+    self.pending.write_bytes(rest)
+    if envelope.is_end_stream() {
+      self.ended = true
+      match self.bidi {
+        Some(handler) =>
+          for reply in (handler.on_end)() {
+            self.write_reply(out, reply)
+          }
+        None => ()
+      }
+      break
+    }
+    let payload = match self.inflate(envelope) {
+      Some(bytes) => bytes
+      None => break
+    }
+    let message = match self.decode(payload) {
+      Some(m) => m
+      None => break
+    }
+    self.dispatch(message, out)
+  }
+  out.to_bytes()
+}
+
+///|
+/// End the call and hand back the rest of the answer: the replies a handler still owes, and the
+/// end-stream envelope that closes the call with its outcome.
+pub fn Session::finish(self : Session) -> Response {
+  match self.refuse {
+    Some((status, message)) => return failure(self.content, status, message)
+    None => ()
+  }
+  match self.failure {
+    Some((status, message)) =>
+      // Streaming already sent its head, so the outcome travels in the end envelope instead.
+      if !self.content.streaming {
+        return failure(self.content, status, message)
+      }
+    None => ()
+  }
+  if !self.content.streaming {
+    return self.finish_unary()
+  }
+  self.finish_streaming()
+}
+
+///|
+/// The payload of an envelope, inflated when the caller compressed it.
+fn Session::inflate(self : Session, envelope : Envelope) -> Bytes? {
+  if !envelope.is_compressed() {
+    return Some(envelope.payload)
+  }
+  if !header_lists(self.headers, b"connect-content-encoding", "gzip") {
+    self.failure = Some(
+      (
         @wire.Status::Unimplemented,
-        "no method at " + request.path,
+        "this server does not decode that content encoding",
+      ),
+    )
+    return None
+  }
+  let inflated : Result[Bytes, Error] = Ok(@gzip.gunzip(envelope.payload[:])) catch {
+    e => Err(e)
+  }
+  match inflated {
+    Ok(bytes) => Some(bytes)
+    Err(_) => {
+      self.failure = Some(
+        (@wire.Status::Internal, "a compressed message would not inflate"),
       )
+      None
+    }
   }
-  let messages = self.request_messages(request, content, route) catch {
-    e =>
-      return failure(request, content, status_of_error(e), message_of_error(e))
+}
+
+///|
+fn Session::output_name(self : Session) -> String {
+  match self.route {
+    Some(r) => r.output
+    None => ""
   }
-  self.answer(request, content, route, messages) catch {
-    e => failure(request, content, status_of_error(e), message_of_error(e))
+}
+
+///|
+fn Session::decode(self : Session, payload : Bytes) -> Bytes? {
+  let name = match self.route {
+    Some(r) => r.input
+    None => ""
+  }
+  let decoded : Result[Bytes, Error] = Ok(
+    self.server.decode_message(payload, self.content.codec, name),
+  ) catch {
+    e => Err(e)
+  }
+  match decoded {
+    Ok(bytes) => Some(bytes)
+    Err(e) => {
+      self.failure = Some((status_of_error(e), message_of_error(e)))
+      None
+    }
+  }
+}
+
+///|
+fn Session::dispatch(self : Session, message : Bytes, out : Buffer) -> Unit {
+  match self.route {
+    None => ()
+    Some(route) =>
+      match route.handler {
+        Bidi(_) =>
+          match self.bidi {
+            Some(handler) =>
+              for reply in (handler.on_message)(message) {
+                self.write_reply(out, reply)
+              }
+            None => ()
+          }
+        ClientStreaming(_) => self.messages.push(message)
+        _ =>
+          // Unary and server-streaming take one request message; a second one is the caller's
+          // mistake, and it is left for `finish` to notice.
+          self.messages.push(message)
+      }
+  }
+}
+
+///|
+/// One reply as an envelope, in the caller's codec and compression.
+fn Session::write_reply(self : Session, out : Buffer, reply : Bytes) -> Unit {
+  let encoded = self.server.encode_message(
+    reply,
+    self.content.codec,
+    self.output_name(),
+  ) catch {
+    e => {
+      self.failure = Some((status_of_error(e), message_of_error(e)))
+      return
+    }
+  }
+  let (payload, flags) = maybe_compress(self.headers, encoded, b'\x00')
+  out.write_bytes(encode_envelope(payload, flags~))
+}
+
+///|
+fn Session::finish_unary(self : Session) -> Response {
+  let bytes = self.body.to_bytes()
+  let messages : Array[Bytes] = []
+  if self.failure is None {
+    match self.decode(bytes) {
+      Some(m) => messages.push(m)
+      None => ()
+    }
+  }
+  match self.failure {
+    Some((status, msg)) => return failure(self.content, status, msg)
+    None => ()
+  }
+  let replies = match self.run(messages) {
+    Some(r) => r
+    None => return failure(self.content, Internal, "the handler did not answer")
+  }
+  let (status, why) = self.outcome()
+  if status != @wire.Status::Ok {
+    return failure(self.content, status, why)
+  }
+  guard replies.length() > 0 else {
+    return failure(self.content, Internal, "the handler answered nothing")
+  }
+  let encoded = self.server.encode_message(
+    replies[0],
+    self.content.codec,
+    self.output_name(),
+  ) catch {
+    e => return failure(self.content, status_of_error(e), message_of_error(e))
+  }
+  let (body, _) = maybe_compress(self.headers, encoded, b'\x00')
+  let headers = response_headers(self.ctx, self.content)
+  if header_lists(self.headers, b"connect-accept-encoding", "gzip") {
+    headers.push({ name: b"connect-content-encoding", value: b"gzip", })
+  }
+  { status: 200, headers, body, }
+}
+
+///|
+fn Session::finish_streaming(self : Session) -> Response {
+  let body = Buffer()
+  if self.pending.to_bytes().length() > 0 && self.failure is None {
+    self.failure = Some(
+      (@wire.Status::Internal, "a truncated envelope ended the request"),
+    )
+  }
+  // A call whose request ended badly is not one the handler gets to close: its `on_end` is for
+  // "the caller is done", and a truncated body is not that.
+  if !self.ended && self.failure is None {
+    self.ended = true
+    match self.bidi {
+      Some(handler) =>
+        for reply in (handler.on_end)() {
+          self.write_reply(body, reply)
+        }
+      None => ()
+    }
+  }
+  match self.run(self.messages) {
+    Some(replies) =>
+      for reply in replies {
+        self.write_reply(body, reply)
+      }
+    None => ()
+  }
+  let (status, why) = self.outcome()
+  let members : Map[String, Json] = Map([])
+  if status != @wire.Status::Ok {
+    members["error"] = error_json(status, why)
+  }
+  let trailing : Map[String, Json] = Map([])
+  for h in self.ctx.resp_trailers {
+    trailing[@utf8.decode_lossy(h.name)] = Json::string(
+      @utf8.decode_lossy(h.value),
+    )
+  }
+  if trailing.length() > 0 {
+    members["metadata"] = Json::object(trailing)
+  }
+  body.write_bytes(
+    encode_envelope(
+      @utf8.encode(Json::object(members).stringify()),
+      flags=flag_end_stream,
+    ),
+  )
+  let head = self.head()
+  { status: head.status, headers: head.headers, body: body.to_bytes(), }
+}
+
+///|
+/// What the handler said before it returned, or OK.
+fn Session::outcome(self : Session) -> (@wire.Status, String) {
+  match self.ctx.status_fail {
+    Some((code, why)) => (@wire.Status::of(code), why)
+    None =>
+      match self.failure {
+        Some(f) => f
+        None => (@wire.Status::Ok, "")
+      }
+  }
+}
+
+///|
+/// Run the handler over the messages collected so far, for the three kinds that answer in one
+/// go. A bidirectional handler answers as it reads, so it has nothing left to run.
+fn Session::run(self : Session, messages : Array[Bytes]) -> Array[Bytes]? {
+  let ctx = self.ctx
+  match self.route {
+    None => None
+    Some(route) =>
+      match route.handler {
+        Unary(f) => {
+          if messages.length() != 1 {
+            self.failure = Some(
+              (
+                @wire.Status::Internal,
+                "a unary call carries exactly one message",
+              ),
+            )
+            return None
+          }
+          Some([f(ctx, messages[0])])
+        }
+        ServerStreaming(f) => {
+          if messages.length() != 1 {
+            self.failure = Some(
+              (
+                @wire.Status::Internal,
+                "a server-streaming call carries exactly one request message",
+              ),
+            )
+            return None
+          }
+          let out = []
+          for r in f(ctx, messages[0]) {
+            out.push(r)
+          }
+          Some(out)
+        }
+        ClientStreaming(f) => Some([f(ctx, messages)])
+        Bidi(_) => Some([])
+        Pushed(_) => None
+      }
+  }
+}
+
+// -- the whole-request entry point ------------------------------------------
+
+///|
+/// Answer one request that arrived whole. It is `start`, one `feed` and `finish` — the shape a
+/// driver uses when the body is already in hand, and the shape every test here is written in.
+pub fn Server::serve(self : Server, request : Request) -> Response {
+  let session = self.start(request.path, request.headers)
+  if session.streaming() {
+    let head = session.head()
+    if session.refused() {
+      return head
+    }
+    let body = session.feed(request.body) + session.finish().body
+    { status: head.status, headers: head.headers, body, }
+  } else {
+    ignore(session.feed(request.body))
+    session.finish()
   }
 }
 
@@ -346,16 +708,15 @@ fn status_of_error(error : Error) -> @wire.Status {
 ///|
 fn message_of_error(error : Error) -> String {
   match error {
-    @wire.StatusError(_, message) => message
-    other => other.to_string()
+    @wire.StatusError(_, text) => text
+    _ => "the handler failed"
   }
 }
 
 ///|
-/// The failure every early exit answers with: a status, a JSON body, and the same body shape
-/// whether the call was unary or streaming.
+/// A failure, in the shape the protocol asks for: an HTTP status and a JSON body for a unary
+/// call, an end-stream envelope for a streaming one.
 fn failure(
-  request : Request,
   content : Content,
   status : @wire.Status,
   message : String,
@@ -380,128 +741,5 @@ fn failure(
     { name: b"content-type", value: @utf8.encode(content.text()), },
     { name: b"connect-protocol-version", value: b"1", },
   ]
-  ignore(request)
   { status: 200, headers, body: end, }
-}
-
-///|
-fn Server::answer(
-  self : Server,
-  request : Request,
-  content : Content,
-  route : Route,
-  messages : Array[Bytes],
-) -> Response raise {
-  let ctx = context_of(request)
-  let replies : Array[Bytes] = []
-  match route.handler {
-    Unary(f) => {
-      guard messages.length() == 1 else {
-        return failure(
-          request,
-          content,
-          @wire.Status::Internal,
-          "a unary call carries exactly one message",
-        )
-      }
-      replies.push(f(ctx, messages[0]))
-    }
-    ServerStreaming(f) => {
-      guard messages.length() == 1 else {
-        return failure(
-          request,
-          content,
-          @wire.Status::Internal,
-          "a server-streaming call carries exactly one request message",
-        )
-      }
-      for r in f(ctx, messages[0]) {
-        replies.push(r)
-      }
-    }
-    ClientStreaming(f) => replies.push(f(ctx, messages))
-    Bidi(factory) => {
-      let bidi = factory(ctx)
-      for m in messages {
-        for r in (bidi.on_message)(m) {
-          replies.push(r)
-        }
-      }
-      for r in (bidi.on_end)() {
-        replies.push(r)
-      }
-    }
-    Pushed(_) =>
-      return failure(
-        request,
-        content,
-        @wire.Status::Unimplemented,
-        "a pushed handler needs a driver that can await it",
-      )
-  }
-  let mut status = @wire.Status::Ok
-  let mut message = ""
-  match ctx.status_fail {
-    Some((code, why)) => {
-      status = @wire.Status::of(code)
-      message = why
-    }
-    None => ()
-  }
-  if !content.streaming {
-    if status != @wire.Status::Ok {
-      return failure(request, content, status, message)
-    }
-    let encoded = self.encode_message(replies[0], content.codec, route.output)
-    let (body, headers, _) = maybe_compress(
-      request,
-      response_headers(ctx, content),
-      encoded,
-      false,
-      b'\x00',
-    )
-    return { status: 200, headers, body, }
-  }
-  // A streaming answer: every reply as its own envelope, then the end-stream envelope that
-  // carries the outcome and the trailing metadata.
-  let body = Buffer()
-  for reply in replies {
-    let encoded = self.encode_message(reply, content.codec, route.output)
-    let (payload, headers, flags) = maybe_compress(
-      request,
-      [],
-      encoded,
-      true,
-      b'\x00',
-    )
-    ignore(headers)
-    body.write_bytes(encode_envelope(payload, flags~))
-  }
-  let trailing : Map[String, Json] = Map([])
-  let end_members : Map[String, Json] = Map([])
-  if status != @wire.Status::Ok {
-    end_members["error"] = error_json(status, message)
-  }
-  for h in ctx.resp_trailers {
-    trailing[@utf8.decode_lossy(h.name)] = Json::string(
-      @utf8.decode_lossy(h.value),
-    )
-  }
-  if trailing.length() > 0 {
-    end_members["metadata"] = Json::object(trailing)
-  }
-  body.write_bytes(
-    encode_envelope(
-      @utf8.encode(Json::object(end_members).stringify()),
-      flags=flag_end_stream,
-    ),
-  )
-  let headers = response_headers(ctx, content)
-  let out = headers
-  // The encoding the envelopes are in is the reply's, so the caller knows before the first
-  // one arrives.
-  if header_lists(request.headers, b"connect-accept-encoding", "gzip") {
-    out.push({ name: b"connect-content-encoding", value: b"gzip", })
-  }
-  { status: 200, headers: out, body: body.to_bytes(), }
 }

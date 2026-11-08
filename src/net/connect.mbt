@@ -110,7 +110,9 @@ async fn serve_connect_connection(
 }
 
 ///|
-/// One HTTP/1.1 connection: read an exchange, answer it, repeat while the peer keeps it open.
+/// One HTTP/1.1 connection. Each exchange is handed to the dispatch as a session, so a
+/// streaming call writes its head and its envelopes while the request is still arriving: a
+/// bidirectional caller that waits for an answer before sending its next message gets one.
 async fn serve_h1_connection(
   conn : @tcp.Conn,
   engine : @connect.Server,
@@ -118,6 +120,8 @@ async fn serve_h1_connection(
 ) -> Unit {
   let http = @http1.Conn::new(@http1.Role::Server)
   http.receive(first[:])
+  let mut session : @connect.Session? = None
+  let mut streamed = false
   let body = Buffer()
   let mut head : @http1.Request? = None
   for ;; {
@@ -129,21 +133,59 @@ async fn serve_h1_connection(
       @http1.Event::Request(request) => {
         head = Some(request)
         body.reset()
+        let started = engine.start(request.target, request.fields)
+        streamed = started.streaming() && !started.refused()
+        session = Some(started)
+        if streamed {
+          let answer = started.head()
+          let framing = if request.version == "HTTP/1.0" {
+            @http1.Body::Closed
+          } else {
+            @http1.Body::Chunked
+          }
+          let reply = @http1.Response::of(
+            answer.status,
+            fields=answer.headers,
+            body=framing,
+          )
+          conn.write(http.send(@http1.Event::Response(reply))) catch {
+            _ => break
+          }
+        }
       }
-      @http1.Event::Data(bytes) => body.write_bytes(bytes)
+      @http1.Event::Data(bytes) =>
+        match session {
+          Some(s) => {
+            let reply = s.feed(bytes)
+            if reply.length() > 0 {
+              conn.write(http.send(@http1.Event::Data(reply))) catch {
+                _ => break
+              }
+            }
+          }
+          None => ()
+        }
       @http1.Event::End(_trailers) =>
-        match head {
-          None => break
-          Some(request) => {
-            let answer = engine.serve({
-              path: request.target,
-              headers: request.fields,
-              body: body.to_bytes(),
-            })
-            answer_h1(conn, http, answer) catch {
-              _ => break
+        match (head, session) {
+          (Some(request), Some(s)) => {
+            let answer = s.finish()
+            if streamed {
+              if answer.body.length() > 0 {
+                conn.write(http.send(@http1.Event::Data(answer.body))) catch {
+                  _ => break
+                }
+              }
+              conn.write(http.send(@http1.Event::End([]))) catch {
+                _ => break
+              }
+            } else {
+              answer_h1(conn, http, answer) catch {
+                _ => break
+              }
             }
             head = None
+            session = None
+            streamed = false
             // A connection the peer asked to keep goes round again; one it did not is done.
             if request.keep_alive {
               http.start_next() catch {
@@ -153,6 +195,7 @@ async fn serve_h1_connection(
               break
             }
           }
+          _ => break
         }
       @http1.Event::NeedData => {
         let more = conn.read_some() catch { _ => break }

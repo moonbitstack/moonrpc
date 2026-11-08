@@ -1,11 +1,15 @@
 // The Connect server over HTTP/2. The gRPC engine in `server/` is built around gRPC's framing
 // and trailers, so this is its own driver: it moves the same `connect` dispatch over HTTP/2
-// frames, with the HPACK codec and the frame codec moonhttp provides. A connection is one
-// stream at a time here, because a Connect call's body is read whole before it is dispatched.
+// frames, with the HPACK codec and the frame codec moonhttp provides.
 //
-// The windows are opened wide at the start (a SETTINGS and one WINDOW_UPDATE) rather than
-// tuned per message: a request is read to its end before anything is answered, so a peer that
-// sends a large body must not be stopped halfway.
+// A call is answered as it arrives: the reply headers go out as soon as the request headers are
+// decoded, and each message the caller sends is answered in DATA frames while the stream is
+// still open. That is what a bidirectional call needs — a driver that waited for END_STREAM
+// would hold the answer to a message until the caller closed, and the caller is waiting for the
+// answer before it sends the next one.
+//
+// Flow control is the peer's window, not ours: the two are separate, and a reply that ignored
+// the peer's would be a protocol error the moment it exceeded it.
 
 ///|
 /// The window this driver opens for itself on each connection: 16 MiB, comfortably past the
@@ -18,19 +22,34 @@ priv struct H2Call {
   id : Int32
   block : Buffer
   mut headers : Array[@header.Header]
-  body : Buffer
+  mut session : @connect.Session?
+  // What the peer's flow-control window still allows this driver to send.
   mut window : Int32
-  mut started : Bool
+  // Reply bytes waiting for room in that window.
+  pending : Buffer
+  mut head_sent : Bool
+  mut want_end : Bool
+  mut end_sent : Bool
 }
 
 ///|
 fn H2Call::new(id : Int32, window : Int32) -> H2Call {
-  { id, block: Buffer(), headers: [], body: Buffer(), window, started: false, }
+  {
+    id,
+    block: Buffer(),
+    headers: [],
+    session: None,
+    window,
+    pending: Buffer(),
+    head_sent: false,
+    want_end: false,
+    end_sent: false,
+  }
 }
 
 ///|
-/// Drive one HTTP/2 connection that speaks Connect. `preface` is the 24 octets already read
-/// from the socket.
+/// Drive one HTTP/2 connection that speaks Connect. `preface` is the 24 octets already read from
+/// the socket.
 async fn serve_h2_connection(
   conn : @tcp.Conn,
   engine : @connect.Server,
@@ -49,13 +68,19 @@ async fn serve_h2_connection(
   conn.write(
     @http2.Frame::WindowUpdate(stream_id=0, increment=h2_window - 65535).encode(),
   )
+  // What the peer allows us to send on a new stream, until its SETTINGS says otherwise.
+  let mut peer_window : Int32 = 65535
   let calls : Map[Int32, H2Call] = Map([])
-  let writes : @async.Mutex = @async.Mutex::Mutex()
   for ;; {
     let frame = read_frame(conn) catch { _ => break }
     match frame {
-      @http2.Frame::Settings(ack~, ..) =>
+      @http2.Frame::Settings(ack~, params~) =>
         if !ack {
+          for p in params {
+            if p.0 == @http2.settings_initial_window_size {
+              peer_window = p.1
+            }
+          }
           conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
         }
       @http2.Frame::Ping(payload~, ack~) =>
@@ -72,7 +97,7 @@ async fn serve_h2_connection(
         let call = match calls.get(stream_id) {
           Some(c) => c
           None => {
-            let c = H2Call::new(stream_id, h2_window)
+            let c = H2Call::new(stream_id, peer_window)
             calls[stream_id] = c
             c
           }
@@ -85,9 +110,12 @@ async fn serve_h2_connection(
             _ => []
           }
           call.headers = decoded
+          open_h2_call(conn, engine, encoder, call) catch {
+            _ => ()
+          }
         }
         if end_stream {
-          answer_h2(conn, engine, encoder, call) catch {
+          finish_h2_call(conn, encoder, call) catch {
             _ => ()
           }
           calls.remove(stream_id)
@@ -104,6 +132,9 @@ async fn serve_h2_connection(
                 _ => []
               }
               call.headers = decoded
+              open_h2_call(conn, engine, encoder, call) catch {
+                _ => ()
+              }
             }
           }
           None => ()
@@ -111,9 +142,11 @@ async fn serve_h2_connection(
       @http2.Frame::Data(stream_id~, data~, end_stream~, ..) =>
         match calls.get(stream_id) {
           Some(call) => {
-            call.body.write_bytes(data)
+            feed_h2_call(conn, call, data) catch {
+              _ => ()
+            }
             if end_stream {
-              answer_h2(conn, engine, encoder, call) catch {
+              finish_h2_call(conn, encoder, call) catch {
                 _ => ()
               }
               calls.remove(stream_id)
@@ -123,7 +156,12 @@ async fn serve_h2_connection(
         }
       @http2.Frame::WindowUpdate(stream_id~, increment~) =>
         match calls.get(stream_id) {
-          Some(call) => call.window = call.window + increment
+          Some(call) => {
+            call.window = call.window + increment
+            flush_h2(conn, call) catch {
+              _ => ()
+            }
+          }
           None => ()
         }
       @http2.Frame::RstStream(stream_id~, ..) => calls.remove(stream_id)
@@ -131,7 +169,6 @@ async fn serve_h2_connection(
       _ => ()
     }
   }
-  ignore(writes)
 }
 
 ///|
@@ -146,120 +183,193 @@ fn field_value(headers : Array[@header.Header], name : Bytes) -> Bytes? {
 }
 
 ///|
-/// Dispatch one finished call and write its answer: the head, then the body in the pieces the
-/// peer's window allows.
-async fn answer_h2(
+/// Start the call the request headers describe, and send the reply headers when the answer can
+/// begin before the request ends.
+async fn open_h2_call(
   conn : @tcp.Conn,
   engine : @connect.Server,
   encoder : @hpack.Encoder,
   call : H2Call,
 ) -> Unit {
-  if call.started {
+  let verb = match field_value(call.headers, b":method") {
+    Some(m) => m
+    None => b""
+  }
+  if verb != b"POST" {
+    let head = encoder.encode([
+      { name: b":status", value: b"405", },
+      { name: b"allow", value: b"POST", },
+    ])
+    conn.write(
+      @http2.Frame::Headers(
+        stream_id=call.id,
+        fragment=head,
+        end_stream=true,
+        end_headers=true,
+        priority=None,
+        padding=0,
+      ).encode(),
+    )
+    call.head_sent = true
+    call.end_sent = true
     return
   }
-  call.started = true
   let path = match field_value(call.headers, b":path") {
     Some(p) => @utf8.decode_lossy(p)
     None => ""
   }
-  match field_value(call.headers, b":method") {
-    Some(m) if m != b"POST" => {
-      let head = encoder.encode([
-        { name: b":status", value: b"405", },
-        { name: b"allow", value: b"POST", },
-      ])
-      conn.write(
-        @http2.Frame::Headers(
-          stream_id=call.id,
-          fragment=head,
-          end_stream=true,
-          end_headers=true,
-          priority=None,
-          padding=0,
-        ).encode(),
-      )
-      return
-    }
-    _ => ()
-  }
-  let answer = engine.serve({
-    path,
-    headers: call.headers,
-    body: call.body.to_bytes(),
-  })
-  let fields : Array[@header.Header] = [
-    { name: b":status", value: @utf8.encode(answer.status.to_string()), },
-  ]
-  for h in answer.headers {
-    fields.push(h)
-  }
-  let head = encoder.encode(fields)
-  conn.write(
-    @http2.Frame::Headers(
-      stream_id=call.id,
-      fragment=head,
-      end_stream=answer.body.length() == 0,
-      end_headers=true,
-      priority=None,
-      padding=0,
-    ).encode(),
-  )
-  if answer.body.length() == 0 {
-    return
-  }
-  // The body goes out in as many frames as the peer's window allows; a Connect call's answer
-  // is produced whole, so there is nothing to wait for but the window.
-  let mut at = 0
-  let mut window = call.window
-  while at < answer.body.length() {
-    let room = if window < 1 {
-      0
-    } else if window > @wire.default_max_frame_size {
-      @wire.default_max_frame_size
-    } else {
-      window
-    }
-    if room == 0 {
-      // Nothing may be sent until the peer credits more; wait for its WINDOW_UPDATE.
-      let frame = read_frame(conn) catch { _ => return }
-      match frame {
-        @http2.Frame::WindowUpdate(stream_id~, increment~) =>
-          if stream_id == calling_stream(call) {
-            window = window + increment
-          }
-        @http2.Frame::Settings(params~, ack~) =>
-          if !ack {
-            conn.write(@http2.Frame::Settings(params=[], ack=true).encode())
-            for p in params {
-              if p.0 == @http2.settings_initial_window_size {
-                window = window + p.1
-              }
-            }
-          }
-        @http2.Frame::RstStream(..) => return
-        _ => ()
-      }
-      continue
-    }
-    let stop = if answer.body.length() - at < room {
-      answer.body.length()
-    } else {
-      at + room
+  let session = engine.start(path, call.headers)
+  call.session = Some(session)
+  if session.streaming() && !session.refused() {
+    let answer = session.head()
+    let fields : Array[@header.Header] = [{ name: b":status", value: b"200", }]
+    for h in answer.headers {
+      fields.push(h)
     }
     conn.write(
-      @http2.Frame::Data(
+      @http2.Frame::Headers(
         stream_id=call.id,
-        data=answer.body[at:stop].to_owned(),
-        end_stream=stop >= answer.body.length(),
+        fragment=encoder.encode(fields),
+        end_stream=false,
+        end_headers=true,
+        priority=None,
         padding=0,
       ).encode(),
     )
-    window = window - (stop - at)
-    at = stop
+    call.head_sent = true
   }
 }
 
 ///|
-fn calling_stream(call : H2Call) -> Int32 {
-  call.id
+/// Hand one piece of the request body to the dispatch and write what it answers now.
+async fn feed_h2_call(conn : @tcp.Conn, call : H2Call, data : Bytes) -> Unit {
+  match call.session {
+    Some(session) =>
+      if call.head_sent {
+        let reply = session.feed(data)
+        if reply.length() > 0 {
+          call.pending.write_bytes(reply)
+          flush_h2(conn, call) catch {
+            _ => ()
+          }
+        }
+      } else {
+        // A unary call is answered once its body has arrived, so nothing leaves yet.
+        ignore(session.feed(data))
+      }
+    None => ()
+  }
+}
+
+///|
+/// End the call: write the head if it is still owed, then the rest of the body.
+async fn finish_h2_call(
+  conn : @tcp.Conn,
+  encoder : @hpack.Encoder,
+  call : H2Call,
+) -> Unit {
+  if call.end_sent {
+    return
+  }
+  match call.session {
+    None => {
+      // Headers that never decoded: the stream is closed without an answer.
+      conn.write(
+        @http2.Frame::RstStream(
+          stream_id=call.id,
+          error_code=@http2.error_internal_error,
+        ).encode(),
+      )
+      call.end_sent = true
+    }
+    Some(session) => {
+      let answer = session.finish()
+      if !call.head_sent {
+        let fields : Array[@header.Header] = [
+          { name: b":status", value: @utf8.encode(answer.status.to_string()), },
+        ]
+        for h in answer.headers {
+          fields.push(h)
+        }
+        conn.write(
+          @http2.Frame::Headers(
+            stream_id=call.id,
+            fragment=encoder.encode(fields),
+            end_stream=answer.body.length() == 0,
+            end_headers=true,
+            priority=None,
+            padding=0,
+          ).encode(),
+        )
+        call.head_sent = true
+        if answer.body.length() == 0 {
+          call.end_sent = true
+          return
+        }
+      }
+      if answer.body.length() > 0 {
+        call.pending.write_bytes(answer.body)
+      }
+      call.want_end = true
+      flush_h2(conn, call) catch {
+        _ => ()
+      }
+    }
+  }
+}
+
+///|
+/// Write as much of the pending reply as the peer's window allows, ending the stream on the last
+/// frame once there is nothing left to send.
+async fn flush_h2(conn : @tcp.Conn, call : H2Call) -> Unit {
+  if !call.head_sent || call.end_sent {
+    return
+  }
+  for ;; {
+    let pending = call.pending.to_bytes()
+    if pending.length() == 0 {
+      if call.want_end {
+        conn.write(
+          @http2.Frame::Data(
+            stream_id=call.id,
+            data=b"",
+            end_stream=true,
+            padding=0,
+          ).encode(),
+        )
+        call.end_sent = true
+        call.want_end = false
+      }
+      return
+    }
+    if call.window <= 0 {
+      // Nothing may be sent until the peer credits more; the read loop will see its
+      // WINDOW_UPDATE and call back here.
+      return
+    }
+    let room = if call.window > @wire.default_max_frame_size {
+      @wire.default_max_frame_size
+    } else {
+      call.window
+    }
+    let stop = if pending.length() - 0 < room { pending.length() } else { room }
+    let piece = pending[0:stop].to_owned()
+    let rest = pending[stop:].to_owned()
+    call.pending.reset()
+    call.pending.write_bytes(rest)
+    let last = call.want_end && call.pending.to_bytes().length() == 0
+    conn.write(
+      @http2.Frame::Data(
+        stream_id=call.id,
+        data=piece,
+        end_stream=last,
+        padding=0,
+      ).encode(),
+    )
+    call.window = call.window - stop
+    if last {
+      call.end_sent = true
+      call.want_end = false
+    }
+  }
 }

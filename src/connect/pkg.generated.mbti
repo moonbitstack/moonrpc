@@ -103,6 +103,16 @@ pub struct Server {
 pub fn Server::add(Self, String, Route) -> Unit
 pub fn Server::new(schema? : @proto.Schema) -> Self
 pub fn Server::serve(Self, Request) -> Response
+pub fn Server::start(Self, String, Array[@header.Header]) -> Session
+
+pub struct Session {
+  // private fields
+}
+pub fn Session::feed(Self, Bytes) -> Bytes
+pub fn Session::finish(Self) -> Response
+pub fn Session::head(Self) -> Response
+pub fn Session::refused(Self) -> Bool
+pub fn Session::streaming(Self) -> Bool
 
 // Type aliases
 
