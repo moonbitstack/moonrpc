@@ -260,7 +260,6 @@ fn proto_parent(name : String) -> String {
   name.exact_view(start=0, end=cut).to_owned()
 }
 
-
 ///|
 /// A schema compiled from `.proto` source.
 pub fn Schema::compile(
