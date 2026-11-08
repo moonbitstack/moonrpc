@@ -657,6 +657,39 @@ jobs:
           bash scripts/interop/thrift_cross_test.sh "$RUNNER_TEMP/athrift" \
             ./_build/native/debug/build/cmd/thriftcrosstest/thriftcrosstest.exe
 
+  # The third pairing: this stack against itself. The foreign-peer jobs above prove the bytes
+  # match another implementation's; this one proves the two halves agree in every configuration
+  # a server can be started in, and it is the only run where one transport is exercised on both
+  # sides at once — a peer picks its own settings, so a foreign job never sees the pair.
+  moonrpc-self-interop:
+    name: moonrpc interop (moonrpc against itself)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - name: build both halves
+        run: moon build --target native
+
+      # gRPC plaintext/TLS x identity/gzip, and Thrift framed/header x binary/compact, with
+      # the header transport's zlib transform. The script asserts each case's own answers.
+      - name: moonrpc against moonrpc
+        run: |
+          bash scripts/interop/self_test.sh \
+            ./_build/native/debug/build/cmd/greetd/greetd.exe \
+            ./_build/native/debug/build/cmd/thriftd/thriftd.exe
+
   # The official Connect suite, driving the reference service in `src/conformance` as a server
   # under test. What it exercises is `scripts/conformance/connect.yaml`: Connect over both HTTP
   # versions, both codecs, identity and gzip.

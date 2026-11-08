@@ -345,8 +345,10 @@ A server only compresses for a caller whose `grpc-accept-encoding` lists the enc
 
 ## Interoperability
 
-A gRPC implementation is only gRPC if a foreign one agrees on the bytes. CI runs the wire
-against independent peers in plaintext and over TLS:
+A gRPC implementation is only gRPC if a foreign one agrees on the bytes, and an implementation
+is only self-consistent if its own two halves do. CI runs all three pairings — grpc-go against
+this stack, Apache Thrift against this stack, and this stack against itself — in plaintext and
+over TLS:
 
 | Partner | Direction | Calls | Compression | Interceptors | TLS | Result |
 |:--|:--|:--|:--|:--|:--|:--|
@@ -357,6 +359,8 @@ against independent peers in plaintext and over TLS:
 | Apache Thrift (Go) | server | the same calls, through `thriftd check` | identity | — | no | pass |
 | Apache Thrift cross test | client | `ThriftTest`: all 23 methods, framed, binary and compact | identity | — | no | pass |
 | Apache Thrift cross test | server | `ThriftTest`: all 23 methods, driven from this side | identity | — | no | pass |
+| moonrpc | client and server | `greetd check` against `greetd`: all four, metadata, deadline, detail, 160 KB batch | `gzip` | both halves | yes | pass |
+| moonrpc | client and server | `thriftd check` against `thriftd`: `ping`, `add`, `double`, `fail`, `note`, framed and header, binary and compact | `zlib` on header | — | no | pass |
 
 `cmd/greetd` is the server the first two call; the third runs the same generated client
 against a grpc-go server and requires the two answers to match byte for byte. The
@@ -377,6 +381,14 @@ The Thrift rows are the protocol stack, below: TFramedTransport and Apache's hea
 with TBinaryProtocol or TCompactProtocol inside either, and the zlib transform the header
 transport can carry. `note` is a ONEWAY method — it must leave no reply on the wire, which the
 call that follows would otherwise read as its own.
+
+The two `moonrpc` rows are the third pairing, this stack against itself, and they cover what
+no foreign job can: one transport on **both** sides at once. A peer picks its own settings, so
+`grpc-go` over TLS only ever says this server speaks TLS to someone else; `greetd check` says
+this client and this server agree in each of the four configurations, and `thriftd check` says
+the same for the six Thrift ones. `scripts/interop/self_test.sh` is that run, one case per
+configuration. Connect's two halves meet in `connect_wbtest.mbt` over a real socket, and its
+server half is what the 724-case suite in the next section drives with a foreign client.
 
 ## Conformance
 
