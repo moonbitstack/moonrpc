@@ -168,22 +168,21 @@ fn answer_unary(ctx : @stream.RpcContext, request : Bytes) -> Bytes {
   let definition = decode_unary_def(definition_of(request))
   apply_headers(ctx, definition.headers)
   apply_trailers(ctx, definition.trailers)
+  let info = encode_request_info(
+    seen_headers(ctx),
+    ctx.deadline_millis,
+    [request],
+    type_url("UnaryRequest"),
+  )
   match definition.error {
     Some(error) => {
-      ctx.fail(error.code, message_text(error))
+      fail_with(ctx, error, info)
       b""
     }
-    None => {
-      let info = encode_request_info(
-        seen_headers(ctx),
-        ctx.deadline_millis,
-        [request],
-        type_url("UnaryRequest"),
-      )
+    None =>
       encode_payload_response(
         encode_payload(definition.data, definition.has_data, info),
       )
-    }
   }
 }
 
@@ -214,7 +213,17 @@ fn answer_server_stream(
   }
   // An error is raised after the messages, which is where the specification puts it.
   match definition.error {
-    Some(error) => ctx.fail(error.code, message_text(error))
+    Some(error) =>
+      fail_with(
+        ctx,
+        error,
+        encode_request_info(
+          seen_headers(ctx),
+          ctx.deadline_millis,
+          [request],
+          type_url("ServerStreamRequest"),
+        ),
+      )
     None => ()
   }
   out
@@ -233,22 +242,21 @@ fn answer_client_stream(
   }
   apply_headers(ctx, definition.headers)
   apply_trailers(ctx, definition.trailers)
+  let info = encode_request_info(
+    seen_headers(ctx),
+    ctx.deadline_millis,
+    messages,
+    type_url("ClientStreamRequest"),
+  )
   match definition.error {
     Some(error) => {
-      ctx.fail(error.code, message_text(error))
+      fail_with(ctx, error, info)
       b""
     }
-    None => {
-      let info = encode_request_info(
-        seen_headers(ctx),
-        ctx.deadline_millis,
-        messages,
-        type_url("ClientStreamRequest"),
-      )
+    None =>
       encode_payload_response(
         encode_payload(definition.data, definition.has_data, info),
       )
-    }
   }
 }
 
@@ -291,7 +299,16 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
         } else {
           match parsed.error {
             Some(error) => {
-              ctx.fail(error.code, message_text(error))
+              fail_with(
+                ctx,
+                error,
+                encode_request_info(
+                  seen_headers(ctx),
+                  ctx.deadline_millis,
+                  received.val,
+                  type_url("BidiStreamRequest"),
+                ),
+              )
               []
             }
             None => []
@@ -328,13 +345,36 @@ fn bidi_handler(ctx : @stream.RpcContext) -> @stream.BidiHandler {
       }
       if parsed.data.length() == 0 {
         match parsed.error {
-          Some(error) => ctx.fail(error.code, message_text(error))
+          Some(error) =>
+            fail_with(
+              ctx,
+              error,
+              encode_request_info(
+                seen_headers(ctx),
+                ctx.deadline_millis,
+                received.val,
+                type_url("BidiStreamRequest"),
+              ),
+            )
           None => ()
         }
       }
       out
     },
   }
+}
+
+///|
+/// Fail the call the way a definition asked, with the request echo attached as a detail: the
+/// suite compares that detail against what it sent, so an error without one is an error it
+/// cannot check.
+fn fail_with(ctx : @stream.RpcContext, error : ErrorSpec, info : Bytes) -> Unit {
+  if info.length() > 0 {
+    ctx.error_details.push(
+      encode_any(type_url("ConformancePayload.RequestInfo"), info),
+    )
+  }
+  ctx.fail(error.code, message_text(error))
 }
 
 ///|

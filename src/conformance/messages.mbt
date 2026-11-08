@@ -350,12 +350,20 @@ pub fn apply_trailers(
 ///|
 /// The request's headers as the payload echoes them.
 pub fn seen_headers(ctx : @stream.RpcContext) -> Array[HeaderEntry] {
+  // One entry per name, with every value it appeared with: a `Header` message is a name and a
+  // list of values, and the suite sends the same key twice to check that both survive.
   let out : Array[HeaderEntry] = []
+  let index : Map[String, Int32] = Map([])
   for h in ctx.metadata {
-    out.push({
-      name: @utf8.decode_lossy(h.name),
-      values: [@utf8.decode_lossy(h.value)],
-    })
+    let name = @utf8.decode_lossy(h.name)
+    let value = @utf8.decode_lossy(h.value)
+    match index.get(name) {
+      Some(at) => out[at].values.push(value)
+      None => {
+        index[name] = out.length()
+        out.push({ name, values: [value], })
+      }
+    }
   }
   out
 }

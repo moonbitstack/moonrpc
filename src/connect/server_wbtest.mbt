@@ -223,7 +223,7 @@ test "connect server: the trailing metadata travels in the end marker" {
       }
     _ => Map([])
   }
-  assert_eq(metadata.get("x-done"), Some(Json::string("yes")))
+  assert_eq(metadata.get("x-done"), Some(Json::array([Json::string("yes")])))
 }
 
 ///|
@@ -248,7 +248,7 @@ test "connect server: the caller's metadata and deadline reach the handler" {
     headers: [
       header("content-type", "application/proto"),
       header("x-trace", "abc"),
-      header("connect-timeout", "250"),
+      header("connect-timeout-ms", "250"),
     ],
     body: b"",
   })

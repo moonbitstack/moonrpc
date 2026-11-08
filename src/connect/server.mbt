@@ -120,7 +120,8 @@ fn context_of(
   path : String,
   headers : Array[@header.Header],
 ) -> @stream.RpcContext {
-  let timeout = match header_value(headers, b"connect-timeout") {
+  // Connect names the deadline `connect-timeout-ms`; `grpc-timeout` is the other protocol's.
+  let timeout = match header_value(headers, b"connect-timeout-ms") {
     Some(text) => parse_millis(text)
     None => None
   }
@@ -186,6 +187,11 @@ fn Server::decode_message(
           Unimplemented,
           "this method has no message schema registered for JSON",
         )
+      }
+      // An absent body is an empty message: proto3 JSON says every field may be omitted, and a
+      // message with no fields set writes as nothing at all.
+      if body.length() == 0 {
+        return b""
       }
       let value = @json.parse(@utf8.decode_lossy(body)) catch {
         _ => raise @wire.StatusError(Internal, "the request body is not JSON")
@@ -549,7 +555,7 @@ fn Session::finish_unary(self : Session) -> Response {
   }
   let (status, why) = self.outcome()
   if status != @wire.Status::Ok {
-    return failure(self.content, status, why)
+    return failure(self.content, status, why, details=self.details())
   }
   guard replies.length() > 0 else {
     return failure(self.content, Internal, "the handler answered nothing")
@@ -599,16 +605,29 @@ fn Session::finish_streaming(self : Session) -> Response {
   let (status, why) = self.outcome()
   let members : Map[String, Json] = Map([])
   if status != @wire.Status::Ok {
-    members["error"] = error_json(status, why)
+    members["error"] = error_json(status, why, details=self.details())
   }
-  let trailing : Map[String, Json] = Map([])
+  // A metadata entry is a list of values, not one value: a key may be repeated, and the
+  // protocol's own reader decodes `metadata` as a map of string to array.
+  let trailing : Map[String, Array[String]] = Map([])
   for h in self.ctx.resp_trailers {
-    trailing[@utf8.decode_lossy(h.name)] = Json::string(
-      @utf8.decode_lossy(h.value),
-    )
+    let name = @utf8.decode_lossy(h.name)
+    let value = @utf8.decode_lossy(h.value)
+    match trailing.get(name) {
+      Some(values) => values.push(value)
+      None => trailing[name] = [value]
+    }
   }
   if trailing.length() > 0 {
-    members["metadata"] = Json::object(trailing)
+    let encoded : Map[String, Json] = Map([])
+    for name, values in trailing {
+      let items = []
+      for value in values {
+        items.push(Json::string(value))
+      }
+      encoded[name] = Json::array(items)
+    }
+    members["metadata"] = Json::object(encoded)
   }
   body.write_bytes(
     encode_envelope(
@@ -618,6 +637,44 @@ fn Session::finish_streaming(self : Session) -> Response {
   )
   let head = self.head()
   { status: head.status, headers: head.headers, body: body.to_bytes(), }
+}
+
+///|
+/// The details a handler attached, as the protocol writes them: each is a `google.protobuf.Any`,
+/// and the body carries the type's name and the value base64 encoded.
+fn Session::details(self : Session) -> Array[(String, Json)] {
+  let out = []
+  for detail in self.ctx.error_details {
+    let reader = @proto.PbReader::new(detail)
+    let mut type_url = ""
+    let mut value = b""
+    while !reader.eof() {
+      let tag = reader.read_tag() catch { _ => break }
+      match tag {
+        (1, @proto.LengthDelim) =>
+          type_url = reader.read_string() catch { _ => "" }
+        (2, @proto.LengthDelim) =>
+          value = reader.read_bytes() catch { _ => b"" }
+        (_, wire) => reader.skip(wire) catch { _ => break }
+      }
+    }
+    out.push((last_segment(type_url), Json::string(@base64.encode(value[:]))))
+  }
+  out
+}
+
+///|
+/// The name a type URL ends with: `type.googleapis.com/pkg.Msg` is `pkg.Msg`.
+fn last_segment(url : String) -> String {
+  let mut cut = 0
+  let mut at = 0
+  for ch in url {
+    if ch == '/' {
+      cut = at + 1
+    }
+    at = at + 1
+  }
+  url.exact_view(start=cut, end=url.length()).to_owned()
 }
 
 ///|
@@ -720,8 +777,9 @@ fn failure(
   content : Content,
   status : @wire.Status,
   message : String,
+  details~ : Array[(String, Json)] = [],
 ) -> Response {
-  let body = error_json(status, message)
+  let body = error_json(status, message, details~)
   if !content.streaming {
     let headers : Array[@header.Header] = [
       { name: b"content-type", value: @utf8.encode("application/json"), },

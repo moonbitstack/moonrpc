@@ -6,6 +6,7 @@ import {
   "moonbitstack/moonrpc/proto",
   "moonbitstack/moonrpc/stream",
   "moonbitstack/moonvar/fixed",
+  "moonbitstack/moonbase/base64",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
   "moonbitlang/core/json",
