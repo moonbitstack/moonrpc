@@ -250,3 +250,51 @@ test "proto compile: a source that does not parse is refused, not guessed at" {
   }
   assert_true(refused)
 }
+
+///|
+test "proto compile: a field whose type is an enum is an enum, not a message" {
+  let file = compile_one(
+    "level.proto",
+    (
+      #|syntax = "proto3";
+      #|package level.v1;
+      #|enum Level {
+      #|  LEVEL_LOW = 0;
+      #|  LEVEL_HIGH = 2;
+      #|}
+      #|message Alarm { Level level = 1; }
+    ),
+  )
+  let alarm = file.messages[0]
+  // The parser reports a named type without saying which kind it is, and a value written as a
+  // message where the field is an enum is dropped rather than encoded.
+  assert_true(field(alarm, 1).type_ is TypeEnum)
+  assert_eq(field(alarm, 1).type_name, ".level.v1.Level")
+  let schema = Schema::compile([
+    (
+      "level.proto",
+      (
+        #|syntax = "proto3";
+        #|package level.v1;
+        #|enum Level {
+        #|  LEVEL_LOW = 0;
+        #|  LEVEL_HIGH = 2;
+        #|}
+        #|message Alarm { Level level = 1; }
+      ),
+    ),
+  ]) catch {
+    e => abort(e.to_string())
+  }
+  let wire = Schema::to_bytes(
+    schema,
+    ".level.v1.Alarm",
+    Json::object(Map([("level", Json::string("LEVEL_HIGH"))])),
+  ) catch {
+    e => abort(e.to_string())
+  }
+  // Field 1, varint, value 2.
+  assert_eq(wire.length(), 2)
+  assert_eq(wire[0], b'\x08')
+  assert_eq(wire[1], b'\x02')
+}

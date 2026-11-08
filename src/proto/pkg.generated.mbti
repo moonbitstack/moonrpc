@@ -23,7 +23,7 @@ pub fn encode_file_descriptor_set(Array[FileDescriptor]) -> Bytes
 
 pub fn json_name(FieldDescriptor) -> String
 
-pub fn proto_file_of(@desc.FileDescriptorProto, Array[String]) -> FileDescriptor
+pub fn proto_file_of(@desc.FileDescriptorProto, Array[String], Array[String]) -> FileDescriptor
 
 // Errors
 #derive(Eq)

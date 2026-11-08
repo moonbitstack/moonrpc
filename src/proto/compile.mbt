@@ -22,20 +22,24 @@ pub fn compile_proto(
     }
     parsed.push(proto)
   }
-  // Every name any file declares, which is what a relative reference is resolved against.
+  // Every name any file declares, which is what a relative reference is resolved against, and
+  // the ones that name an enum — a field that holds a named type says only which name, and
+  // whether that name is an enum is what decides how its value is written.
   let symbols = []
+  let enums = []
   for proto in parsed {
     let prefix = proto_prefix(proto.package_name)
     for message in proto.message_type {
-      proto_collect_symbols(prefix, message.name, message, symbols)
+      proto_collect_symbols(prefix, message.name, message, symbols, enums)
     }
     for e in proto.enum_type {
       symbols.push(prefix + "." + e.name)
+      enums.push(prefix + "." + e.name)
     }
   }
   let files = []
   for proto in parsed {
-    files.push(proto_file_of(proto, symbols))
+    files.push(proto_file_of(proto, symbols, enums))
   }
   files
 }
@@ -57,14 +61,16 @@ fn proto_collect_symbols(
   name : String,
   message : @mpdesc.DescriptorProto,
   out : Array[String],
+  enums : Array[String],
 ) -> Unit {
   let full = prefix + "." + name
   out.push(full)
   for nested in message.nested_type {
-    proto_collect_symbols(full, nested.name, nested, out)
+    proto_collect_symbols(full, nested.name, nested, out, enums)
   }
   for e in message.enum_type {
     out.push(full + "." + e.name)
+    enums.push(full + "." + e.name)
   }
 }
 
@@ -73,12 +79,13 @@ fn proto_collect_symbols(
 pub fn proto_file_of(
   proto : @mpdesc.FileDescriptorProto,
   symbols : Array[String],
+  enum_names : Array[String],
 ) -> FileDescriptor {
   let prefix = proto_prefix(proto.package_name)
   let messages = []
   for message in proto.message_type {
     messages.push(
-      proto_message_of(prefix, proto.package_name, message, symbols),
+      proto_message_of(prefix, proto.package_name, message, symbols, enum_names),
     )
   }
   let enums = []
@@ -110,15 +117,16 @@ fn proto_message_of(
   package_ : String,
   proto : @mpdesc.DescriptorProto,
   symbols : Array[String],
+  enum_names : Array[String],
 ) -> MessageDescriptor {
   let full = prefix + "." + proto.name
   let fields = []
   for f in proto.field {
-    fields.push(proto_field_of(f, full, package_, symbols))
+    fields.push(proto_field_of(f, full, package_, symbols, enum_names))
   }
   let nested = []
   for inner in proto.nested_type {
-    nested.push(proto_message_of(full, package_, inner, symbols))
+    nested.push(proto_message_of(full, package_, inner, symbols, enum_names))
   }
   let enums = []
   for e in proto.enum_type {
@@ -193,16 +201,29 @@ fn proto_field_of(
   scope : String,
   package_ : String,
   symbols : Array[String],
+  enums : Array[String],
 ) -> FieldDescriptor {
   let type_name = match proto.type_name {
     Some(name) => proto_resolve(name, scope, package_, symbols)
     None => ""
   }
+  // A field that holds a named type leaves `type` unset and says only the name; whether that
+  // name is an enum decides how the value is written, so it has to be looked up here.
+  let type_ = if type_name.length() > 0 && enums.contains(type_name) {
+    // The parser reports every named type as a message, so a name that the file set says is an
+    // enum is the only thing that tells the two apart — and an enum written as a message is a
+    // value the JSON mapping drops on the floor.
+    FieldType::TypeEnum
+  } else if proto.type_code == 0 && type_name.length() > 0 {
+    FieldType::TypeMessage
+  } else {
+    FieldType::of(proto.type_code)
+  }
   {
     name: proto.name,
     number: proto.number,
     label: FieldLabel::of(proto.label),
-    type_: FieldType::of(proto.type_code),
+    type_,
     type_name,
     oneof_index: proto.oneof_index,
     proto3_optional: proto.proto3_optional,

@@ -284,3 +284,18 @@ test "conformance: a full-duplex bidi call with no responses fails too" {
   }
   assert_eq(@connect.error_of_json(error).0, @wire.Status::PermissionDenied)
 }
+
+///|
+test "conformance: a JSON unary call with an error definition fails" {
+  let server = test_server(test_service())
+  let body = @utf8.encode(
+    "{\"responseDefinition\":{\"error\":{\"code\":\"CODE_PERMISSION_DENIED\",\"message\":\"nope\"}}}",
+  )
+  let answer = server.serve({
+    path: "/connectrpc.conformance.v1.ConformanceService/Unary",
+    headers: [header("content-type", "application/json")],
+    body,
+  })
+  assert_eq(answer.status, 403)
+  assert_true(@utf8.decode_lossy(answer.body).contains("nope"))
+}
