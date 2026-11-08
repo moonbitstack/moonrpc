@@ -264,8 +264,9 @@ pub struct Session {
   priv headers : Array[@header.Header]
   priv ctx : @stream.RpcContext
   priv route : Route?
-  // A failure decided before a handler could run: the caller gets this and nothing else.
-  priv refuse : (@wire.Status, String)?
+  // A failure decided before a handler could run: the caller gets this and nothing else. The
+  // third element is the HTTP status to answer with when the error code does not determine it.
+  priv refuse : (@wire.Status, String, Int32)?
   // A non-streaming body is read whole; a streaming one is cut into envelopes as it arrives.
   priv body : Buffer
   priv pending : Buffer
@@ -293,19 +294,24 @@ pub fn Server::start(
   }
   let route = self.routes.get(path)
   let ctx = context_of(path, headers)
-  let mut refuse : (@wire.Status, String)? = match parsed {
+  let mut refuse : (@wire.Status, String, Int32)? = match parsed {
     Some(_) => None
-    // A request this server cannot read is `unknown`: the protocol reserves the code for "the
-    // request did not say what kind of body it carries".
+    // A body in a content type this server does not read is refused as `unknown` — the code the
+    // protocol reserves for "the request did not say what kind of body it carries" — with the
+    // status a request that named a type it cannot have would get.
     None =>
       Some(
-        (@wire.Status::Unknown, "content-type is not a Connect content type"),
+        (
+          @wire.Status::Unknown,
+          "content-type is not a Connect content type",
+          415,
+        ),
       )
   }
   if refuse is None {
     match route {
       None =>
-        refuse = Some((@wire.Status::Unimplemented, "no method at " + path))
+        refuse = Some((@wire.Status::Unimplemented, "no method at " + path, 0))
       Some(r) =>
         match r.handler {
           Pushed(_) =>
@@ -313,6 +319,7 @@ pub fn Server::start(
               (
                 @wire.Status::Unimplemented,
                 "a pushed handler needs a driver that can await it",
+                0,
               ),
             )
           _ => ()
@@ -362,7 +369,8 @@ pub fn Session::refused(self : Session) -> Bool {
 /// its handler has run, so its driver waits for `finish` instead.
 pub fn Session::head(self : Session) -> Response {
   match self.refuse {
-    Some((status, message)) => failure(self.content, status, message)
+    Some((status, message, http)) =>
+      failure(self.content, status, message, http~)
     None => {
       let headers = response_headers(self.ctx, self.content)
       if header_lists(self.headers, b"connect-accept-encoding", "gzip") {
@@ -425,7 +433,8 @@ pub fn Session::feed(self : Session, data : Bytes) -> Bytes {
 /// end-stream envelope that closes the call with its outcome.
 pub fn Session::finish(self : Session) -> Response {
   match self.refuse {
-    Some((status, message)) => return failure(self.content, status, message)
+    Some((status, message, http)) =>
+      return failure(self.content, status, message, http~)
     None => ()
   }
   match self.failure {
@@ -557,7 +566,15 @@ fn Session::finish_unary(self : Session) -> Response {
           }
         }
       } else {
-        raw
+        // An encoding this server does not read leaves the body unusable, which is what the
+        // protocol's `unimplemented` is for.
+        self.failure = Some(
+          (
+            @wire.Status::Unimplemented,
+            "this server does not decode that content encoding",
+          ),
+        )
+        b""
       }
     None => raw
   }
@@ -814,15 +831,17 @@ fn failure(
   status : @wire.Status,
   message : String,
   details~ : Array[(String, Json)] = [],
+  http~ : Int32 = 0,
 ) -> Response {
   let body = error_json(status, message, details~)
+  let http_status = if http == 0 { http_status_of(status) } else { http }
   if !content.streaming {
     let headers : Array[@header.Header] = [
       { name: b"content-type", value: @utf8.encode("application/json"), },
       { name: b"connect-protocol-version", value: b"1", },
     ]
     return {
-      status: http_status_of(status),
+      status: http_status,
       headers,
       body: @utf8.encode(body.stringify()),
     }
