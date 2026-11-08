@@ -773,6 +773,28 @@ pub fn message_as_json(schema : @moonrpc.Schema) -> Json raise {
 }
 ```
 
+A schema also compiles from the `.proto` files themselves, so a service definition written by
+hand is a schema without a code generator in between:
+
+```moonbit
+fn load_schema() -> @moonrpc.Schema raise {
+  @moonrpc.Schema::compile([
+    (
+      "greet.proto",
+      #|syntax = "proto3";
+      #|package greet.v1;
+      #|message Hello { string name = 1; }
+      #|service Greeter { rpc Say(Hello) returns (Hello); }
+    ),
+  ])
+}
+```
+
+The parser is `moonbitstack/moonproto`'s, which covers proto2, proto3 and the editions; what this
+module does with the result is resolve every type name to its absolute spelling, add the synthetic
+oneof a proto3 `optional` field needs, and wrap the file in the descriptor model the rest of the
+library passes around. Imports resolve across the files given, in any order.
+
 The shapes are proto3's: lowerCamelCase names, `int64` as a string, `bytes` as base64, enums
 by name, a map as an object, and the well-known types as the specification spells them — a
 `Timestamp` is an RFC 3339 string, a `Duration` ends in `s`, a wrapper is the value it wraps.
@@ -896,9 +918,10 @@ async fn throttled_call(host : String) -> Unit raise {
   nothing to read to. The binary, compact and header transports and both directions of the
   reference cross test are in place.
 - Connect: the reference `ConformanceService` the official suite drives is not implemented, so
-  `connectrpc/conformance` is not in CI yet. The protocol itself is served — both content types,
-  all four call kinds, over HTTP/1.1 and HTTP/2 — and a bidirectional call is answered when its
-  request half closes, because a Connect call's body is read whole before it is dispatched.
+  `connectrpc/conformance` is not in CI yet. Its definition now compiles — `Schema::compile` reads
+  the `.proto` the suite ships — so what is missing is the service itself and a dispatch that
+  answers a bidirectional call while its request half is still open; today a Connect call's body
+  is read whole before it is dispatched, which is why a bidi call is answered at the close.
 
 ## Licence
 

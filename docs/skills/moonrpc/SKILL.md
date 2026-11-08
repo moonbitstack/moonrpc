@@ -88,6 +88,26 @@ async fn serve_connect(server : @net.ConnectServer) -> Unit raise {
 }
 ```
 
+## Compile a .proto instead of building descriptors by hand
+
+`Schema::compile` reads `.proto` source into the descriptor model, so a service defined in IDL
+needs no descriptors written out:
+
+```moonbit
+fn schema_from_idl() -> @moonrpc.Schema raise {
+  @moonrpc.Schema::compile([
+    (
+      "greet.proto",
+      #|syntax = "proto3";
+      #|package greet.v1;
+      #|message Hello { string name = 1; }
+    ),
+  ])
+}
+```
+
+Pass every file that is imported, in any order; type names resolve across the whole set.
+
 ## Rules that catch people out
 
 - `@net` is native only. A package that imports it is native only too, and the same goes for
