@@ -122,6 +122,10 @@ async fn serve_h1_connection(
   http.receive(first[:])
   let mut session : @connect.Session? = None
   let mut streamed = false
+  // A streaming call's head is not written until its first envelope is: the headers a handler
+  // sets come from the request, which has not been read when the head would otherwise go out.
+  let mut head_pending = false
+  let mut version = "HTTP/1.1"
   let body = Buffer()
   let mut head : @http1.Request? = None
   for ;; {
@@ -132,32 +136,24 @@ async fn serve_h1_connection(
     match event {
       @http1.Event::Request(request) => {
         head = Some(request)
+        version = request.version
         body.reset()
         let started = engine.start(request.target, request.fields)
         streamed = started.streaming() && !started.refused()
         session = Some(started)
-        if streamed {
-          let answer = started.head()
-          let framing = if request.version == "HTTP/1.0" {
-            @http1.Body::Closed
-          } else {
-            @http1.Body::Chunked
-          }
-          let reply = @http1.Response::of(
-            answer.status,
-            fields=answer.headers,
-            body=framing,
-          )
-          conn.write(http.send(@http1.Event::Response(reply))) catch {
-            _ => break
-          }
-        }
+        head_pending = streamed
       }
       @http1.Event::Data(bytes) =>
         match session {
           Some(s) => {
             let reply = s.feed(bytes)
             if reply.length() > 0 {
+              if head_pending {
+                head_pending = false
+                write_h1_stream_head(conn, http, s, version) catch {
+                  _ => break
+                }
+              }
               conn.write(http.send(@http1.Event::Data(reply))) catch {
                 _ => break
               }
@@ -170,6 +166,12 @@ async fn serve_h1_connection(
           (Some(request), Some(s)) => {
             let answer = s.finish()
             if streamed {
+              if head_pending {
+                head_pending = false
+                write_h1_stream_head(conn, http, s, version) catch {
+                  _ => break
+                }
+              }
               if answer.body.length() > 0 {
                 conn.write(http.send(@http1.Event::Data(answer.body))) catch {
                   _ => break
@@ -186,6 +188,7 @@ async fn serve_h1_connection(
             head = None
             session = None
             streamed = false
+            head_pending = false
             // A connection the peer asked to keep goes round again; one it did not is done.
             if request.keep_alive {
               http.start_next() catch {
@@ -211,6 +214,29 @@ async fn serve_h1_connection(
       _ => break
     }
   }
+}
+
+///|
+/// The head of a streaming answer, written once the first envelope is ready so that the headers
+/// a handler set are the ones that go out.
+async fn write_h1_stream_head(
+  conn : @tcp.Conn,
+  http : @http1.Conn,
+  session : @connect.Session,
+  version : String,
+) -> Unit {
+  let answer = session.head()
+  let framing = if version == "HTTP/1.0" {
+    @http1.Body::Closed
+  } else {
+    @http1.Body::Chunked
+  }
+  let reply = @http1.Response::of(
+    answer.status,
+    fields=answer.headers,
+    body=framing,
+  )
+  conn.write(http.send(@http1.Event::Response(reply)))
 }
 
 ///|

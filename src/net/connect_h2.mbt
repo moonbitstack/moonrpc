@@ -142,7 +142,7 @@ async fn serve_h2_connection(
       @http2.Frame::Data(stream_id~, data~, end_stream~, ..) =>
         match calls.get(stream_id) {
           Some(call) => {
-            feed_h2_call(conn, call, data) catch {
+            feed_h2_call(conn, encoder, call, data) catch {
               _ => ()
             }
             if end_stream {
@@ -158,7 +158,7 @@ async fn serve_h2_connection(
         match calls.get(stream_id) {
           Some(call) => {
             call.window = call.window + increment
-            flush_h2(conn, call) catch {
+            flush_h2(conn, encoder, call) catch {
               _ => ()
             }
           }
@@ -242,14 +242,19 @@ async fn open_h2_call(
 
 ///|
 /// Hand one piece of the request body to the dispatch and write what it answers now.
-async fn feed_h2_call(conn : @tcp.Conn, call : H2Call, data : Bytes) -> Unit {
+async fn feed_h2_call(
+  conn : @tcp.Conn,
+  encoder : @hpack.Encoder,
+  call : H2Call,
+  data : Bytes,
+) -> Unit {
   match call.session {
     Some(session) =>
-      if call.head_sent {
+      if session.streaming() && !session.refused() {
         let reply = session.feed(data)
         if reply.length() > 0 {
           call.pending.write_bytes(reply)
-          flush_h2(conn, call) catch {
+          flush_h2(conn, encoder, call) catch {
             _ => ()
           }
         }
@@ -311,7 +316,7 @@ async fn finish_h2_call(
         call.pending.write_bytes(answer.body)
       }
       call.want_end = true
-      flush_h2(conn, call) catch {
+      flush_h2(conn, encoder, call) catch {
         _ => ()
       }
     }
@@ -321,9 +326,43 @@ async fn finish_h2_call(
 ///|
 /// Write as much of the pending reply as the peer's window allows, ending the stream on the last
 /// frame once there is nothing left to send.
-async fn flush_h2(conn : @tcp.Conn, call : H2Call) -> Unit {
-  if !call.head_sent || call.end_sent {
+async fn flush_h2(
+  conn : @tcp.Conn,
+  encoder : @hpack.Encoder,
+  call : H2Call,
+) -> Unit {
+  if call.end_sent {
     return
+  }
+  // The reply headers go out with the first envelope, not before it: a handler sets them while
+  // it reads the request.
+  if !call.head_sent {
+    match call.session {
+      Some(session) =>
+        if !session.streaming() || session.refused() {
+          return
+        } else {
+          let answer = session.head()
+          let fields : Array[@header.Header] = [
+            { name: b":status", value: b"200", },
+          ]
+          for h in answer.headers {
+            fields.push(h)
+          }
+          conn.write(
+            @http2.Frame::Headers(
+              stream_id=call.id,
+              fragment=encoder.encode(fields),
+              end_stream=false,
+              end_headers=true,
+              priority=None,
+              padding=0,
+            ).encode(),
+          )
+          call.head_sent = true
+        }
+      None => return
+    }
   }
   for ;; {
     let pending = call.pending.to_bytes()
