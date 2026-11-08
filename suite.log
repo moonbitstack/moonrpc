@@ -1,257 +1,255 @@
-﻿2026-11-08T04:18:57.6034020Z Current runner version: '2.338.2'
-2026-11-08T04:18:57.6051211Z ##[group]Runner Image Provisioner
-2026-11-08T04:18:57.6051825Z Hosted Compute Agent
-2026-11-08T04:18:57.6052159Z Version: 20261028.624
-2026-11-08T04:18:57.6052636Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
-2026-11-08T04:18:57.6053120Z Build Date: 2026-10-28T21:51:42Z
-2026-11-08T04:18:57.6053501Z Worker ID: {48eeb125-86d9-4140-8e43-fb73897d037a}
-2026-11-08T04:18:57.6053921Z Region: centralus
-2026-11-08T04:18:57.6054271Z Cloud: Azure
-2026-11-08T04:18:57.6054570Z ##[endgroup]
-2026-11-08T04:18:57.6055383Z ##[group]Operating System
-2026-11-08T04:18:57.6055728Z Ubuntu
-2026-11-08T04:18:57.6056061Z 26.04.1
-2026-11-08T04:18:57.6056399Z LTS
-2026-11-08T04:18:57.6056694Z ##[endgroup]
-2026-11-08T04:18:57.6057070Z ##[group]Runner Image
-2026-11-08T04:18:57.6057408Z Image: ubuntu-26.04
-2026-11-08T04:18:57.6057722Z Version: 20261101.186.1
-2026-11-08T04:18:57.6058506Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261101.186/images/ubuntu/Ubuntu2604-Readme.md
-2026-11-08T04:18:57.6059739Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261101.186
-2026-11-08T04:18:57.6060278Z ##[endgroup]
-2026-11-08T04:18:57.6060998Z ##[group]GITHUB_TOKEN Permissions
-2026-11-08T04:18:57.6062143Z Contents: read
-2026-11-08T04:18:57.6062790Z Metadata: read
-2026-11-08T04:18:57.6063156Z Packages: read
-2026-11-08T04:18:57.6063470Z ##[endgroup]
-2026-11-08T04:18:57.6064838Z Secret source: Actions
-2026-11-08T04:18:57.6065365Z Cache mode: write
-2026-11-08T04:18:57.6065832Z Prepare workflow directory
-2026-11-08T04:18:57.6266237Z Prepare all required actions
-2026-11-08T04:18:57.6306557Z Getting action download info
-2026-11-08T04:18:57.8294971Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
-2026-11-08T04:18:57.9967534Z Complete job name: Connect conformance (server)
-2026-11-08T04:18:58.0565238Z ##[group]Run actions/checkout@v7
-2026-11-08T04:18:58.0565643Z with:
-2026-11-08T04:18:58.0565910Z   persist-credentials: false
-2026-11-08T04:18:58.0566200Z   repository: moonbitstack/moonrpc
-2026-11-08T04:18:58.0568228Z   token: ***
-2026-11-08T04:18:58.0568456Z   ssh-strict: true
-2026-11-08T04:18:58.0568689Z   ssh-user: git
-2026-11-08T04:18:58.0568919Z   clean: true
-2026-11-08T04:18:58.0569166Z   sparse-checkout-cone-mode: true
-2026-11-08T04:18:58.0569450Z   fetch-depth: 1
-2026-11-08T04:18:58.0569685Z   fetch-tags: false
-2026-11-08T04:18:58.0569926Z   show-progress: true
-2026-11-08T04:18:58.0570167Z   lfs: false
-2026-11-08T04:18:58.0570392Z   submodules: false
-2026-11-08T04:18:58.0570637Z   set-safe-directory: true
-2026-11-08T04:18:58.0570910Z   allow-unsafe-pr-checkout: false
-2026-11-08T04:18:58.0571253Z ##[endgroup]
-2026-11-08T04:18:58.2786015Z Syncing repository: moonbitstack/moonrpc
-2026-11-08T04:18:58.2787087Z ##[group]Getting Git version info
-2026-11-08T04:18:58.2787525Z Working directory is '/home/runner/work/moonrpc/moonrpc'
-2026-11-08T04:18:58.2788098Z [command]/usr/bin/git version
-2026-11-08T04:18:58.2812956Z git version 2.56.0
-2026-11-08T04:18:58.2825756Z ##[endgroup]
-2026-11-08T04:18:58.2833214Z Temporarily overriding HOME='/home/runner/work/_temp/16f2a335-ae05-4870-89f7-8e09493933f7' before making global git config changes
-2026-11-08T04:18:58.2834339Z Adding repository directory to the temporary git global config as a safe directory
-2026-11-08T04:18:58.2836522Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/moonrpc/moonrpc
-2026-11-08T04:18:58.2929934Z Deleting the contents of '/home/runner/work/moonrpc/moonrpc'
-2026-11-08T04:18:58.2935351Z ##[group]Determining repository object format
-2026-11-08T04:18:58.2936155Z ##[endgroup]
-2026-11-08T04:18:58.2936794Z ##[group]Initializing the repository
-2026-11-08T04:18:58.2954233Z [command]/usr/bin/git init /home/runner/work/moonrpc/moonrpc
-2026-11-08T04:18:58.3062000Z hint: Using 'master' as the name for the initial branch. This default branch name
-2026-11-08T04:18:58.3063063Z hint: will change to "main" in Git 3.0. To configure the initial branch name
-2026-11-08T04:18:58.3064143Z hint: to use in all of your new repositories, which will suppress this warning,
-2026-11-08T04:18:58.3064778Z hint: call:
-2026-11-08T04:18:58.3065112Z hint:
-2026-11-08T04:18:58.3065559Z hint: 	git config --global init.defaultBranch <name>
-2026-11-08T04:18:58.3066061Z hint:
-2026-11-08T04:18:58.3066531Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
-2026-11-08T04:18:58.3067283Z hint: 'development'. The just-created branch can be renamed via this command:
-2026-11-08T04:18:58.3067913Z hint:
-2026-11-08T04:18:58.3068284Z hint: 	git branch -m <name>
-2026-11-08T04:18:58.3068694Z hint:
-2026-11-08T04:18:58.3069226Z hint: Disable this message with "git config set advice.defaultBranchName false"
-2026-11-08T04:18:58.3074288Z Initialized empty Git repository in /home/runner/work/moonrpc/moonrpc/.git/
-2026-11-08T04:18:58.3083272Z [command]/usr/bin/git remote add origin https://github.com/moonbitstack/moonrpc
-2026-11-08T04:18:58.3131561Z ##[endgroup]
-2026-11-08T04:18:58.3132239Z ##[group]Disabling automatic garbage collection
-2026-11-08T04:18:58.3134682Z [command]/usr/bin/git config --local gc.auto 0
-2026-11-08T04:18:58.3172214Z ##[endgroup]
-2026-11-08T04:18:58.3173330Z ##[group]Setting up auth
-2026-11-08T04:18:58.3173787Z Removing SSH command configuration
-2026-11-08T04:18:58.3178139Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2026-11-08T04:18:58.3209797Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2026-11-08T04:18:58.3583250Z Removing HTTP extra header
-2026-11-08T04:18:58.3587838Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2026-11-08T04:18:58.3614961Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2026-11-08T04:18:58.3822195Z Removing includeIf entries pointing to credentials config files
-2026-11-08T04:18:58.3826351Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-2026-11-08T04:18:58.3859510Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-2026-11-08T04:18:58.4076649Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
-2026-11-08T04:18:58.4108882Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path /home/runner/work/_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:58.4136231Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:58.4165694Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:58.4192220Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:58.4216504Z ##[endgroup]
-2026-11-08T04:18:58.4216919Z ##[group]Fetching the repository
-2026-11-08T04:18:58.4221190Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +b1ec69c10db00dd0f2f8ceb87a153825b566b9aa:refs/remotes/origin/master
-2026-11-08T04:18:58.9287370Z From https://github.com/moonbitstack/moonrpc
-2026-11-08T04:18:58.9288136Z  * [new ref]         b1ec69c10db00dd0f2f8ceb87a153825b566b9aa -> origin/master
-2026-11-08T04:18:58.9294158Z [command]/usr/bin/git branch --list --remote origin/master
-2026-11-08T04:18:58.9316464Z   origin/master
-2026-11-08T04:18:58.9321631Z [command]/usr/bin/git rev-parse refs/remotes/origin/master
-2026-11-08T04:18:58.9341245Z b1ec69c10db00dd0f2f8ceb87a153825b566b9aa
-2026-11-08T04:18:58.9344359Z ##[endgroup]
-2026-11-08T04:18:58.9345058Z ##[group]Determining the checkout info
-2026-11-08T04:18:58.9345799Z ##[endgroup]
-2026-11-08T04:18:58.9347748Z [command]/usr/bin/git sparse-checkout disable
-2026-11-08T04:18:58.9388300Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
-2026-11-08T04:18:58.9413240Z ##[group]Checking out the ref
-2026-11-08T04:18:58.9415416Z [command]/usr/bin/git checkout --progress --force -B master refs/remotes/origin/master
-2026-11-08T04:18:58.9608779Z Reset branch 'master'
-2026-11-08T04:18:58.9612675Z branch 'master' set up to track 'origin/master'.
-2026-11-08T04:18:58.9618187Z ##[endgroup]
-2026-11-08T04:18:58.9658154Z [command]/usr/bin/git log -1 --format=%H
-2026-11-08T04:18:58.9680325Z b1ec69c10db00dd0f2f8ceb87a153825b566b9aa
-2026-11-08T04:18:58.9690151Z ##[group]Removing auth
-2026-11-08T04:18:58.9690600Z Removing SSH command configuration
-2026-11-08T04:18:58.9691053Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2026-11-08T04:18:58.9716627Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2026-11-08T04:18:58.9931744Z Removing HTTP extra header
-2026-11-08T04:18:58.9933543Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2026-11-08T04:18:58.9959214Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2026-11-08T04:18:59.0170967Z Removing includeIf entries pointing to credentials config files
-2026-11-08T04:18:59.0172002Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-2026-11-08T04:18:59.0194297Z includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path
-2026-11-08T04:18:59.0195334Z includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path
-2026-11-08T04:18:59.0196248Z includeif.gitdir:/github/workspace/.git.path
-2026-11-08T04:18:59.0197025Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
-2026-11-08T04:18:59.0201875Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path
-2026-11-08T04:18:59.0221193Z /home/runner/work/_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:59.0228709Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-268719db\-97ca\-40c9\-a5a7\-d6edb146d1b8\.config
-2026-11-08T04:18:59.0262223Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path
-2026-11-08T04:18:59.0281472Z /home/runner/work/_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:59.0288144Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-268719db\-97ca\-40c9\-a5a7\-d6edb146d1b8\.config
-2026-11-08T04:18:59.0317801Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
-2026-11-08T04:18:59.0338039Z /github/runner_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:59.0344056Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-268719db\-97ca\-40c9\-a5a7\-d6edb146d1b8\.config
-2026-11-08T04:18:59.0373410Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
-2026-11-08T04:18:59.0392535Z /github/runner_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config
-2026-11-08T04:18:59.0398787Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-268719db\-97ca\-40c9\-a5a7\-d6edb146d1b8\.config
-2026-11-08T04:18:59.0427251Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-2026-11-08T04:18:59.0640019Z Removing credentials config '/home/runner/work/_temp/git-credentials-268719db-97ca-40c9-a5a7-d6edb146d1b8.config'
-2026-11-08T04:18:59.0641751Z ##[endgroup]
-2026-11-08T04:18:59.0799286Z ##[group]Run curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-2026-11-08T04:18:59.0799892Z [36;1mcurl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash[0m
-2026-11-08T04:18:59.0800335Z [36;1mecho "$HOME/.moon/bin" >> $GITHUB_PATH[0m
-2026-11-08T04:18:59.0842819Z shell: /usr/bin/bash -e {0}
-2026-11-08T04:18:59.0843126Z ##[endgroup]
-2026-11-08T04:18:59.4605865Z Downloading moonbit ...
-2026-11-08T04:18:59.5648394Z 
-2026-11-08T04:18:59.6650761Z #                                                                          2.3%
-2026-11-08T04:18:59.7650781Z ######################                                                    31.8%
-2026-11-08T04:18:59.8648939Z ######################################                                    53.4%
-2026-11-08T04:18:59.9221742Z #############################################################             85.4%
-2026-11-08T04:18:59.9222955Z ######################################################################## 100.0%
-2026-11-08T04:19:00.8713248Z Downloading core ...
-2026-11-08T04:19:00.9756264Z 
-2026-11-08T04:19:01.0053217Z ############                                                              18.0%
-2026-11-08T04:19:01.0053867Z ######################################################################## 100.0%
-2026-11-08T04:19:01.0637810Z Bundling core ...
-2026-11-08T04:19:05.3969355Z Finished. moon: ran 528 tasks, now up to date
-2026-11-08T04:19:05.4283391Z moonbit was installed successfully to ~/.moon 
-2026-11-08T04:19:05.4284466Z To verify the downloaded binaries, check https://www.moonbitlang.com/download#verifying-binaries for instructions.
-2026-11-08T04:19:05.4285162Z To know how to add shell completions, run 'moon shell-completion --help'
-2026-11-08T04:19:05.4333478Z Added "~/.moon/bin" to $PATH in "~/.bashrc" 
-2026-11-08T04:19:05.4333897Z To get started, run: 
-2026-11-08T04:19:05.4334219Z   source ~/.bashrc 
-2026-11-08T04:19:05.4334610Z   moon help 
-2026-11-08T04:19:05.4377752Z ##[group]Run moon version --all
-2026-11-08T04:19:05.4377984Z [36;1mmoon version --all[0m
-2026-11-08T04:19:05.4378156Z [36;1mmoon update[0m
-2026-11-08T04:19:05.4423904Z shell: /usr/bin/bash -e {0}
-2026-11-08T04:19:05.4424098Z ##[endgroup]
-2026-11-08T04:19:05.4572307Z moon 0.1.20261104 (940aa18 2026-11-04) ~/.moon/bin/moon
-2026-11-08T04:19:05.4572922Z moonc v0.10.20+65efd5b93 (2026-11-05) ~/.moon/bin/moonc
-2026-11-08T04:19:05.4573305Z moonrun 0.1.20261104 (940aa18 2026-11-04) ~/.moon/bin/moonrun
-2026-11-08T04:19:05.4573601Z 
-2026-11-08T04:19:05.4573740Z Feature flags enabled: rr_moon_mod,rr_moon_pkg
-2026-11-08T04:19:07.1144196Z Registry index cloned successfully
-2026-11-08T04:19:07.1144504Z Symbols updated successfully
-2026-11-08T04:19:07.1180081Z ##[group]Run moon build --target native src/cmd/conformance
-2026-11-08T04:19:07.1180333Z [36;1mmoon build --target native src/cmd/conformance[0m
-2026-11-08T04:19:07.1219458Z shell: /usr/bin/bash -e {0}
-2026-11-08T04:19:07.1219604Z ##[endgroup]
-2026-11-08T04:19:07.1301892Z Downloading moonbit-community/prettyprinter@0.4.11
-2026-11-08T04:19:07.4547142Z Downloading moonbitlang/async@0.22.5
-2026-11-08T04:19:07.8985270Z Downloading moonbitlang/lexer@0.4.4
-2026-11-08T04:19:08.1908473Z Downloading moonbitlang/moon_config@0.4.5
-2026-11-08T04:19:08.5193669Z Downloading moonbitlang/parser@0.4.6
-2026-11-08T04:19:08.9181885Z Downloading moonbitlang/x@0.5.7
-2026-11-08T04:19:09.3006165Z Downloading moonbitstack/moonbase@0.4.3
-2026-11-08T04:19:09.6241563Z Downloading moonbitstack/moonzip@0.3.7
-2026-11-08T04:19:09.9587863Z Downloading moonbitstack/moonward@0.2.1
-2026-11-08T04:19:10.2748861Z Downloading moonbitstack/mooncred@0.6.10
-2026-11-08T04:19:10.6216107Z Downloading moonbitstack/moonproto@0.1.0
-2026-11-08T04:19:10.9795324Z Downloading moonbitstack/moonnet@0.1.11
-2026-11-08T04:19:11.3108478Z Downloading moonbitstack/moonast@0.2.6
-2026-11-08T04:19:11.8194917Z Downloading moonbitstack/moonucd@0.1.3
-2026-11-08T04:19:12.4141482Z Downloading moonbitstack/moonurl@0.2.5
-2026-11-08T04:19:12.7835140Z Downloading moonbitstack/moonhttp@0.15.9
-2026-11-08T04:19:13.1170088Z Downloading moonbitstack/moonvar@0.2.1
-2026-11-08T04:19:13.6238899Z Downloading moonbitstack/moonjson@0.4.3
-2026-11-08T04:19:13.9473682Z Downloading moonbitstack/mooncrypt@0.4.12
-2026-11-08T04:19:14.6113136Z Downloading moonbitstack/moonseed@0.1.1
-2026-11-08T04:19:14.9532175Z Downloading moonbitstack/moonquic@0.3.12
-2026-11-08T04:19:15.3108807Z Downloading moonbitstack/moontls@0.9.15
-2026-11-08T04:19:15.6150507Z Downloading moonbitstack/moondate@0.1.5
-2026-11-08T04:19:16.0179888Z Downloading moonbitstack/moonmime@0.2.3
-2026-11-08T04:19:27.7680565Z /home/runner/work/moonrpc/moonrpc/.mooncakes/moonbitlang/async/src/internal/event_loop/thread_pool.c: In function ‘cancellation_signal_handler’:
-2026-11-08T04:19:27.7681459Z /home/runner/work/moonrpc/moonrpc/.mooncakes/moonbitlang/async/src/internal/event_loop/thread_pool.c:471:5: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
-2026-11-08T04:19:27.7681960Z   471 |     write(pool.notify_send, &data, sizeof(data));
-2026-11-08T04:19:27.7682165Z       |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-2026-11-08T04:19:27.7682354Z Finished. moon: ran 163 tasks, now up to date
-2026-11-08T04:19:27.7682747Z Artifacts:
-2026-11-08T04:19:27.7683056Z   moonbitstack/moonrpc/cmd/conformance  native  /home/runner/work/moonrpc/moonrpc/_build/native/debug/build/cmd/conformance/conformance.exe
-2026-11-08T04:19:27.7749505Z ##[group]Run url="https://github.com/connectrpc/conformance/releases/download/${VERSION}/connectconformance-${VERSION}-Linux-x86_64.tar.gz"
-2026-11-08T04:19:27.7750063Z [36;1murl="https://github.com/connectrpc/conformance/releases/download/${VERSION}/connectconformance-${VERSION}-Linux-x86_64.tar.gz"[0m
-2026-11-08T04:19:27.7750416Z [36;1mcurl -fsSL -o "$RUNNER_TEMP/runner.tar.gz" "$url"[0m
-2026-11-08T04:19:27.7750634Z [36;1mtar xzf "$RUNNER_TEMP/runner.tar.gz" -C "$RUNNER_TEMP"[0m
-2026-11-08T04:19:27.7750847Z [36;1m"$RUNNER_TEMP/connectconformance" --version[0m
-2026-11-08T04:19:27.7791481Z shell: /usr/bin/bash -e {0}
-2026-11-08T04:19:27.7791622Z env:
-2026-11-08T04:19:27.7791737Z   VERSION: v1.0.4
-2026-11-08T04:19:27.7791863Z ##[endgroup]
-2026-11-08T04:19:28.2666638Z connectconformance v1.0.4
-2026-11-08T04:19:28.2704033Z ##[group]Run "$RUNNER_TEMP/connectconformance" \
-2026-11-08T04:19:28.2704283Z [36;1m"$RUNNER_TEMP/connectconformance" \[0m
-2026-11-08T04:19:28.2704457Z [36;1m  --mode server \[0m
-2026-11-08T04:19:28.2704631Z [36;1m  --conf scripts/conformance/connect.yaml \[0m
-2026-11-08T04:19:28.2704858Z [36;1m  -- ./_build/native/debug/build/cmd/conformance/conformance.exe[0m
-2026-11-08T04:19:28.2747355Z shell: /usr/bin/bash -e {0}
-2026-11-08T04:19:28.2747514Z ##[endgroup]
-2026-11-08T04:19:28.2859446Z scripts/conformance/connect.yaml:35:5 expected fields for connectrpc.conformance.v1.ConfigCase, got scalar
-2026-11-08T04:19:28.2863261Z   35 |   - Timeouts
-2026-11-08T04:19:28.2863491Z   35 | ....^
-2026-11-08T04:19:28.2863600Z 
-2026-11-08T04:19:28.2881340Z ##[error]Process completed with exit code 1.
-2026-11-08T04:19:28.2970716Z Post job cleanup.
-2026-11-08T04:19:28.3633153Z [command]/usr/bin/git version
-2026-11-08T04:19:28.3672197Z git version 2.56.0
-2026-11-08T04:19:28.3700516Z Temporarily overriding HOME='/home/runner/work/_temp/7b5a3859-9d38-44b9-b25e-27beb7cbfce5' before making global git config changes
-2026-11-08T04:19:28.3701295Z Adding repository directory to the temporary git global config as a safe directory
-2026-11-08T04:19:28.3705214Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/moonrpc/moonrpc
-2026-11-08T04:19:28.3743155Z Removing SSH command configuration
-2026-11-08T04:19:28.3749745Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2026-11-08T04:19:28.3794289Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2026-11-08T04:19:28.4097117Z Removing HTTP extra header
-2026-11-08T04:19:28.4101763Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2026-11-08T04:19:28.4138372Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2026-11-08T04:19:28.4368295Z Removing includeIf entries pointing to credentials config files
-2026-11-08T04:19:28.4374125Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-2026-11-08T04:19:28.4406555Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-2026-11-08T04:19:28.4774662Z Cleaning up orphan processes
+﻿2026-11-08T04:28:10.3418024Z Current runner version: '2.338.2'
+2026-11-08T04:28:10.3442720Z ##[group]Runner Image Provisioner
+2026-11-08T04:28:10.3443776Z Hosted Compute Agent
+2026-11-08T04:28:10.3444448Z Version: 20261028.624
+2026-11-08T04:28:10.3445100Z Commit: 54898b74c23fde5556c9b3c3a2290865feef0dfe
+2026-11-08T04:28:10.3446066Z Build Date: 2026-10-28T21:51:42Z
+2026-11-08T04:28:10.3446768Z Worker ID: {57616247-cbb2-48cd-b1b6-418777d6ffa5}
+2026-11-08T04:28:10.3447469Z Region: centralus
+2026-11-08T04:28:10.3448096Z Cloud: Azure
+2026-11-08T04:28:10.3448678Z ##[endgroup]
+2026-11-08T04:28:10.3450261Z ##[group]Operating System
+2026-11-08T04:28:10.3451074Z Ubuntu
+2026-11-08T04:28:10.3451615Z 26.04.1
+2026-11-08T04:28:10.3452254Z LTS
+2026-11-08T04:28:10.3452769Z ##[endgroup]
+2026-11-08T04:28:10.3453362Z ##[group]Runner Image
+2026-11-08T04:28:10.3453995Z Image: ubuntu-26.04
+2026-11-08T04:28:10.3454574Z Version: 20261101.186.1
+2026-11-08T04:28:10.3456295Z Included Software: https://github.com/actions/runner-images/blob/ubuntu26/20261101.186/images/ubuntu/Ubuntu2604-Readme.md
+2026-11-08T04:28:10.3458326Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu26%2F20261101.186
+2026-11-08T04:28:10.3459370Z ##[endgroup]
+2026-11-08T04:28:10.3460621Z ##[group]GITHUB_TOKEN Permissions
+2026-11-08T04:28:10.3462902Z Contents: read
+2026-11-08T04:28:10.3463587Z Metadata: read
+2026-11-08T04:28:10.3464294Z Packages: read
+2026-11-08T04:28:10.3464866Z ##[endgroup]
+2026-11-08T04:28:10.3467347Z Secret source: Actions
+2026-11-08T04:28:10.3468362Z Cache mode: write
+2026-11-08T04:28:10.3469290Z Prepare workflow directory
+2026-11-08T04:28:10.3806906Z Prepare all required actions
+2026-11-08T04:28:10.3853847Z Getting action download info
+2026-11-08T04:28:10.6043896Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-11-08T04:28:10.7945221Z Complete job name: Connect conformance (server)
+2026-11-08T04:28:10.8933718Z ##[group]Run actions/checkout@v7
+2026-11-08T04:28:10.8934629Z with:
+2026-11-08T04:28:10.8935132Z   persist-credentials: false
+2026-11-08T04:28:10.8935894Z   repository: moonbitstack/moonrpc
+2026-11-08T04:28:10.8939953Z   token: ***
+2026-11-08T04:28:10.8940411Z   ssh-strict: true
+2026-11-08T04:28:10.8940870Z   ssh-user: git
+2026-11-08T04:28:10.8941312Z   clean: true
+2026-11-08T04:28:10.8941778Z   sparse-checkout-cone-mode: true
+2026-11-08T04:28:10.8942324Z   fetch-depth: 1
+2026-11-08T04:28:10.8942780Z   fetch-tags: false
+2026-11-08T04:28:10.8943247Z   show-progress: true
+2026-11-08T04:28:10.8943714Z   lfs: false
+2026-11-08T04:28:10.8944153Z   submodules: false
+2026-11-08T04:28:10.8944627Z   set-safe-directory: true
+2026-11-08T04:28:10.8945151Z   allow-unsafe-pr-checkout: false
+2026-11-08T04:28:10.8946082Z ##[endgroup]
+2026-11-08T04:28:11.1603782Z Syncing repository: moonbitstack/moonrpc
+2026-11-08T04:28:11.1607228Z ##[group]Getting Git version info
+2026-11-08T04:28:11.1608799Z Working directory is '/home/runner/work/moonrpc/moonrpc'
+2026-11-08T04:28:11.1610953Z [command]/usr/bin/git version
+2026-11-08T04:28:11.1613095Z git version 2.56.0
+2026-11-08T04:28:11.1635726Z ##[endgroup]
+2026-11-08T04:28:11.1646191Z Temporarily overriding HOME='/home/runner/work/_temp/18b1468a-f455-4139-ad46-82b44dccf158' before making global git config changes
+2026-11-08T04:28:11.1651743Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-08T04:28:11.1653800Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/moonrpc/moonrpc
+2026-11-08T04:28:11.1713570Z Deleting the contents of '/home/runner/work/moonrpc/moonrpc'
+2026-11-08T04:28:11.1717003Z ##[group]Determining repository object format
+2026-11-08T04:28:11.1718745Z ##[endgroup]
+2026-11-08T04:28:11.1720696Z ##[group]Initializing the repository
+2026-11-08T04:28:11.1722706Z [command]/usr/bin/git init /home/runner/work/moonrpc/moonrpc
+2026-11-08T04:28:11.1822981Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-08T04:28:11.1825132Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-08T04:28:11.1827721Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-08T04:28:11.1828962Z hint: call:
+2026-11-08T04:28:11.1829838Z hint:
+2026-11-08T04:28:11.1830862Z hint: 	git config --global init.defaultBranch <name>
+2026-11-08T04:28:11.1832043Z hint:
+2026-11-08T04:28:11.1833047Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-08T04:28:11.1834106Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-08T04:28:11.1835484Z hint:
+2026-11-08T04:28:11.1836540Z hint: 	git branch -m <name>
+2026-11-08T04:28:11.1837506Z hint:
+2026-11-08T04:28:11.1838580Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-08T04:28:11.1839761Z Initialized empty Git repository in /home/runner/work/moonrpc/moonrpc/.git/
+2026-11-08T04:28:11.1846458Z [command]/usr/bin/git remote add origin https://github.com/moonbitstack/moonrpc
+2026-11-08T04:28:11.1911862Z ##[endgroup]
+2026-11-08T04:28:11.1912854Z ##[group]Disabling automatic garbage collection
+2026-11-08T04:28:11.1915160Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-08T04:28:11.1954718Z ##[endgroup]
+2026-11-08T04:28:11.1956261Z ##[group]Setting up auth
+2026-11-08T04:28:11.1956928Z Removing SSH command configuration
+2026-11-08T04:28:11.1960579Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-08T04:28:11.1997928Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-08T04:28:11.2445163Z Removing HTTP extra header
+2026-11-08T04:28:11.2451578Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-08T04:28:11.2486899Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-08T04:28:11.2751492Z Removing includeIf entries pointing to credentials config files
+2026-11-08T04:28:11.2757112Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-08T04:28:11.2798172Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-08T04:28:11.3076807Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-08T04:28:11.3120492Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path /home/runner/work/_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.3154695Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.3192049Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.3225251Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.3255982Z ##[endgroup]
+2026-11-08T04:28:11.3256907Z ##[group]Fetching the repository
+2026-11-08T04:28:11.3262243Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +10725855272e05321f963c91dfdc095ae6b4453d:refs/remotes/origin/master
+2026-11-08T04:28:11.6846750Z From https://github.com/moonbitstack/moonrpc
+2026-11-08T04:28:11.6847862Z  * [new ref]         10725855272e05321f963c91dfdc095ae6b4453d -> origin/master
+2026-11-08T04:28:11.6856752Z [command]/usr/bin/git branch --list --remote origin/master
+2026-11-08T04:28:11.6882667Z   origin/master
+2026-11-08T04:28:11.6892429Z [command]/usr/bin/git rev-parse refs/remotes/origin/master
+2026-11-08T04:28:11.6916528Z 10725855272e05321f963c91dfdc095ae6b4453d
+2026-11-08T04:28:11.6922013Z ##[endgroup]
+2026-11-08T04:28:11.6922882Z ##[group]Determining the checkout info
+2026-11-08T04:28:11.6923997Z ##[endgroup]
+2026-11-08T04:28:11.6927190Z [command]/usr/bin/git sparse-checkout disable
+2026-11-08T04:28:11.6978656Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-08T04:28:11.7011159Z ##[group]Checking out the ref
+2026-11-08T04:28:11.7014498Z [command]/usr/bin/git checkout --progress --force -B master refs/remotes/origin/master
+2026-11-08T04:28:11.7295173Z Reset branch 'master'
+2026-11-08T04:28:11.7300602Z branch 'master' set up to track 'origin/master'.
+2026-11-08T04:28:11.7307200Z ##[endgroup]
+2026-11-08T04:28:11.7350206Z [command]/usr/bin/git log -1 --format=%H
+2026-11-08T04:28:11.7376446Z 10725855272e05321f963c91dfdc095ae6b4453d
+2026-11-08T04:28:11.7386593Z ##[group]Removing auth
+2026-11-08T04:28:11.7387251Z Removing SSH command configuration
+2026-11-08T04:28:11.7392046Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-08T04:28:11.7425322Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-08T04:28:11.7700358Z Removing HTTP extra header
+2026-11-08T04:28:11.7705492Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-08T04:28:11.7740530Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-08T04:28:11.8011005Z Removing includeIf entries pointing to credentials config files
+2026-11-08T04:28:11.8014632Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-08T04:28:11.8041983Z includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path
+2026-11-08T04:28:11.8043327Z includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path
+2026-11-08T04:28:11.8045115Z includeif.gitdir:/github/workspace/.git.path
+2026-11-08T04:28:11.8046426Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-08T04:28:11.8051497Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path
+2026-11-08T04:28:11.8076500Z /home/runner/work/_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.8087600Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-4c1e4b10\-80df\-46ac\-9c06\-781487a51dd5\.config
+2026-11-08T04:28:11.8122283Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path
+2026-11-08T04:28:11.8154352Z /home/runner/work/_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.8164227Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/moonrpc/moonrpc/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-4c1e4b10\-80df\-46ac\-9c06\-781487a51dd5\.config
+2026-11-08T04:28:11.8201540Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-08T04:28:11.8226796Z /github/runner_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.8234033Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-4c1e4b10\-80df\-46ac\-9c06\-781487a51dd5\.config
+2026-11-08T04:28:11.8270693Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-08T04:28:11.8294189Z /github/runner_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config
+2026-11-08T04:28:11.8302589Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-4c1e4b10\-80df\-46ac\-9c06\-781487a51dd5\.config
+2026-11-08T04:28:11.8339090Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-08T04:28:11.8616707Z Removing credentials config '/home/runner/work/_temp/git-credentials-4c1e4b10-80df-46ac-9c06-781487a51dd5.config'
+2026-11-08T04:28:11.8629981Z ##[endgroup]
+2026-11-08T04:28:11.8876893Z ##[group]Run curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+2026-11-08T04:28:11.8879003Z [36;1mcurl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash[0m
+2026-11-08T04:28:11.8880549Z [36;1mecho "$HOME/.moon/bin" >> $GITHUB_PATH[0m
+2026-11-08T04:28:11.8934219Z shell: /usr/bin/bash -e {0}
+2026-11-08T04:28:11.8935087Z ##[endgroup]
+2026-11-08T04:28:12.2828537Z Downloading moonbit ...
+2026-11-08T04:28:12.3885315Z 
+2026-11-08T04:28:12.4886983Z                                                                            1.0%
+2026-11-08T04:28:12.5887741Z ##########################                                                36.8%
+2026-11-08T04:28:12.6507179Z ####################################################                      73.5%
+2026-11-08T04:28:12.6509064Z ######################################################################## 100.0%
+2026-11-08T04:28:13.9115119Z Downloading core ...
+2026-11-08T04:28:14.0169321Z 
+2026-11-08T04:28:14.0387846Z ###################                                                       27.5%
+2026-11-08T04:28:14.0389014Z ######################################################################## 100.0%
+2026-11-08T04:28:14.1185917Z Bundling core ...
+2026-11-08T04:28:20.0812039Z Finished. moon: ran 528 tasks, now up to date
+2026-11-08T04:28:20.1169248Z moonbit was installed successfully to ~/.moon 
+2026-11-08T04:28:20.1170891Z To verify the downloaded binaries, check https://www.moonbitlang.com/download#verifying-binaries for instructions.
+2026-11-08T04:28:20.1172234Z To know how to add shell completions, run 'moon shell-completion --help'
+2026-11-08T04:28:20.1227267Z Added "~/.moon/bin" to $PATH in "~/.bashrc" 
+2026-11-08T04:28:20.1227881Z To get started, run: 
+2026-11-08T04:28:20.1228276Z   source ~/.bashrc 
+2026-11-08T04:28:20.1228652Z   moon help 
+2026-11-08T04:28:20.1279430Z ##[group]Run moon version --all
+2026-11-08T04:28:20.1279778Z [36;1mmoon version --all[0m
+2026-11-08T04:28:20.1280029Z [36;1mmoon update[0m
+2026-11-08T04:28:20.1334001Z shell: /usr/bin/bash -e {0}
+2026-11-08T04:28:20.1334271Z ##[endgroup]
+2026-11-08T04:28:20.1499728Z moon 0.1.20261104 (940aa18 2026-11-04) ~/.moon/bin/moon
+2026-11-08T04:28:20.1500424Z moonc v0.10.20+65efd5b93 (2026-11-05) ~/.moon/bin/moonc
+2026-11-08T04:28:20.1500934Z moonrun 0.1.20261104 (940aa18 2026-11-04) ~/.moon/bin/moonrun
+2026-11-08T04:28:20.1501221Z 
+2026-11-08T04:28:20.1501366Z Feature flags enabled: rr_moon_mod,rr_moon_pkg
+2026-11-08T04:28:22.5550210Z Registry index cloned successfully
+2026-11-08T04:28:22.5550772Z Symbols updated successfully
+2026-11-08T04:28:22.5593757Z ##[group]Run moon build --target native src/cmd/conformance
+2026-11-08T04:28:22.5594219Z [36;1mmoon build --target native src/cmd/conformance[0m
+2026-11-08T04:28:22.5644288Z shell: /usr/bin/bash -e {0}
+2026-11-08T04:28:22.5644554Z ##[endgroup]
+2026-11-08T04:28:22.5756068Z Downloading moonbit-community/prettyprinter@0.4.11
+2026-11-08T04:28:23.1127977Z Downloading moonbitlang/async@0.22.5
+2026-11-08T04:28:23.5116070Z Downloading moonbitlang/moon_config@0.4.5
+2026-11-08T04:28:23.8371467Z Downloading moonbitlang/parser@0.4.6
+2026-11-08T04:28:24.2252822Z Downloading moonbitlang/x@0.5.7
+2026-11-08T04:28:24.6816085Z Downloading moonbitlang/lexer@0.4.4
+2026-11-08T04:28:24.9861180Z Downloading moonbitstack/moonseed@0.1.1
+2026-11-08T04:28:25.3183209Z Downloading moonbitstack/moonproto@0.1.0
+2026-11-08T04:28:25.6798681Z Downloading moonbitstack/moonmime@0.2.3
+2026-11-08T04:28:26.0145110Z Downloading moonbitstack/moonquic@0.3.12
+2026-11-08T04:28:26.3727407Z Downloading moonbitstack/moonnet@0.1.11
+2026-11-08T04:28:26.6956405Z Downloading moonbitstack/mooncrypt@0.4.12
+2026-11-08T04:28:27.3529592Z Downloading moonbitstack/moonhttp@0.15.9
+2026-11-08T04:28:27.6951665Z Downloading moonbitstack/moonurl@0.2.5
+2026-11-08T04:28:27.9947465Z Downloading moonbitstack/moonjson@0.4.3
+2026-11-08T04:28:28.3716369Z Downloading moonbitstack/moonast@0.2.6
+2026-11-08T04:28:28.7094003Z Downloading moonbitstack/mooncred@0.6.10
+2026-11-08T04:28:29.0428519Z Downloading moonbitstack/moonbase@0.4.3
+2026-11-08T04:28:29.3408850Z Downloading moonbitstack/moonzip@0.3.7
+2026-11-08T04:28:29.6617597Z Downloading moonbitstack/moonvar@0.2.1
+2026-11-08T04:28:29.9972004Z Downloading moonbitstack/moondate@0.1.5
+2026-11-08T04:28:30.3966549Z Downloading moonbitstack/moonucd@0.1.3
+2026-11-08T04:28:30.7371702Z Downloading moonbitstack/moontls@0.9.15
+2026-11-08T04:28:31.1105049Z Downloading moonbitstack/moonward@0.2.1
+2026-11-08T04:28:37.6439251Z /home/runner/work/moonrpc/moonrpc/.mooncakes/moonbitlang/async/src/internal/event_loop/thread_pool.c: In function ‘cancellation_signal_handler’:
+2026-11-08T04:28:37.6440403Z Artifacts:
+2026-11-08T04:28:37.6441332Z   moonbitstack/moonrpc/cmd/conformance  native  /home/runner/work/moonrpc/moonrpc/_build/native/debug/build/cmd/conformance/conformance.exe
+2026-11-08T04:28:37.6443929Z /home/runner/work/moonrpc/moonrpc/.mooncakes/moonbitlang/async/src/internal/event_loop/thread_pool.c:471:5: warning: ignoring return value of ‘write’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+2026-11-08T04:28:37.6445126Z   471 |     write(pool.notify_send, &data, sizeof(data));
+2026-11-08T04:28:37.6445801Z       |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2026-11-08T04:28:37.6446285Z Finished. moon: ran 163 tasks, now up to date
+2026-11-08T04:28:37.6510231Z ##[group]Run url="https://github.com/connectrpc/conformance/releases/download/${VERSION}/connectconformance-${VERSION}-Linux-x86_64.tar.gz"
+2026-11-08T04:28:37.6511325Z [36;1murl="https://github.com/connectrpc/conformance/releases/download/${VERSION}/connectconformance-${VERSION}-Linux-x86_64.tar.gz"[0m
+2026-11-08T04:28:37.6512004Z [36;1mcurl -fsSL -o "$RUNNER_TEMP/runner.tar.gz" "$url"[0m
+2026-11-08T04:28:37.6512395Z [36;1mtar xzf "$RUNNER_TEMP/runner.tar.gz" -C "$RUNNER_TEMP"[0m
+2026-11-08T04:28:37.6512772Z [36;1m"$RUNNER_TEMP/connectconformance" --version[0m
+2026-11-08T04:28:37.6562603Z shell: /usr/bin/bash -e {0}
+2026-11-08T04:28:37.6562847Z env:
+2026-11-08T04:28:37.6563033Z   VERSION: v1.0.4
+2026-11-08T04:28:37.6563240Z ##[endgroup]
+2026-11-08T04:28:38.1354906Z connectconformance v1.0.4
+2026-11-08T04:28:38.1396894Z ##[group]Run "$RUNNER_TEMP/connectconformance" \
+2026-11-08T04:28:38.1397305Z [36;1m"$RUNNER_TEMP/connectconformance" \[0m
+2026-11-08T04:28:38.1397692Z [36;1m  --mode server \[0m
+2026-11-08T04:28:38.1397983Z [36;1m  --conf scripts/conformance/connect.yaml \[0m
+2026-11-08T04:28:38.1398305Z [36;1m  --skip 'Timeouts/*' \[0m
+2026-11-08T04:28:38.1398643Z [36;1m  -- ./_build/native/debug/build/cmd/conformance/conformance.exe[0m
+2026-11-08T04:28:38.1447223Z shell: /usr/bin/bash -e {0}
+2026-11-08T04:28:38.1447478Z ##[endgroup]
+2026-11-08T04:28:38.1877226Z no-run patterns: unmatched and possibly invalid patterns:
+2026-11-08T04:28:38.1877946Z Timeouts/*
+2026-11-08T04:28:38.1913463Z ##[error]Process completed with exit code 1.
+2026-11-08T04:28:38.2043518Z Post job cleanup.
+2026-11-08T04:28:38.2930371Z [command]/usr/bin/git version
+2026-11-08T04:28:38.2977476Z git version 2.56.0
+2026-11-08T04:28:38.3014695Z Temporarily overriding HOME='/home/runner/work/_temp/c8c66b0d-820b-4312-bd1b-e1f446d9147d' before making global git config changes
+2026-11-08T04:28:38.3016350Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-08T04:28:38.3019919Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/moonrpc/moonrpc
+2026-11-08T04:28:38.3055270Z Removing SSH command configuration
+2026-11-08T04:28:38.3062991Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-08T04:28:38.3104087Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-08T04:28:38.3419246Z Removing HTTP extra header
+2026-11-08T04:28:38.3422394Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-08T04:28:38.3463798Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-08T04:28:38.3779153Z Removing includeIf entries pointing to credentials config files
+2026-11-08T04:28:38.3786419Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-08T04:28:38.3820591Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-08T04:28:38.4236944Z Cleaning up orphan processes

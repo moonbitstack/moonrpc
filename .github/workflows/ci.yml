@@ -654,5 +654,5 @@ jobs:
           "$RUNNER_TEMP/connectconformance" \
             --mode server \
             --conf scripts/conformance/connect.yaml \
-            --skip 'Timeouts/*' \
+            --skip Timeouts \
             -- ./_build/native/debug/build/cmd/conformance/conformance.exe
