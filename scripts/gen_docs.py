@@ -50,6 +50,15 @@ SECTIONS = [
      "are written once against it. The protocols cover the strict message header, the "
      "primitive types, structs, lists and maps. The native framed driver is in net, "
      "and cmd/thriftc compiles a .thrift file to these types and codecs."),
+    ("connect", "connect", "connect — the Connect protocol",
+     "The Connect protocol beside gRPC: the four content types, the five-octet envelope a "
+     "streaming body is cut into, the error body, the dispatch that turns one request into one "
+     "response, the session that answers a request while it is still arriving, and a client "
+     "written against a single transport method."),
+    ("conformance", "conformance", "conformance — the reference service",
+     "The service the official Connect suite drives, defined by the `.proto` files in "
+     "conformance/idl: unary, server-, client- and bidirectional-streaming, an unimplemented "
+     "method, and the payload that echoes the request back so the suite can compare it."),
     ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "

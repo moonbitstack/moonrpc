@@ -72,6 +72,13 @@ jobs:
         run: |
           moon info --target all && git diff --exit-code
 
+      # The `.proto` files are the source; the MoonBit module next to them is generated from
+      # them, because MoonBit cannot embed a file at build time.
+      - name: the generated IDL is up to date
+        if: runner.os == 'Linux'
+        run: |
+          python3 scripts/gen_conformance_idl.py && git diff --exit-code
+
       - name: the skills are valid
         if: runner.os == 'Linux'
         run: |
@@ -606,3 +613,43 @@ jobs:
         run: |
           bash scripts/interop/thrift_cross_test.sh "$RUNNER_TEMP/athrift" \
             ./_build/native/debug/build/cmd/thriftcrosstest/thriftcrosstest.exe
+
+  # The official Connect suite, driving the reference service in `src/conformance` as a server
+  # under test. What it exercises is `scripts/conformance/connect.yaml`: Connect over both HTTP
+  # versions, both codecs, identity and gzip.
+  connect-conformance:
+    name: Connect conformance (server)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - name: build the server under test
+        run: moon build --target native src/cmd/conformance
+
+      - name: fetch the runner, at a pinned version
+        env:
+          VERSION: v1.0.4
+        run: |
+          url="https://github.com/connectrpc/conformance/releases/download/${VERSION}/connectconformance-${VERSION}-Linux-x86_64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/runner.tar.gz" "$url"
+          tar xzf "$RUNNER_TEMP/runner.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/connectconformance" --version
+
+      - name: run the suite
+        run: |
+          "$RUNNER_TEMP/connectconformance" \
+            --mode server \
+            --config scripts/conformance/connect.yaml \
+            -- ./_build/native/debug/build/cmd/conformance/conformance

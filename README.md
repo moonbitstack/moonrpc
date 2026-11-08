@@ -727,6 +727,17 @@ The dispatch is a pure function: `connect.Server::serve` takes a path, headers a
 returns a status, headers and a body, which is what makes it testable without a socket and
 what lets the two drivers — `net` over HTTP/1.1, and its HTTP/2 half — share it.
 
+A call is dispatched as it arrives, not after it has finished. `Server::start` opens a call,
+`Session::feed` takes the next piece of the body and hands back the envelopes that may be written
+now, and `finish` closes it — so a bidirectional caller that sends a message and waits for its
+answer before sending the next one gets one. `Server::serve` is those three steps over a request
+that already arrived whole, which is what a driver does when it has the body in hand.
+
+`src/conformance` is the reference service the official suite drives, and `scripts/conformance`
+is the configuration it runs under. CI starts `cmd/conformance`, which reports the port it bound
+on standard output the way the suite expects, and runs `connectconformance --mode server` against
+it over both HTTP versions.
+
 The client is the same protocol from the other side, written against one method rather than a
 socket, so a transport is forty lines:
 
@@ -917,11 +928,10 @@ async fn throttled_call(host : String) -> Unit raise {
   body that arrives whole, so an unframed message, which has no length in front of it, has
   nothing to read to. The binary, compact and header transports and both directions of the
   reference cross test are in place.
-- Connect: the reference `ConformanceService` the official suite drives is not implemented, so
-  `connectrpc/conformance` is not in CI yet. Its definition now compiles — `Schema::compile` reads
-  the `.proto` the suite ships — so what is missing is the service itself and a dispatch that
-  answers a bidirectional call while its request half is still open; today a Connect call's body
-  is read whole before it is dispatched, which is why a bidi call is answered at the close.
+- Connect: not declared to the conformance suite, and therefore not tested by it — Connect over
+  `GET` (an idempotent call with its message in query parameters), a message receive limit, TLS,
+  and compressions other than gzip. `scripts/conformance/connect.yaml` is the statement of scope
+  the runner reads.
 
 ## Licence
 
