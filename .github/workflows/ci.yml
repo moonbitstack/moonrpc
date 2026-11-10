@@ -690,6 +690,54 @@ jobs:
             ./_build/native/debug/build/cmd/greetd/greetd.exe \
             ./_build/native/debug/build/cmd/thriftd/thriftd.exe
 
+  # The tRPC protocol against the two implementations that own it. Both sides of each
+  # pairing are the other project's codec: their client bytes reach this server, and this
+  # client's bytes reach their server, so a pass is agreement on the wire and not this
+  # repository agreeing with itself.
+  trpc-interop:
+    name: real tRPC interop (trpc-go and tRPC-Python)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: the Python peer, at a pinned version
+        run: pip install trpc-python==1.0.0 protobuf
+
+      - name: build this stack and the Go peer
+        run: |
+          moon build --target native
+          cd scripts/interop
+          go build -o bin/ ./trpcgo
+          cd ../..
+
+      # The frames the differential test compares against are generated from tRPC-Python, so
+      # a change to either encoder has to show up as a diff rather than pass silently.
+      - name: the reference frames are fresh
+        run: |
+          python3 scripts/interop/trpc_vectors.py
+          git diff --exit-code
+
+      - name: this server to their clients, their servers to this client
+        run: |
+          TRPCD=$(ls ./_build/native/debug/build/cmd/trpcd/trpcd* | head -1)
+          bash scripts/interop/trpc_interop.sh "$TRPCD" ./scripts/interop/bin/trpcgo python3
+
   # The official Connect suite, driving the reference service in `src/conformance` as a server
   # under test. What it exercises is `scripts/conformance/connect.yaml`: Connect over both HTTP
   # versions, both codecs, identity and gzip.

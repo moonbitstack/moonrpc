@@ -1,7 +1,7 @@
 // A tRPC service on one socket, and a client that calls it.
 //
 //     trpcd [port]        serve on 127.0.0.1 (12000)
-//     trpcd check [port]  call it with this library
+//     trpcd check [port] [host]  call it with this library
 //
 // The two methods are the smallest pair that exercises both shapes: `SayHello` is unary and
 // echoes the caller's `x-test` metadata, `Count` streams the numbers up to what it is asked
@@ -93,8 +93,8 @@ fn reply_text(body : Bytes) -> (String, String) raise @proto.PbError {
 }
 
 ///|
-async fn check(port : Int32) -> Unit {
-  let channel = @net.TrpcChannel::connect("127.0.0.1", port)
+async fn check(host : String, port : Int32) -> Unit {
+  let channel = @net.TrpcChannel::connect(host, port)
   defer channel.close()
   let client = @trpc.Client::new(channel, caller="trpc.moonrpc.client.service")
   let (text, metadata) = {
@@ -156,7 +156,12 @@ async fn main {
     12000
   }
   if check_mode {
-    check(port)
+    let host = if args.length() > port_index + 1 {
+      args[port_index + 1]
+    } else {
+      "127.0.0.1"
+    }
+    check(host, port)
   } else {
     println("trpcd listening on 127.0.0.1:\{port}")
     @net.serve_trpc(port~, greeter())
