@@ -8,6 +8,7 @@ import {
   "moonbitstack/moonrpc/client",
   "moonbitstack/moonrpc/server",
   "moonbitstack/moonrpc/thrift",
+  "moonbitstack/moonrpc/trpc",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
   "moonbitstack/moonhttp/http2",

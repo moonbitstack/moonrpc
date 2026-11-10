@@ -1,0 +1,19 @@
+// A runnable tRPC server: `SayHello` and `Count`, plus a client mode that calls them, so
+// both halves of the protocol can be checked without a second implementation.
+import {
+  "moonbitstack/moonrpc/trpc",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonrpc/net",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/core/encoding/utf8",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

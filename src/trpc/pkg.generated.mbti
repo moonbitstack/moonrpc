@@ -1,0 +1,265 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/trpc"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/set",
+  "moonbitstack/moonhttp/header",
+  "moonbitstack/moonrpc/balance",
+  "moonbitstack/moonrpc/client",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/wire",
+}
+
+// Values
+pub let call_oneway : UInt32
+
+pub let call_unary : UInt32
+
+pub let close_normal : Int32
+
+pub let close_reset : Int32
+
+pub let compress_gzip : UInt32
+
+pub let compress_none : UInt32
+
+pub let compress_zlib : UInt32
+
+pub let dyeing_key : String
+
+pub let encode_json : UInt32
+
+pub let encode_proto : UInt32
+
+pub let env_key : String
+
+pub let head_len : Int32
+
+pub fn headers_trans_info(Array[@header.Header]) -> Map[String, Bytes]
+
+pub let init_window_size : UInt32
+
+pub let magic : UInt32
+
+pub let max_frame : Int32
+
+pub let message_dyeing : UInt32
+
+pub let message_grid : UInt32
+
+pub let message_multi_env : UInt32
+
+pub let message_setname : UInt32
+
+pub let message_trace : UInt32
+
+pub let ret_client_canceled : Int32
+
+pub let ret_client_connect : Int32
+
+pub let ret_client_timeout : Int32
+
+pub let ret_server_auth : Int32
+
+pub let ret_server_decode : Int32
+
+pub let ret_server_encode : Int32
+
+pub let ret_server_limited : Int32
+
+pub let ret_server_nofunc : Int32
+
+pub let ret_server_noservice : Int32
+
+pub let ret_server_overload : Int32
+
+pub let ret_server_system : Int32
+
+pub let ret_server_timeout : Int32
+
+pub let ret_server_validate : Int32
+
+pub fn ret_status(Int32) -> @wire.Status
+
+pub let ret_success : Int32
+
+pub let ret_unknown : Int32
+
+pub fn status_ret(@wire.Status) -> Int32
+
+pub fn trans_info_headers(Map[String, Bytes]) -> Array[@header.Header]
+
+pub let version_v1 : UInt32
+
+// Errors
+pub(all) suberror TrpcError {
+  BadMagic(Int32)
+  Truncated
+  TooLarge(Int32)
+  Malformed(String)
+  Refused(Int32, String)
+}
+pub fn TrpcError::output(Self, &Logger) -> Unit
+pub fn TrpcError::to_string(Self) -> String
+pub impl Show for TrpcError
+
+// Types and methods
+pub struct Client {
+  link : &Link
+  caller : String
+  streams : @set.Set[String]
+  mut next_id : Int64
+}
+pub fn Client::declare_streams(Self, @proto.FileDescriptor) -> Unit
+pub async fn Client::invoke(Self, String, Array[Bytes], Array[@header.Header], Int32?, @balance.Retry?) -> @client.CallReply
+pub fn Client::new(&Link, caller? : String) -> Self
+pub async fn Client::stream(Self, String, Array[Bytes], metadata? : Array[@header.Header], content_encoding? : UInt32) -> Array[Bytes] raise @wire.StatusError
+pub async fn Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], timeout_millis? : Int32, content_encoding? : UInt32) -> Bytes raise @wire.StatusError
+pub impl @client.Caller for Client
+
+pub(all) struct Frame {
+  kind : FrameKind
+  stream_id : Int64
+  version : Int32
+  reserved : Int32
+  header_len : Int32
+  payload : Bytes
+}
+pub fn Frame::announced_len(Bytes) -> Int32 raise TrpcError
+pub fn Frame::body(Self) -> Bytes
+pub fn Frame::decode(Bytes) -> (Self, Int32) raise TrpcError
+pub fn Frame::encode(Self) -> Bytes
+pub fn Frame::header(Self) -> Bytes
+pub fn Frame::new(FrameKind, Int64, Bytes, header_len? : Int32, version? : Int32, reserved? : Int32) -> Self
+pub fn Frame::total_len(Self) -> Int32
+
+#derive(Eq, @debug.Debug)
+pub(all) enum FrameKind {
+  Unary
+  Init
+  Data
+  Feedback
+  Close
+}
+pub fn FrameKind::data_type(Self) -> Int32
+pub fn FrameKind::equal(Self, Self) -> Bool
+pub fn FrameKind::not_equal(Self, Self) -> Bool
+pub fn FrameKind::of(Int32, Int32) -> Self?
+pub fn FrameKind::stream_type(Self) -> Int32
+pub fn FrameKind::to_repr(Self) -> @debug.Repr
+
+type Live
+
+pub(all) struct Request {
+  mut version : UInt32
+  mut call_type : UInt32
+  mut request_id : UInt32
+  mut timeout : UInt32
+  mut caller : Bytes
+  mut callee : Bytes
+  mut func : Bytes
+  mut message_type : UInt32
+  mut trans_info : Map[String, Bytes]
+  mut content_type : UInt32
+  mut content_encoding : UInt32
+  mut attachment_size : UInt32
+}
+pub fn Request::decode(Bytes) -> Self raise @proto.PbError
+pub fn Request::encode(Self) -> Bytes
+pub fn Request::new(version? : UInt32, caller? : String, callee? : String, func? : String, request_id? : UInt32, timeout? : UInt32, call_type? : UInt32, content_type? : UInt32, content_encoding? : UInt32, message_type? : UInt32, trans_info? : Map[String, Bytes]) -> Self
+pub fn Request::path(Self) -> String
+
+pub(all) struct Response {
+  mut version : UInt32
+  mut call_type : UInt32
+  mut request_id : UInt32
+  mut ret : Int32
+  mut func_ret : Int32
+  mut error_msg : Bytes
+  mut message_type : UInt32
+  mut trans_info : Map[String, Bytes]
+  mut content_type : UInt32
+  mut content_encoding : UInt32
+  mut attachment_size : UInt32
+}
+pub fn Response::decode(Bytes) -> Self raise @proto.PbError
+pub fn Response::encode(Self) -> Bytes
+pub fn Response::new(request_id? : UInt32, ret? : Int32, func_ret? : Int32, call_type? : UInt32, content_type? : UInt32, content_encoding? : UInt32, version? : UInt32) -> Self
+pub fn Response::to(Request) -> Self
+
+pub struct Server {
+  handlers : Map[String, @stream.Handler]
+}
+pub fn Server::handler(Self, String) -> @stream.Handler?
+pub fn Server::new() -> Self
+pub fn Server::register(Self, String, @stream.Handler) -> Unit
+pub fn Server::register_handler(Self, String, @stream.Handler) -> Unit
+pub impl @stream.Registrar for Server
+
+pub struct Session {
+  server : Server
+  streams : Map[Int64, Live]
+}
+pub fn Session::handle(Self, Frame) -> Array[Bytes]
+pub fn Session::new(Server) -> Self
+pub fn Session::open_streams(Self) -> Int32
+
+pub(all) struct StreamCloseMeta {
+  mut close_type : Int32
+  mut ret : Int32
+  mut message : Bytes
+  mut message_type : UInt32
+  mut trans_info : Map[String, Bytes]
+  mut func_ret : Int32
+}
+pub fn StreamCloseMeta::decode(Bytes) -> Self raise @proto.PbError
+pub fn StreamCloseMeta::encode(Self) -> Bytes
+pub fn StreamCloseMeta::new(close_type? : Int32, ret? : Int32, message? : String, func_ret? : Int32, trans_info? : Map[String, Bytes]) -> Self
+
+pub(all) struct StreamFeedbackMeta {
+  mut window_increment : UInt32
+}
+pub fn StreamFeedbackMeta::decode(Bytes) -> Self raise @proto.PbError
+pub fn StreamFeedbackMeta::encode(Self) -> Bytes
+pub fn StreamFeedbackMeta::new(window_increment? : UInt32) -> Self
+
+pub(all) struct StreamInitMeta {
+  mut request_meta : StreamInitRequestMeta
+  mut response_meta : StreamInitResponseMeta
+  mut window : UInt32
+  mut content_type : UInt32
+  mut content_encoding : UInt32
+}
+pub fn StreamInitMeta::decode(Bytes) -> Self raise @proto.PbError
+pub fn StreamInitMeta::encode(Self) -> Bytes
+pub fn StreamInitMeta::new(request_meta? : StreamInitRequestMeta, response_meta? : StreamInitResponseMeta, window? : UInt32, content_type? : UInt32, content_encoding? : UInt32) -> Self
+
+pub(all) struct StreamInitRequestMeta {
+  mut caller : Bytes
+  mut callee : Bytes
+  mut func : Bytes
+  mut message_type : UInt32
+  mut trans_info : Map[String, Bytes]
+}
+pub fn StreamInitRequestMeta::decode(Bytes) -> Self raise @proto.PbError
+pub fn StreamInitRequestMeta::encode(Self) -> Bytes
+pub fn StreamInitRequestMeta::new(caller? : String, callee? : String, func? : String, trans_info? : Map[String, Bytes]) -> Self
+pub fn StreamInitRequestMeta::path(Self) -> String
+
+pub(all) struct StreamInitResponseMeta {
+  mut ret : Int32
+  mut error_msg : Bytes
+}
+pub fn StreamInitResponseMeta::decode(Bytes) -> Self raise @proto.PbError
+pub fn StreamInitResponseMeta::encode(Self) -> Bytes
+pub fn StreamInitResponseMeta::new(ret? : Int32, error_msg? : String) -> Self
+
+// Type aliases
+
+// Traits
+pub(open) trait Link {
+  async fn write(Self, Bytes) -> Unit raise TrpcError
+  async fn read(Self) -> Frame raise TrpcError
+}

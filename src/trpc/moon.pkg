@@ -1,0 +1,16 @@
+// The tRPC protocol: the 16-byte frame head, the unary request and response headers, the
+// four streaming frames, and the dispatch that answers one. Pure — the socket lives in
+// `net`.
+import {
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonrpc/stream",
+  "moonbitstack/moonrpc/client",
+  "moonbitstack/moonhttp/header",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "moonbitlang/async",
+} for "wbtest"
