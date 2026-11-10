@@ -15,20 +15,25 @@ PYTHON="${3:-python3}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PEER="$ROOT/scripts/interop/trpcpeer.py"
 
+# A connection, not a call: this only waits for the listener, so a server that answers
+# nothing yet still counts as up and the pairing beneath it decides what that means.
 wait_for() {
   local port="$1"
   for _ in $(seq 1 40); do
-    if "$TRPCD" check "$port" 127.0.0.1 >/dev/null 2>&1; then
+    if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
       return 0
     fi
     sleep 0.5
   done
+  echo "the server on 127.0.0.1:$port never accepted a connection; it said:" >&2
+  cat "/tmp/trpcd-$port.log" >&2 || true
   return 1
 }
 
 start_trpcd() {
   local port="$1"
-  "$TRPCD" "$port" >/tmp/trpcd-$port.log 2>&1 &
+  echo "starting $TRPCD on port $port" >&2
+  "$TRPCD" "$port" >"/tmp/trpcd-$port.log" 2>&1 &
   echo $!
 }
 
