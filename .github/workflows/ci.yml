@@ -735,7 +735,8 @@ jobs:
 
       - name: this server to their clients, their servers to this client
         run: |
-          TRPCD=$(ls ./_build/native/debug/build/cmd/trpcd/trpcd* | head -1)
+          # The program itself, not a core file that happens to share its prefix.
+          TRPCD=$(ls ./_build/native/debug/build/cmd/trpcd/trpcd ./_build/native/debug/build/cmd/trpcd/trpcd.exe 2>/dev/null | head -1)
           bash scripts/interop/trpc_interop.sh "$TRPCD" ./scripts/interop/bin/trpcgo python3
 
   # The official Connect suite, driving the reference service in `src/conformance` as a server
