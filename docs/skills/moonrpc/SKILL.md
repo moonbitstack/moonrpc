@@ -108,6 +108,48 @@ fn schema_from_idl() -> @moonrpc.Schema raise {
 
 Pass every file that is imported, in any order; type names resolve across the whole set.
 
+## tRPC, when the peer is a trpc.group service
+
+The same handlers answer over tRPC: `@trpc.Server` is a `Registrar`, so a generated
+service registers on it exactly as it does on a gRPC server. What changes is the frame, not
+the service.
+
+```moonbit native
+async fn call_over_trpc(port : Int32) -> Unit raise {
+  let channel = @net.TrpcChannel::connect("127.0.0.1", port)
+  let client = @trpc.Client::new(channel, caller="trpc.app.client.service")
+  // The timeout travels in the header, in milliseconds, and the caller's metadata as
+  // `trans_info` — which is what the far end reads as headers.
+  let reply = client.unary(
+    "/greet.Greeter/SayHello",
+    b"\x0a\x05world",
+    metadata=[{ name: b"x-test", value: b"moonrpc" }],
+    timeout_millis=2000,
+  )
+  println(reply.length().to_string())
+  channel.close()
+}
+```
+
+A streaming method takes the four frames the protocol names. `client.stream` sends `INIT`,
+one `DATA` per request and `CLOSE`, then returns every reply until the far end closes:
+
+```moonbit native
+async fn stream_over_trpc(port : Int32) -> Unit raise {
+  let channel = @net.TrpcChannel::connect("127.0.0.1", port)
+  let client = @trpc.Client::new(channel)
+  let request = @proto.PbWriter::new()
+  request.int32(1, 3)
+  let replies = client.stream("/greet.Greeter/Count", [request.to_bytes()])
+  println(replies.length().to_string())
+  channel.close()
+}
+```
+
+Two things to remember about the protocol: the total length in the head counts the head
+itself, and a frame whose header length is zero is a streaming frame rather than a unary one
+without a header.
+
 ## Rules that catch people out
 
 - `@net` is native only. A package that imports it is native only too, and the same goes for
@@ -120,3 +162,6 @@ Pass every file that is imported, in any order; type names resolve across the wh
   both raise `StatusError`, which is the error type to catch around a call.
 - The engines (`@moonrpc.H2Server`, `@moonrpc.H2Client`) are pure: they take frames and
   return frames, so a test of protocol behaviour needs no socket at all.
+- A tRPC client decides unary or streaming from the path: `Client::declare_streams` with a
+  generated `descriptor()` is what teaches it which methods are streaming, and a path it was
+  not told about is sent as a unary call.

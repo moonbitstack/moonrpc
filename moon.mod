@@ -45,6 +45,9 @@ keywords = [
   "oneway",
   "idl",
   "grpc-go",
+  "trpc",
+  "trpc-go",
+  "trpc-python",
   "wasm",
   "moonbit",
 ]

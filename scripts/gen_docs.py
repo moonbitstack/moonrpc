@@ -59,6 +59,12 @@ SECTIONS = [
      "The service the official Connect suite drives, defined by the `.proto` files in "
      "conformance/idl: unary, server-, client- and bidirectional-streaming, an unimplemented "
      "method, and the payload that echoes the request back so the suite can compare it."),
+    ("trpc", "trpc", "trpc — the tRPC protocol",
+     "The 16-octet fixed head, RequestProtocol and ResponseProtocol, and the four "
+     "streaming frames (INIT, DATA, FEEDBACK, CLOSE) with their metas. Server answers "
+     "through the same Registrar the gRPC engines implement; Client is written against a "
+     "Link, so the socket driver in net is the only native part. RetCode carries the "
+     "framework's own codes and how each reads as a gRPC status."),
     ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "
