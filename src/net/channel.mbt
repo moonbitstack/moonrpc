@@ -46,8 +46,9 @@ pub async fn Channel::connect(
   interceptors? : Array[@client.Interceptor],
   encoding? : @moonrpc.Encoding,
   config? : @moonrpc.ServiceConfig,
+  name? : String,
 ) -> Channel {
-  let conn = @tcp.dial(host, port~, tls?)
+  let conn = dial(host, port, tls?, name?)
   // A handshake that did not settle on h2 leaves nothing to say in HTTP/2: the socket
   // is closed rather than spoken to in a version the peer did not agree to.
   if unnegotiated(conn) {

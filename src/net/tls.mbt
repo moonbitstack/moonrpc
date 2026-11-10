@@ -35,3 +35,24 @@ pub fn server_tls(
 fn unnegotiated(conn : @tcp.Conn) -> Bool {
   conn.is_tls() && conn.alpn() != Some(alpn_h2)
 }
+
+///|
+/// Dial `host:port`, presenting `name` to TLS when one is given. The name is what the
+/// ClientHello carries as SNI and what the certificate is checked against, which is how a
+/// client reaches an address it resolved but a service it names — the shape a service mesh
+/// or a DNS-discovered backend needs, and the reason the address and the name are two
+/// parameters rather than one.
+async fn dial(
+  host : String,
+  port : Int32,
+  tls? : @tls.Client,
+  name? : String,
+) -> @tcp.Conn {
+  match (tls, name) {
+    (Some(config), Some(name)) => {
+      let sock = @socket.Tcp::connect_to_host(host, port~)
+      @tcp.Conn::client(sock, config, name)
+    }
+    _ => @tcp.dial(host, port~, tls?)
+  }
+}

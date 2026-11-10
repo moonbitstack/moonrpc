@@ -166,3 +166,66 @@ async test "TLS: a client that names no protocol carries no gRPC call" {
     task.cancel()
   })
 }
+
+///|
+async test "TLS: a channel presents the name it was given, not the address it dialled" {
+  @async.with_task_group(g => {
+    let (cert, key) = self_signed_pair()
+    let server = GrpcServer::new()
+    server.register("/echo.Echo/Say", req => req)
+    let port = server.bind(port=0, tls=server_tls([cert], key)).port()
+    let task = g.spawn(() => server.serve())
+    // Which host the chain was checked against is the whole point: a caller that reaches an
+    // address it resolved has to present the service's name, or the certificate check is
+    // against a name no certificate carries.
+    let seen = Ref("")
+    let roots = @x509.Roots::new() catch { _ => abort("an empty root store") }
+    let config = @tls.Client::new(
+      roots,
+      alpn=[alpn_h2],
+      verify=Custom((_chain, host) => seen.val = host),
+    )
+    let chan = Channel::connect(
+      "127.0.0.1",
+      port,
+      tls=config,
+      name="greeter.internal",
+    )
+    assert_eq(seen.val, "greeter.internal")
+    let reply = chan.unary("/echo.Echo/Say", b"named")
+    assert_eq(reply.messages[0], b"named")
+    chan.close()
+    task.cancel()
+  })
+}
+
+///|
+async test "TLS: a muxed channel takes the same name" {
+  @async.with_task_group(g => {
+    let (cert, key) = self_signed_pair()
+    let server = GrpcServer::new()
+    server.register("/echo.Echo/Say", req => req)
+    let port = server.bind(port=0, tls=server_tls([cert], key)).port()
+    let task = g.spawn(() => server.serve())
+    let seen = Ref("")
+    let roots = @x509.Roots::new() catch { _ => abort("an empty root store") }
+    let config = @tls.Client::new(
+      roots,
+      alpn=[alpn_h2],
+      verify=Custom((_chain, host) => seen.val = host),
+    )
+    let chan = MuxChannel::connect(
+      "127.0.0.1",
+      port,
+      tls=config,
+      name="mux.internal",
+    )
+    assert_eq(seen.val, "mux.internal")
+    let reader = g.spawn(() => chan.read_pump())
+    let reply = chan.unary("/echo.Echo/Say", b"muxed")
+    assert_eq(reply.messages[0], b"muxed")
+    reader.cancel()
+    chan.close()
+    task.cancel()
+  })
+}

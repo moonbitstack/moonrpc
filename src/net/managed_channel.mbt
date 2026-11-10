@@ -87,6 +87,7 @@ pub async fn ManagedChannel::connect(
   backoff? : @moonrpc.Backoff,
   resolve? : () -> Array[(String, Int32)],
   config? : @moonrpc.ServiceConfig,
+  name? : String,
 ) -> ManagedChannel {
   let keys = targets.map(t => t.0 + ":" + t.1.to_string())
   let pool = @moonrpc.ConnectionPool::new(keys, policy~)
@@ -96,7 +97,7 @@ pub async fn ManagedChannel::connect(
     guard pool.subconn(key) is Some(sc) else { continue }
     sc.connect()
     try {
-      let ch = Channel::connect(t.0, t.1, tls?, encoding?)
+      let ch = Channel::connect(t.0, t.1, tls?, encoding?, name?)
       channels[key] = ch
       sc.on_connected()
     } catch {
