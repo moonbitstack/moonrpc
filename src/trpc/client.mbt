@@ -133,15 +133,29 @@ pub async fn Client::unary(
 }
 
 ///|
-/// A streaming call: INIT, one DATA per request, CLOSE, then every reply until the far
-/// end closes. The messages come back in the order they arrived.
-pub async fn Client::stream(
+/// A streaming call in progress, which the caller drives message by message. This is the shape
+/// a bidirectional call needs: send one, read the answers to it, send the next. A call that
+/// sends everything before reading anything is the same object used without `next` in between.
+pub struct Exchange {
+  priv client : Client
+  priv id : Int64
+  // Whether the far end has closed, so a caller may keep asking and get `None`.
+  priv mut ended : Bool
+  // The replies that arrived while nothing was reading them — a call that closes its send side
+  // before reading gets all of them here.
+  priv queue : Array[Bytes]
+  priv trailers : Array[@header.Header]
+}
+
+///|
+/// Open a stream: INIT out, and the far end's INIT read before the first message, so a refusal
+/// is a refusal of the call rather than of a message in it.
+pub async fn Client::open(
   self : Client,
   path : String,
-  requests : Array[Bytes],
   metadata~ : Array[@header.Header] = [],
   content_encoding~ : UInt32 = compress_none,
-) -> Array[Bytes] raise @wire.StatusError {
+) -> Exchange raise @wire.StatusError {
   let id = self.id()
   let init = StreamInitMeta::new(
     request_meta=StreamInitRequestMeta::new(
@@ -152,21 +166,16 @@ pub async fn Client::stream(
     ),
     content_encoding~,
   )
-  let out : Array[Bytes] = []
-  let send = async fn(frame : Frame) -> Unit raise @wire.StatusError {
-    self.link.write(frame.encode()) catch {
-      error => raise @wire.StatusError(Unavailable, error.to_string())
-    }
+  let exchange : Exchange = {
+    client: self,
+    id,
+    ended: false,
+    queue: [],
+    trailers: [],
   }
-  send(Frame::new(Init, id, init.encode()))
-  for body in requests {
-    send(Frame::new(Data, id, encode_body(content_encoding, body)))
-  }
-  send(Frame::new(Close, id, StreamCloseMeta::new().encode()))
+  exchange.write(Frame::new(Init, id, init.encode()))
   for ;; {
-    let frame = self.link.read() catch {
-      error => raise @wire.StatusError(Unavailable, error.to_string())
-    }
+    let frame = self.receive()
     if frame.stream_id != id {
       continue
     }
@@ -182,33 +191,197 @@ pub async fn Client::stream(
             @utf8.decode_lossy(meta.response_meta.error_msg),
           )
         }
+        break
       }
-      Data =>
-        match decode_body(content_encoding, frame.payload) {
-          Some(body) => out.push(body)
-          None =>
-            raise @wire.StatusError(Internal, "a reply body did not decompress")
-        }
       Close => {
-        let meta = StreamCloseMeta::decode(frame.payload) catch {
-          _ => StreamCloseMeta::new()
-        }
-        if meta.ret != 0 || meta.func_ret != 0 {
-          raise @wire.StatusError(
-            if meta.ret != 0 {
-              ret_status(meta.ret)
-            } else {
-              @wire.Status::of(meta.func_ret)
-            },
-            @utf8.decode_lossy(meta.message),
-          )
-        }
+        exchange.finish_with(frame)
         break
       }
       _ => ()
     }
   }
-  out
+  exchange
+}
+
+///|
+/// One message out.
+pub async fn Exchange::send(
+  self : Exchange,
+  body : Bytes,
+) -> Unit raise @wire.StatusError {
+  guard !self.ended else {
+    raise @wire.StatusError(Internal, "a message after the stream closed")
+  }
+  self.write(Frame::new(Data, self.id, body))
+}
+
+///|
+/// The next message the far end sent, or `None` once it has closed the stream.
+pub async fn Exchange::next(self : Exchange) -> Bytes? raise @wire.StatusError {
+  if self.queue.length() > 0 {
+    return Some(self.queue.remove(0))
+  }
+  if self.ended {
+    return None
+  }
+  for ;; {
+    let frame = self.client.receive()
+    if frame.stream_id != self.id {
+      continue
+    }
+    match frame.kind {
+      Data => return Some(frame.payload)
+      Close => {
+        self.finish_with(frame)
+        return None
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
+/// Close the send side and read what the far end still owes: the messages this call never
+/// asked for land in [`Exchange::replies`] once the stream is over.
+pub async fn Exchange::close(self : Exchange) -> Unit raise @wire.StatusError {
+  if self.ended {
+    return
+  }
+  self.write(Frame::new(Close, self.id, StreamCloseMeta::new().encode()))
+  for ;; {
+    let frame = self.client.receive()
+    if frame.stream_id != self.id {
+      continue
+    }
+    match frame.kind {
+      Data => self.queue.push(frame.payload)
+      Close => {
+        self.finish_with(frame)
+        break
+      }
+      _ => ()
+    }
+  }
+}
+
+///|
+/// The messages that arrived while the send side was still open, in the order they came.
+pub fn Exchange::replies(self : Exchange) -> Array[Bytes] {
+  self.queue
+}
+
+///|
+/// The trailing metadata the far end closed with.
+pub fn Exchange::trailers(self : Exchange) -> Array[@header.Header] {
+  self.trailers
+}
+
+///|
+/// Whether the far end has closed.
+pub fn Exchange::ended(self : Exchange) -> Bool {
+  self.ended
+}
+
+///|
+async fn Exchange::write(
+  self : Exchange,
+  frame : Frame,
+) -> Unit raise @wire.StatusError {
+  self.client.link.write(frame.encode()) catch {
+    error => raise @wire.StatusError(Unavailable, error.to_string())
+  }
+}
+
+///|
+/// Take the outcome a CLOSE frame carries: OK closes the stream, anything else is raised, and
+/// the metadata the far end attached is kept.
+fn Exchange::finish_with(
+  self : Exchange,
+  frame : Frame,
+) -> Unit raise @wire.StatusError {
+  self.ended = true
+  let meta = StreamCloseMeta::decode(frame.payload) catch {
+    _ => StreamCloseMeta::new()
+  }
+  for name, value in meta.trans_info {
+    self.trailers.push({ name: @utf8.encode(name), value, })
+  }
+  if meta.ret != 0 || meta.func_ret != 0 {
+    raise @wire.StatusError(
+      if meta.ret != 0 {
+        ret_status(meta.ret)
+      } else {
+        @wire.Status::of(meta.func_ret)
+      },
+      @utf8.decode_lossy(meta.message),
+    )
+  }
+}
+
+///|
+/// One frame from the far end, as the call's own failure if the link is gone.
+async fn Client::receive(self : Client) -> Frame raise @wire.StatusError {
+  self.link.read() catch {
+    error => raise @wire.StatusError(Unavailable, error.to_string())
+  }
+}
+
+///|
+/// A client-streaming call: every request out, then the one reply. The send side closes before
+/// anything is read, which is what tells the far end that the requests are all there.
+pub async fn Client::client_stream(
+  self : Client,
+  path : String,
+  requests : Array[Bytes],
+  metadata~ : Array[@header.Header] = [],
+  content_encoding~ : UInt32 = compress_none,
+) -> Bytes raise @wire.StatusError {
+  let exchange = self.open(path, metadata~, content_encoding~)
+  for request in requests {
+    exchange.send(request)
+  }
+  exchange.close()
+  match exchange.replies() {
+    [one, ..] => one
+    [] =>
+      raise @wire.StatusError(
+        Internal,
+        "a client-streaming call answered no message",
+      )
+  }
+}
+
+///|
+/// A bidirectional call driven to its end: every request out, then every reply, in the order
+/// they arrived. A caller that wants the answers while it is still sending uses
+/// [`Client::open`] instead.
+pub async fn Client::bidi(
+  self : Client,
+  path : String,
+  requests : Array[Bytes],
+  metadata~ : Array[@header.Header] = [],
+  content_encoding~ : UInt32 = compress_none,
+) -> Array[Bytes] raise @wire.StatusError {
+  let exchange = self.open(path, metadata~, content_encoding~)
+  for request in requests {
+    exchange.send(request)
+  }
+  exchange.close()
+  exchange.replies()
+}
+
+///|
+/// A streaming call: INIT, one DATA per request, CLOSE, then every reply until the far end
+/// closes. It is [`Client::bidi`] under a name that says what the four cardinalities of gRPC
+/// call it, and the messages come back in the order they arrived.
+pub async fn Client::stream(
+  self : Client,
+  path : String,
+  requests : Array[Bytes],
+  metadata~ : Array[@header.Header] = [],
+  content_encoding~ : UInt32 = compress_none,
+) -> Array[Bytes] raise @wire.StatusError {
+  self.bidi(path, requests, metadata~, content_encoding~)
 }
 
 ///|

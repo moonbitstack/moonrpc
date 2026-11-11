@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """A tRPC peer built on tRPC-Python's own codec.
 
-`--mode server` answers the two methods `cmd/trpcd` serves; `--mode client` calls whichever
-peer is at `--addr`. Requests and replies are encoded and decoded by `TrpcClientCodec` /
+`--mode server` answers the four methods `cmd/trpcd` serves — one per cardinality — and
+`--mode client` calls whichever peer is at `--addr`. Requests and replies are encoded and decoded by `TrpcClientCodec` /
 `TrpcServerCodec` — the reference implementation's own view of the frame — so a run that
 passes says the two stacks agree on the wire rather than that this script agrees with
 itself. Reply headers are the `ResponseProtocol` message those codecs marshal.
@@ -30,6 +30,8 @@ from trpc_sdk.codec import (
 
 SAY_HELLO = "/trpc.test.Greeter/SayHello"
 COUNT = "/trpc.test.Greeter/Count"
+SUM = "/trpc.test.Greeter/Sum"
+CHAT = "/trpc.test.Greeter/Chat"
 MAGIC = b"\x09\x30"
 
 
@@ -157,7 +159,18 @@ def call(sock: socket.socket, codec: TrpcClientCodec, path: str, body: bytes):
     return decoded, 0, ""
 
 
-def stream_call(sock: socket.socket, codec: TrpcClientCodec, path: str, body: bytes):
+def stream_call(
+    sock: socket.socket,
+    codec: TrpcClientCodec,
+    path: str,
+    messages: list[bytes],
+    read_each: bool = False,
+):
+    """One streaming call: INIT, a DATA per message, CLOSE, then the answers.
+
+    `read_each` reads the answer to a message before the next one goes out, which is the
+    bidirectional shape; without it the whole send side closes first.
+    """
     stream_id = 5
     context = abc.TrpcContext()
     message = abc.get_message(context)
@@ -181,33 +194,56 @@ def stream_call(sock: socket.socket, codec: TrpcClientCodec, path: str, body: by
     message.set_frame_head(head)
     sock.sendall(codec.encode_stream(context, b""))
 
-    head.set_frame_state(2)
-    message.set_frame_head(head)
-    sock.sendall(codec.encode_stream(context, body))
+    values = []
+
+    def read_one():
+        """The next message, the close, or a problem."""
+        while True:
+            head_bytes = recv_exactly(sock, 16)
+            total = struct.unpack(">I", head_bytes[4:8])[0]
+            reply = head_bytes + recv_exactly(sock, total - 16)
+            state = reply[3]
+            decoded = codec.decode_data(context, reply)
+            if state == 1:
+                meta = message.stream_frame
+                if (
+                    meta is not None
+                    and meta.HasField("response_meta")
+                    and meta.response_meta.ret != 0
+                ):
+                    return None, meta.response_meta.error_msg.decode()
+            elif state == 2:
+                return decode_number(decoded), ""
+            elif state == 4:
+                meta = message.stream_frame
+                if meta is not None and (meta.ret != 0 or meta.func_ret != 0):
+                    return None, meta.msg.decode()
+                return "closed", ""
+
+    for body in messages:
+        head.set_frame_state(2)
+        message.set_frame_head(head)
+        sock.sendall(codec.encode_stream(context, body))
+        if read_each:
+            value, problem = read_one()
+            if problem:
+                return values, problem
+            if value == "closed":
+                return values, ""
+            values.append(value)
 
     head.set_frame_state(4)
     message.set_frame_head(head)
     message.set_stream_frame(trpc_pb2.TrpcStreamCloseMeta())
     sock.sendall(codec.encode_stream(context, b""))
 
-    values = []
     while True:
-        head_bytes = recv_exactly(sock, 16)
-        total = struct.unpack(">I", head_bytes[4:8])[0]
-        reply = head_bytes + recv_exactly(sock, total - 16)
-        state = reply[3]
-        decoded = codec.decode_data(context, reply)
-        if state == 1:
-            meta = message.stream_frame
-            if meta is not None and meta.HasField("response_meta") and meta.response_meta.ret != 0:
-                return values, meta.response_meta.error_msg.decode()
-        elif state == 2:
-            values.append(decode_number(decoded))
-        elif state == 4:
-            meta = message.stream_frame
-            if meta is not None and (meta.ret != 0 or meta.func_ret != 0):
-                return values, meta.msg.decode()
+        value, problem = read_one()
+        if problem:
+            return values, problem
+        if value == "closed":
             return values, ""
+        values.append(value)
 
 
 def run_client(addr: str) -> None:
@@ -223,12 +259,37 @@ def run_client(addr: str) -> None:
         if text != "Hello, world" or metadata != "trpc-python":
             sys.exit(f"SayHello answered {text!r} with x-test {metadata!r}")
 
-        values, problem = stream_call(sock, codec, COUNT, int32_field(1, 3))
+        values, problem = stream_call(sock, codec, COUNT, [int32_field(1, 3)])
         if problem:
             sys.exit(f"Count: {problem}")
         print(f"Count     {values}")
         if values != [1, 2, 3]:
             sys.exit(f"Count answered {values}")
+
+        sums, problem = stream_call(
+            sock,
+            codec,
+            SUM,
+            [int32_field(1, 1), int32_field(1, 2), int32_field(1, 3), int32_field(1, 4)],
+        )
+        if problem:
+            sys.exit(f"Sum: {problem}")
+        print(f"Sum       {sums}")
+        if sums != [10]:
+            sys.exit(f"Sum answered {sums}")
+
+        chat, problem = stream_call(
+            sock,
+            codec,
+            CHAT,
+            [int32_field(1, 1), int32_field(1, 2), int32_field(1, 3)],
+            read_each=True,
+        )
+        if problem:
+            sys.exit(f"Chat: {problem}")
+        print(f"Chat      {chat}")
+        if chat != [2, 4, 6]:
+            sys.exit(f"Chat answered {chat}")
 
         _, code, message = call(sock, codec, SAY_HELLO, b"")
         print(f"refused   {code} {message}")
@@ -307,14 +368,23 @@ def answer(codec: TrpcServerCodec, package: bytes, streams):
 
     if stream_type == 1:
         meta = message.stream_frame
-        streams[stream_id] = {"path": meta.request_meta.func.decode(), "body": b""}
+        streams[stream_id] = {
+            "path": meta.request_meta.func.decode(),
+            "messages": [],
+        }
         response = trpc_pb2.TrpcStreamInitMeta()
         response.response_meta.ret = 0
         response.init_window_size = 65535
         return [frame(1, 1, stream_id, b"", response.SerializeToString())]
     if stream_type == 2:
-        if stream_id in streams:
-            streams[stream_id]["body"] += body
+        state = streams.get(stream_id)
+        if state is None:
+            return []
+        state["messages"].append(body)
+        # The bidirectional shape answers this message now, while the caller may still be
+        # sending.
+        if state["path"] == CHAT:
+            return [frame(1, 2, stream_id, b"", int32_field(1, decode_number(body) * 2))]
         return []
     if stream_type == 4:
         state = streams.pop(stream_id, None)
@@ -323,8 +393,15 @@ def answer(codec: TrpcServerCodec, package: bytes, streams):
         out = []
         closing = trpc_pb2.TrpcStreamCloseMeta()
         if state["path"] == COUNT:
-            for i in range(1, decode_number(state["body"]) + 1):
+            for i in range(1, decode_number(state["messages"][0]) + 1):
                 out.append(frame(1, 2, stream_id, b"", int32_field(1, i)))
+        elif state["path"] == SUM:
+            # The client-streaming shape: every message was collected, one answer goes back.
+            total = sum(decode_number(one) for one in state["messages"])
+            out.append(frame(1, 2, stream_id, b"", int32_field(1, total)))
+        elif state["path"] == CHAT:
+            # The bidirectional shape answered every message as it arrived.
+            pass
         else:
             closing.ret = 12
             closing.msg = b"no streaming method is registered at " + state["path"].encode()

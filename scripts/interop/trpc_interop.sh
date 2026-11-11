@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Four pairings, one per direction and peer: this stack's server answering tRPC-Go and
 # tRPC-Python clients, and this stack's client calling their servers. Each peer encodes and
-# decodes with its own implementation's codec, so a pass says the two agree on the wire.
+# decodes with its own implementation's codec, so a pass says the two agree on the wire. Every
+# run covers all four cardinalities — unary, server streaming, client streaming and
+# bidirectional — because a frame shape that only one side implements is the failure this job
+# exists to catch.
 #
 #   scripts/interop/trpc_interop.sh <path-to-trpcd> <path-to-go-peer> <python>
 #
@@ -60,7 +63,8 @@ echo "== a tRPC-Go server, this stack's client =="
 GO_PID=$!
 trap 'kill $GO_PID 2>/dev/null || true' EXIT
 sleep 1
-"$TRPCD" check 12103 127.0.0.1
+"$TRPCD" check 12103 127.0.0.1 | tee /tmp/trpc-check-12103.txt
+grep -q 'client and server agree' /tmp/trpc-check-12103.txt
 kill $GO_PID 2>/dev/null || true
 wait $GO_PID 2>/dev/null || true
 trap - EXIT
@@ -70,7 +74,8 @@ echo "== a tRPC-Python server, this stack's client =="
 PY_PID=$!
 trap 'kill $PY_PID 2>/dev/null || true' EXIT
 sleep 1
-"$TRPCD" check 12104 127.0.0.1
+"$TRPCD" check 12104 127.0.0.1 | tee /tmp/trpc-check-12104.txt
+grep -q 'client and server agree' /tmp/trpc-check-12104.txt
 kill $PY_PID 2>/dev/null || true
 wait $PY_PID 2>/dev/null || true
 trap - EXIT
@@ -79,7 +84,8 @@ echo "== this stack against itself, for the fifth pairing =="
 TRPCD_PID=$(start_trpcd 12105)
 trap 'kill $TRPCD_PID 2>/dev/null || true' EXIT
 wait_for 12105
-"$TRPCD" check 12105 127.0.0.1
+"$TRPCD" check 12105 127.0.0.1 | tee /tmp/trpc-check-12105.txt
+grep -q 'client and server agree' /tmp/trpc-check-12105.txt
 kill $TRPCD_PID 2>/dev/null || true
 wait $TRPCD_PID 2>/dev/null || true
 trap - EXIT

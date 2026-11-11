@@ -1,7 +1,7 @@
 // A tRPC peer written against tRPC-Go's own protocol codec: the frames this program sends
 // and accepts are the ones that library builds and reads, not a second implementation of
-// the format. `-mode server` answers the two methods `cmd/trpcd` serves; `-mode client`
-// calls whichever peer is at `-addr`.
+// the format. `-mode server` answers the four methods `cmd/trpcd` serves — one per
+// cardinality — and `-mode client` calls whichever peer is at `-addr`.
 //
 // The messages are hand-encoded protobuf, because what is under test is the frame rather
 // than the message: `SayHelloRequest{string name = 1}`, `SayHelloReply{string text = 1,
@@ -26,6 +26,8 @@ import (
 const (
 	sayHelloPath = "/trpc.test.Greeter/SayHello"
 	countPath    = "/trpc.test.Greeter/Count"
+	sumPath      = "/trpc.test.Greeter/Sum"
+	chatPath     = "/trpc.test.Greeter/Chat"
 )
 
 // -- protobuf, by hand -------------------------------------------------------
@@ -260,6 +262,130 @@ func streamCall(conn net.Conn, framer codec.Framer, path string, body []byte) ([
 	}
 }
 
+// streamCallMeta drives a streaming call the caller shapes: it writes INIT, then hands each
+// message to `onSend`, which may read the answer to it before returning; then it closes and
+// reads whatever is left.
+func streamCallMeta(conn net.Conn, framer codec.Framer, path string, messages [][]byte, readEach bool) ([]string, string) {
+	streamID := uint32(5)
+	_, msg := codec.WithNewMessage(context.Background())
+	msg.WithClientRPCName(path)
+	msg.WithCalleeServiceName("trpc.test.Greeter")
+	msg.WithCallerServiceName("trpc.go.client.service")
+	msg.WithSerializationType(0)
+	msg.WithCompressType(0)
+	msg.WithStreamID(streamID)
+
+	msg.WithFrameHead(&trpc.FrameHead{
+		FrameType:       uint8(trpcpb.TrpcDataFrameType_TRPC_STREAM_FRAME),
+		StreamFrameType: uint8(trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_INIT),
+		StreamID:        streamID,
+		ProtocolVersion: 1,
+	})
+	msg.WithStreamFrame(&trpcpb.TrpcStreamInitMeta{
+		RequestMeta: &trpcpb.TrpcStreamInitRequestMeta{
+			Caller: []byte("trpc.go.client.service"),
+			Callee: []byte("trpc.test.Greeter"),
+			Func:   []byte(path),
+		},
+		InitWindowSize: 65535,
+	})
+	frame, err := trpc.DefaultClientCodec.Encode(msg, nil)
+	if err != nil {
+		return nil, "encode init: " + err.Error()
+	}
+	if _, err := conn.Write(frame); err != nil {
+		return nil, "write init: " + err.Error()
+	}
+
+	// readOne decodes frames until one carries a message, and returns it with the frame type.
+	readOne := func() ([]byte, trpcpb.TrpcStreamFrameType, *trpcpb.TrpcStreamCloseMeta, string) {
+		for {
+			reply, err := framer.ReadFrame()
+			if err != nil {
+				return nil, 0, nil, "read: " + err.Error()
+			}
+			head := &trpc.FrameHead{FrameType: reply[2], StreamFrameType: reply[3]}
+			body, err := trpc.DefaultClientCodec.Decode(msg, reply)
+			if err != nil {
+				return nil, 0, nil, "decode: " + err.Error()
+			}
+			switch trpcpb.TrpcStreamFrameType(head.StreamFrameType) {
+			case trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_INIT:
+				if meta, ok := msg.StreamFrame().(*trpcpb.TrpcStreamInitMeta); ok && meta.ResponseMeta != nil {
+					if meta.ResponseMeta.Ret != 0 {
+						return nil, 0, nil, string(meta.ResponseMeta.ErrorMsg)
+					}
+				}
+			case trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA:
+				return body, trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA, nil, ""
+			case trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_CLOSE:
+				meta, _ := msg.StreamFrame().(*trpcpb.TrpcStreamCloseMeta)
+				return nil, trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_CLOSE, meta, ""
+			}
+		}
+	}
+
+	var values []string
+	for _, body := range messages {
+		msg.WithFrameHead(&trpc.FrameHead{
+			FrameType:       uint8(trpcpb.TrpcDataFrameType_TRPC_STREAM_FRAME),
+			StreamFrameType: uint8(trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA),
+			StreamID:        streamID,
+			ProtocolVersion: 1,
+		})
+		frame, err := trpc.DefaultClientCodec.Encode(msg, body)
+		if err != nil {
+			return values, "encode data: " + err.Error()
+		}
+		if _, err := conn.Write(frame); err != nil {
+			return values, "write data: " + err.Error()
+		}
+		// A bidirectional call reads the answer to this message before sending the next, which
+		// is what a server that answered as it read would need.
+		if readEach {
+			got, kind, closeMeta, problem := readOne()
+			if problem != "" {
+				return values, problem
+			}
+			if kind == trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_CLOSE {
+				if closeMeta != nil && (closeMeta.Ret != 0 || closeMeta.FuncRet != 0) {
+					return values, string(closeMeta.Msg)
+				}
+				return values, ""
+			}
+			values = append(values, fmt.Sprintf("%d", decodeCount(got)))
+		}
+	}
+
+	msg.WithFrameHead(&trpc.FrameHead{
+		FrameType:       uint8(trpcpb.TrpcDataFrameType_TRPC_STREAM_FRAME),
+		StreamFrameType: uint8(trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_CLOSE),
+		StreamID:        streamID,
+		ProtocolVersion: 1,
+	})
+	msg.WithStreamFrame(&trpcpb.TrpcStreamCloseMeta{CloseType: int32(trpcpb.TrpcStreamCloseType_TRPC_STREAM_CLOSE)})
+	frame, err = trpc.DefaultClientCodec.Encode(msg, nil)
+	if err != nil {
+		return values, "encode close: " + err.Error()
+	}
+	if _, err := conn.Write(frame); err != nil {
+		return values, "write close: " + err.Error()
+	}
+	for {
+		got, kind, closeMeta, problem := readOne()
+		if problem != "" {
+			return values, problem
+		}
+		if kind == trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_CLOSE {
+			if closeMeta != nil && (closeMeta.Ret != 0 || closeMeta.FuncRet != 0) {
+				return values, string(closeMeta.Msg)
+			}
+			return values, ""
+		}
+		values = append(values, fmt.Sprintf("%d", decodeCount(got)))
+	}
+}
+
 func runClient(addr string) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -306,6 +432,34 @@ func runClient(addr string) {
 		os.Exit(1)
 	}
 
+	// Client streaming: four numbers out, one sum back.
+	sums, problem := streamCallMeta(conn, framer, sumPath, [][]byte{
+		int32Field(nil, 1, 1), int32Field(nil, 1, 2), int32Field(nil, 1, 3), int32Field(nil, 1, 4),
+	}, false)
+	if problem != "" {
+		fmt.Fprintf(os.Stderr, "Sum: %s\n", problem)
+		os.Exit(1)
+	}
+	fmt.Printf("Sum       %v\n", sums)
+	if len(sums) != 1 || sums[0] != "10" {
+		fmt.Fprintf(os.Stderr, "Sum answered %v\n", sums)
+		os.Exit(1)
+	}
+
+	// Bidirectional: three messages, each answered before the next goes out.
+	chat, problem := streamCallMeta(conn, framer, chatPath, [][]byte{
+		int32Field(nil, 1, 1), int32Field(nil, 1, 2), int32Field(nil, 1, 3),
+	}, true)
+	if problem != "" {
+		fmt.Fprintf(os.Stderr, "Chat: %s\n", problem)
+		os.Exit(1)
+	}
+	fmt.Printf("Chat     %v\n", chat)
+	if len(chat) != 3 || chat[0] != "2" || chat[1] != "4" || chat[2] != "6" {
+		fmt.Fprintf(os.Stderr, "Chat answered %v\n", chat)
+		os.Exit(1)
+	}
+
 	_, code, message = call(conn, framer, sayHelloPath, nil)
 	fmt.Printf("refused   %d %s\n", code, message)
 	if code == 0 || message != "name is required" {
@@ -321,6 +475,8 @@ func runClient(addr string) {
 type streamState struct {
 	path string
 	body []byte
+	// Every message, in the order it arrived, for the shape that answers at the end.
+	messages [][]byte
 }
 
 func frameHead(kind trpcpb.TrpcStreamFrameType, streamID uint32) *trpc.FrameHead {
@@ -396,8 +552,21 @@ func answerStream(msg codec.Msg, head *trpc.FrameHead, body []byte, streams map[
 		}
 		return [][]byte{frame}
 	case trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA:
-		if state, ok := streams[head.StreamID]; ok {
-			state.body = append(state.body, body...)
+		state, ok := streams[head.StreamID]
+		if !ok {
+			return nil
+		}
+		state.messages = append(state.messages, body)
+		state.body = append(state.body, body...)
+		// The bidirectional shape: the answer to this message goes out now, while the caller
+		// may still be sending.
+		if state.path == chatPath {
+			msg.WithFrameHead(frameHead(trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA, head.StreamID))
+			frame, err := trpc.DefaultServerCodec.Encode(msg, int32Field(nil, 1, decodeCount(body)*2))
+			if err != nil {
+				return nil
+			}
+			return [][]byte{frame}
 		}
 		return nil
 	case trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_CLOSE:
@@ -408,18 +577,31 @@ func answerStream(msg codec.Msg, head *trpc.FrameHead, body []byte, streams map[
 		delete(streams, head.StreamID)
 		var out [][]byte
 		closeMeta := &trpcpb.TrpcStreamCloseMeta{CloseType: int32(trpcpb.TrpcStreamCloseType_TRPC_STREAM_CLOSE)}
-		if state.path == countPath {
+		send := func(value []byte) {
+			msg.WithFrameHead(frameHead(trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA, head.StreamID))
+			frame, err := trpc.DefaultServerCodec.Encode(msg, value)
+			if err != nil {
+				return
+			}
+			out = append(out, frame)
+		}
+		switch state.path {
+		case countPath:
 			n := decodeCount(state.body)
 			for i := int32(1); i <= n; i++ {
-				value := int32Field(nil, 1, i)
-				msg.WithFrameHead(frameHead(trpcpb.TrpcStreamFrameType_TRPC_STREAM_FRAME_DATA, head.StreamID))
-				frame, err := trpc.DefaultServerCodec.Encode(msg, value)
-				if err != nil {
-					return out
-				}
-				out = append(out, frame)
+				send(int32Field(nil, 1, i))
 			}
-		} else {
+		case sumPath:
+			// The client-streaming shape: every message was collected, one answer goes back.
+			var total int32
+			for _, one := range state.messages {
+				total += decodeCount(one)
+			}
+			send(int32Field(nil, 1, total))
+		case chatPath:
+			// The bidirectional shape answered every message as it arrived, so the close is
+			// the end of the conversation and carries nothing more.
+		default:
 			closeMeta.Ret = 12
 			closeMeta.Msg = []byte("no streaming method is registered at " + state.path)
 		}

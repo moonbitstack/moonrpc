@@ -3,9 +3,10 @@
 //     trpcd [port]        serve on 127.0.0.1 (12000)
 //     trpcd check [port] [host]  call it with this library
 //
-// The two methods are the smallest pair that exercises both shapes: `SayHello` is unary and
-// echoes the caller's `x-test` metadata, `Count` streams the numbers up to what it is asked
-// for. The messages are written by hand rather than generated, because the frame is what
+// Four methods, one per cardinality: `SayHello` is unary and echoes the caller's `x-test`
+// metadata, `Count` streams the numbers up to what it is asked for, `Sum` adds the numbers it
+// is sent and answers once, and `Chat` answers each message with its value doubled as it
+// arrives. The messages are written by hand rather than generated, because the frame is what
 // this command is about: `SayHelloRequest { string name = 1 }`, `SayHelloReply { string
 // text = 1; string metadata = 2 }`, `CountRequest { int32 n = 1 }`, `Number { int32 value = 1 }`.
 
@@ -65,14 +66,40 @@ fn greeter() -> @trpc.Server {
       let n = read_n(body) catch { _ => 0 }
       let out : Array[Bytes] = []
       for i = 1; i <= n; i = i + 1 {
-        let number = @proto.PbWriter::new()
-        number.int32(1, i)
-        out.push(number.to_bytes())
+        out.push(number(i))
       }
       out
     }),
   )
+  server.register(
+    "/trpc.test.Greeter/Sum",
+    @stream.Handler::ClientStreaming((_ctx, bodies) => {
+      let mut total = 0
+      for body in bodies {
+        total = total + (read_n(body) catch { _ => 0 })
+      }
+      number(total)
+    }),
+  )
+  server.register(
+    "/trpc.test.Greeter/Chat",
+    @stream.Handler::Bidi(_ctx => {
+      // Answering from `on_message` is what makes this a bidirectional stream rather than a
+      // stream of requests answered at the end: the reply goes out while the caller may still
+      // be sending.
+      on_message: body => [number((read_n(body) catch { _ => 0 }) * 2)],
+      on_end: () => [],
+    }),
+  )
   server
+}
+
+///|
+/// One `Number{int32 value = 1}`.
+fn number(value : Int32) -> Bytes {
+  let out = @proto.PbWriter::new()
+  out.int32(1, value)
+  out.to_bytes()
 }
 
 ///|
@@ -113,18 +140,42 @@ async fn check(host : String, port : Int32) -> Unit {
     }
   }
   println("SayHello  \{text}  x-test=\{metadata}")
-  let numbers = {
-    let request = @proto.PbWriter::new()
-    request.int32(1, 3)
-    client.stream("/trpc.test.Greeter/Count", [request.to_bytes()]) catch {
-      e => abort("Count failed: \{e}")
+  let numbers = client.stream("/trpc.test.Greeter/Count", [number(3)]) catch {
+    e => abort("Count failed: \{e}")
+  }
+  for reply in numbers {
+    println("Count     \{read_n(reply) catch { _ => 0 }}")
+  }
+  // A client-streaming call: four numbers out, one answer back once the send side closes.
+  let sum = client.client_stream("/trpc.test.Greeter/Sum", [
+    number(1),
+    number(2),
+    number(3),
+    number(4),
+  ]) catch {
+    e => abort("Sum failed: \{e}")
+  }
+  println("Sum       \{read_n(sum) catch { _ => 0 }}")
+  // A bidirectional call, one message at a time: the answer to each is read before the next
+  // is sent, which a server that waited for the close could not give.
+  let exchange = client.open("/trpc.test.Greeter/Chat") catch {
+    e => abort("Chat failed to open: \{e}")
+  }
+  for i = 1; i <= 3; i = i + 1 {
+    exchange.send(number(i)) catch {
+      e => abort("Chat send failed: \{e}")
+    }
+    let answer : Result[Bytes?, @wire.StatusError] = Ok(exchange.next()) catch {
+      e => Err(e)
+    }
+    match answer {
+      Err(e) => abort("Chat read failed: \{e.to_string()}")
+      Ok(Some(reply)) => println("Chat      \{read_n(reply) catch { _ => 0 }}")
+      Ok(None) => abort("Chat closed before answering \{i}")
     }
   }
-  for number in numbers {
-    let reader = @proto.PbReader::new(number)
-    let value = read_n(number) catch { _ => 0 }
-    println("Count     \{value}")
-    ignore(reader)
+  exchange.close() catch {
+    e => abort("Chat close failed: \{e.to_string()}")
   }
   // A refusal has to arrive as one: the server ends the call with INVALID_ARGUMENT, and the
   // deadline the caller asked for has to be what the server sees.
