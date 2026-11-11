@@ -7,6 +7,32 @@
 pub let max_frame : Int32 = 16 * 1024 * 1024
 
 ///|
+/// The length of the message at the start of `input`, or `None` when it is not all there yet.
+///
+/// A transport that puts no length in front of its messages — Apache's unframed and buffered
+/// ones, and the zlib stream — has to find where a message ends by reading it. A reader that
+/// grows a buffer until a whole message parses, then hands exactly that slice on, never has to
+/// guess, and a message that is only half arrived is a `Truncated` rather than a bad parse.
+pub fn message_len(
+  proto : &Protocol,
+  input : Bytes,
+) -> Int32? raise ThriftError {
+  proto.reset(input)
+  ignore(proto.read_message_begin())
+  proto.read_struct_begin()
+  for ;; {
+    let (field_type, _) = proto.read_field_begin()
+    if field_type == type_stop {
+      break
+    }
+    skip(proto, field_type)
+  }
+  proto.read_struct_end()
+  proto.read_message_end()
+  Some(proto.consumed())
+}
+
+///|
 /// One framed round trip: a body out, a body back — and, for a method declared `oneway`,
 /// a body out and nothing back. The native driver puts a length prefix on it; an in-memory
 /// transport can carry the bytes directly.
@@ -109,6 +135,7 @@ pub fn Processor::process(
         None => {
           proto.write_field_stop()
           proto.write_struct_end()
+          proto.write_message_end()
           proto.output()
         }
         Some(message) => {
@@ -158,6 +185,7 @@ fn application_exception(
   proto.write_i32(type_)
   proto.write_field_stop()
   proto.write_struct_end()
+  proto.write_message_end()
   proto.output()
 }
 
@@ -176,6 +204,7 @@ pub async fn[T : Transport] request(
   args(proto)
   proto.write_field_stop()
   proto.write_struct_end()
+  proto.write_message_end()
   let reply = transport.round_trip(proto.output())
   proto.reset(reply)
   let (_, kind, _) = proto.read_message_begin()
@@ -334,6 +363,7 @@ pub fn oneway(
   args(proto)
   proto.write_field_stop()
   proto.write_struct_end()
+  proto.write_message_end()
   proto.output()
 }
 

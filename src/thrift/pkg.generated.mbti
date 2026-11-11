@@ -41,6 +41,8 @@ pub let message_call : Int32
 
 pub let message_exception : Int32
 
+pub fn message_len(&Protocol, Bytes) -> Int32? raise ThriftError
+
 pub let message_oneway : Int32
 
 pub let message_reply : Int32
@@ -93,6 +95,7 @@ pub(all) suberror ThriftError {
   Depth
   Unsupported(String)
   Application(String)
+  Malformed(String)
 }
 pub fn ThriftError::output(Self, &Logger) -> Unit
 pub fn ThriftError::to_string(Self) -> String
@@ -104,6 +107,7 @@ pub struct Binary {
   mut off : Int32
   mut out : @buffer.Buffer
 }
+pub fn Binary::consumed(Self) -> Int32
 pub fn Binary::eof(Self) -> Bool
 pub fn Binary::new(Bytes) -> Self
 pub fn Binary::output(Self) -> Bytes
@@ -118,10 +122,11 @@ pub fn Binary::read_i64(Self) -> Int64 raise ThriftError
 pub fn Binary::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Binary::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
 pub fn Binary::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Binary::read_message_end(Self) -> Unit raise ThriftError
 pub fn Binary::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Binary::read_string(Self) -> String raise ThriftError
-pub fn Binary::read_struct_begin(Self) -> Unit
-pub fn Binary::read_struct_end(Self) -> Unit
+pub fn Binary::read_struct_begin(Self) -> Unit raise ThriftError
+pub fn Binary::read_struct_end(Self) -> Unit raise ThriftError
 pub fn Binary::read_uuid(Self) -> Bytes raise ThriftError
 pub fn Binary::reset(Self, Bytes) -> Unit
 pub fn Binary::write_bool(Self, Bool) -> Unit
@@ -136,6 +141,7 @@ pub fn Binary::write_i64(Self, Int64) -> Unit
 pub fn Binary::write_list_begin(Self, Int32, Int32) -> Unit
 pub fn Binary::write_map_begin(Self, Int32, Int32, Int32) -> Unit
 pub fn Binary::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Binary::write_message_end(Self) -> Unit
 pub fn Binary::write_set_begin(Self, Int32, Int32) -> Unit
 pub fn Binary::write_string(Self, String) -> Unit
 pub fn Binary::write_struct_begin(Self, String) -> Unit
@@ -154,6 +160,7 @@ pub struct Compact {
   mut bool_value : Bool
   mut bool_ready : Bool
 }
+pub fn Compact::consumed(Self) -> Int32
 pub fn Compact::eof(Self) -> Bool
 pub fn Compact::new(Bytes) -> Self
 pub fn Compact::output(Self) -> Bytes
@@ -168,10 +175,11 @@ pub fn Compact::read_i64(Self) -> Int64 raise ThriftError
 pub fn Compact::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Compact::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
 pub fn Compact::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Compact::read_message_end(Self) -> Unit raise ThriftError
 pub fn Compact::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Compact::read_string(Self) -> String raise ThriftError
-pub fn Compact::read_struct_begin(Self) -> Unit
-pub fn Compact::read_struct_end(Self) -> Unit
+pub fn Compact::read_struct_begin(Self) -> Unit raise ThriftError
+pub fn Compact::read_struct_end(Self) -> Unit raise ThriftError
 pub fn Compact::read_uuid(Self) -> Bytes raise ThriftError
 pub fn Compact::reset(Self, Bytes) -> Unit
 pub fn Compact::write_bool(Self, Bool) -> Unit
@@ -186,6 +194,7 @@ pub fn Compact::write_i64(Self, Int64) -> Unit
 pub fn Compact::write_list_begin(Self, Int32, Int32) -> Unit
 pub fn Compact::write_map_begin(Self, Int32, Int32, Int32) -> Unit
 pub fn Compact::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Compact::write_message_end(Self) -> Unit
 pub fn Compact::write_set_begin(Self, Int32, Int32) -> Unit
 pub fn Compact::write_string(Self, String) -> Unit
 pub fn Compact::write_struct_begin(Self, String) -> Unit
@@ -207,6 +216,7 @@ pub struct Header {
 }
 pub fn Header::add_header(Self, String, String) -> Unit
 pub fn Header::add_transform(Self, Int32) -> Unit
+pub fn Header::consumed(Self) -> Int32
 pub fn Header::new() -> Self
 pub fn Header::output(Self) -> Bytes
 pub fn Header::read_bool(Self) -> Bool raise ThriftError
@@ -221,11 +231,12 @@ pub fn Header::read_i64(Self) -> Int64 raise ThriftError
 pub fn Header::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Header::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
 pub fn Header::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Header::read_message_end(Self) -> Unit raise ThriftError
 pub fn Header::read_protocol(Self) -> Int32
 pub fn Header::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
 pub fn Header::read_string(Self) -> String raise ThriftError
-pub fn Header::read_struct_begin(Self) -> Unit
-pub fn Header::read_struct_end(Self) -> Unit
+pub fn Header::read_struct_begin(Self) -> Unit raise ThriftError
+pub fn Header::read_struct_end(Self) -> Unit raise ThriftError
 pub fn Header::read_uuid(Self) -> Bytes raise ThriftError
 pub fn Header::reset(Self, Bytes) -> Unit
 pub fn Header::sequence_id(Self) -> Int32
@@ -242,6 +253,7 @@ pub fn Header::write_i64(Self, Int64) -> Unit
 pub fn Header::write_list_begin(Self, Int32, Int32) -> Unit
 pub fn Header::write_map_begin(Self, Int32, Int32, Int32) -> Unit
 pub fn Header::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Header::write_message_end(Self) -> Unit
 pub fn Header::write_set_begin(Self, Int32, Int32) -> Unit
 pub fn Header::write_string(Self, String) -> Unit
 pub fn Header::write_struct_begin(Self, String) -> Unit
@@ -257,6 +269,50 @@ pub(all) struct HeaderFrame {
   headers : Array[(String, String)]
   payload : Bytes
 }
+
+pub struct Json {
+  // private fields
+}
+pub fn Json::consumed(Self) -> Int32
+pub fn Json::new(Bytes) -> Self
+pub fn Json::output(Self) -> Bytes
+pub fn Json::read_bool(Self) -> Bool raise ThriftError
+pub fn Json::read_byte(Self) -> Int32 raise ThriftError
+pub fn Json::read_bytes(Self) -> Bytes raise ThriftError
+pub fn Json::read_double(Self) -> Double raise ThriftError
+pub fn Json::read_field_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Json::read_i16(Self) -> Int32 raise ThriftError
+pub fn Json::read_i32(Self) -> Int32 raise ThriftError
+pub fn Json::read_i64(Self) -> Int64 raise ThriftError
+pub fn Json::read_list_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Json::read_map_begin(Self) -> (Int32, Int32, Int32) raise ThriftError
+pub fn Json::read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
+pub fn Json::read_message_end(Self) -> Unit raise ThriftError
+pub fn Json::read_set_begin(Self) -> (Int32, Int32) raise ThriftError
+pub fn Json::read_string(Self) -> String raise ThriftError
+pub fn Json::read_struct_begin(Self) -> Unit raise ThriftError
+pub fn Json::read_struct_end(Self) -> Unit raise ThriftError
+pub fn Json::read_uuid(Self) -> Bytes raise ThriftError
+pub fn Json::reset(Self, Bytes) -> Unit
+pub fn Json::write_bool(Self, Bool) -> Unit
+pub fn Json::write_byte(Self, Int32) -> Unit
+pub fn Json::write_bytes(Self, Bytes) -> Unit
+pub fn Json::write_double(Self, Double) -> Unit
+pub fn Json::write_field_begin(Self, Int32, Int32) -> Unit
+pub fn Json::write_field_stop(Self) -> Unit
+pub fn Json::write_i16(Self, Int32) -> Unit
+pub fn Json::write_i32(Self, Int32) -> Unit
+pub fn Json::write_i64(Self, Int64) -> Unit
+pub fn Json::write_list_begin(Self, Int32, Int32) -> Unit
+pub fn Json::write_map_begin(Self, Int32, Int32, Int32) -> Unit
+pub fn Json::write_message_begin(Self, String, Int32, Int32) -> Unit
+pub fn Json::write_message_end(Self) -> Unit
+pub fn Json::write_set_begin(Self, Int32, Int32) -> Unit
+pub fn Json::write_string(Self, String) -> Unit
+pub fn Json::write_struct_begin(Self, String) -> Unit
+pub fn Json::write_struct_end(Self) -> Unit
+pub fn Json::write_uuid(Self, Bytes) -> Unit
+pub impl Protocol for Json
 
 pub(all) struct Processor {
   methods : Map[String, (&Protocol) -> Unit raise ThriftError]
@@ -276,8 +332,11 @@ pub(open) trait Protocol {
   fn output(Self) -> Bytes
   fn read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
   fn write_message_begin(Self, String, Int32, Int32) -> Unit
-  fn read_struct_begin(Self) -> Unit
-  fn read_struct_end(Self) -> Unit
+  fn read_message_end(Self) -> Unit raise ThriftError
+  fn write_message_end(Self) -> Unit
+  fn consumed(Self) -> Int32
+  fn read_struct_begin(Self) -> Unit raise ThriftError
+  fn read_struct_end(Self) -> Unit raise ThriftError
   fn write_struct_begin(Self, String) -> Unit
   fn write_struct_end(Self) -> Unit
   fn read_field_begin(Self) -> (Int32, Int32) raise ThriftError

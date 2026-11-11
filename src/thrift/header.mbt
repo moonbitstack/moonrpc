@@ -389,6 +389,21 @@ pub impl Protocol for Header with fn write_message_begin(
 }
 
 ///|
+pub impl Protocol for Header with fn read_message_end(self) {
+  self.inner().read_message_end()
+}
+
+///|
+pub impl Protocol for Header with fn write_message_end(self) {
+  self.inner().write_message_end()
+}
+
+///|
+pub impl Protocol for Header with fn consumed(self) {
+  self.inner().consumed()
+}
+
+///|
 pub impl Protocol for Header with fn read_struct_begin(self) {
   if self.check_quiet() {
     self.inner().read_struct_begin()
@@ -567,6 +582,9 @@ pub extend Header with Protocol::{
   output,
   read_message_begin,
   write_message_begin,
+  read_message_end,
+  write_message_end,
+  consumed,
   read_struct_begin,
   read_struct_end,
   write_struct_begin,

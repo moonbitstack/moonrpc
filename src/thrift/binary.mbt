@@ -226,6 +226,22 @@ pub impl Protocol for Binary with fn read_message_begin(self) {
 }
 
 ///|
+/// A binary message has no closing marker: the last field's stop is the end.
+pub impl Protocol for Binary with fn read_message_end(self) {
+  ignore(self)
+}
+
+///|
+pub impl Protocol for Binary with fn write_message_end(self) {
+  ignore(self)
+}
+
+///|
+pub impl Protocol for Binary with fn consumed(self) {
+  self.off
+}
+
+///|
 pub impl Protocol for Binary with fn write_list_begin(self, elem, size) {
   self.write_byte(elem)
   self.write_i32(size)
@@ -294,6 +310,9 @@ pub extend Binary with Protocol::{
   write_bytes,
   read_message_begin,
   write_message_begin,
+  read_message_end,
+  write_message_end,
+  consumed,
   read_struct_begin,
   read_struct_end,
   write_struct_begin,

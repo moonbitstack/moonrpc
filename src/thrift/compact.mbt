@@ -460,6 +460,22 @@ fn Compact::read_collection_begin(
 }
 
 ///|
+/// A binary message has no closing marker: the last field's stop is the end.
+pub impl Protocol for Compact with fn read_message_end(self) {
+  ignore(self)
+}
+
+///|
+pub impl Protocol for Compact with fn write_message_end(self) {
+  ignore(self)
+}
+
+///|
+pub impl Protocol for Compact with fn consumed(self) {
+  self.off
+}
+
+///|
 pub impl Protocol for Compact with fn write_list_begin(self, elem, size) {
   self.write_collection_begin(elem, size)
 }
@@ -533,6 +549,9 @@ pub extend Compact with Protocol::{
   write_bytes,
   read_message_begin,
   write_message_begin,
+  read_message_end,
+  write_message_end,
+  consumed,
   read_struct_begin,
   read_struct_end,
   write_struct_begin,

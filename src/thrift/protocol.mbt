@@ -10,6 +10,7 @@ pub(all) suberror ThriftError {
   Depth
   Unsupported(String)
   Application(String)
+  Malformed(String)
 }
 
 ///|
@@ -87,10 +88,19 @@ pub(open) trait Protocol {
   fn output(Self) -> Bytes
   fn read_message_begin(Self) -> (String, Int32, Int32) raise ThriftError
   fn write_message_begin(Self, String, Int32, Int32) -> Unit
+  /// Close the message a reader was in. A binary message ends with its last field, so the two
+  /// binary protocols have nothing to do here; a text one ends with a bracket.
+  fn read_message_end(Self) -> Unit raise ThriftError
+  fn write_message_end(Self) -> Unit
+  /// How many octets of the input the reader has taken. A transport that puts no length in
+  /// front of a message — Apache's unframed and buffered ones, and the zlib stream — finds
+  /// where one message ends with this, and so does a reader that has to know how much of its
+  /// buffer is left.
+  fn consumed(Self) -> Int32
   /// Enter a struct. TBinaryProtocol writes nothing; TCompactProtocol resets the field
   /// id that its deltas count from.
-  fn read_struct_begin(Self) -> Unit
-  fn read_struct_end(Self) -> Unit
+  fn read_struct_begin(Self) -> Unit raise ThriftError
+  fn read_struct_end(Self) -> Unit raise ThriftError
   fn write_struct_begin(Self, String) -> Unit
   fn write_struct_end(Self) -> Unit
   fn read_field_begin(Self) -> (Int32, Int32) raise ThriftError
@@ -148,7 +158,9 @@ fn skip_at(
     t if t == type_i32 => ignore(proto.read_i32())
     t if t == type_i64 => ignore(proto.read_i64())
     t if t == type_double => ignore(proto.read_double())
-    t if t == type_string => ignore(proto.read_bytes())
+    // A string and a binary are the same type id on the wire, and reading one as text is what
+    // both need: the JSON protocol writes text, and base64 is the caller's business there.
+    t if t == type_string => ignore(proto.read_string())
     t if t == type_uuid => ignore(proto.read_uuid())
     t if t == type_struct => {
       proto.read_struct_begin()
@@ -192,6 +204,7 @@ pub impl Show for ThriftError with fn output(self, logger) {
     BadType(t) => logger.write_string("BadType(" + t.to_string() + ")")
     Depth => logger.write_string("Depth")
     Unsupported(what) => logger.write_string("Unsupported(" + what + ")")
+    Malformed(why) => logger.write_string("Malformed(" + why + ")")
     Application(message) => logger.write_string("Application(" + message + ")")
   }
 }

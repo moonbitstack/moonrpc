@@ -3,7 +3,10 @@
 // `net/`, the same way gRPC's does.
 import {
   "moonbitlang/core/buffer",
+  "moonbitlang/core/double",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+  "moonbitstack/moonbase/base64",
   "moonbitstack/moonzip/zlib",
   "moonbitstack/moonvar/fixed",
 }
