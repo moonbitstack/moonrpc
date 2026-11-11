@@ -3,23 +3,52 @@
 // `thrift/` and are pure; this file only moves frames.
 
 ///|
-/// A Thrift client over one connection: a framed round trip per call, in whichever
+/// A Thrift client over one connection: one round trip per call, in whichever transport and
 /// protocol it was handed.
 pub struct ThriftClient {
   conn : @tcp.Conn
   proto : &@thrift.Protocol
+  host : String
+  wire : ThriftWire
+  // The compressor and the decompressor a zlib connection needs, and the bytes of a reply
+  // that arrived but were not part of the first message in them. A framed connection uses
+  // neither: its reply is exactly one message.
+  zlib_out : ZlibOut?
+  zlib_in : ZlibIn?
+  pending : @buffer.Buffer
+  // The messages a compressed chunk carried beyond the one asked for.
+  ready : Array[Bytes]
 }
 
 ///|
-/// Connect to a Thrift server at `host:port`, speaking `proto`. The protocol carries the
-/// connection's state — a compact reader's field-id deltas, a binary reader's cursor —
-/// so it belongs to the client, not to each call.
+/// Connect to a Thrift server at `host:port`, speaking `proto` over `wire`. The protocol
+/// carries the connection's state — a compact reader's field-id deltas, a binary reader's
+/// cursor — so it belongs to the client, not to each call.
 pub async fn ThriftClient::connect(
   host : String,
   port : Int32,
   proto : &@thrift.Protocol,
+  wire~ : ThriftWire = Framed,
 ) -> ThriftClient {
-  { conn: @tcp.dial(host, port~), proto, }
+  let compressed = wire is Zlib
+  {
+    conn: @tcp.dial(host, port~),
+    proto,
+    host,
+    wire,
+    zlib_out: if compressed {
+      Some(ZlibOut::new())
+    } else {
+      None
+    },
+    zlib_in: if compressed {
+      Some(ZlibIn::new())
+    } else {
+      None
+    },
+    pending: @buffer.Buffer(),
+    ready: [],
+  }
 }
 
 ///|
@@ -30,15 +59,7 @@ pub fn ThriftClient::close(self : ThriftClient) -> Unit {
 
 ///|
 pub impl @thrift.Transport for ThriftClient with fn round_trip(self, body) {
-  self.send(body)
-  let head = self.conn.read_exactly(4) catch { _ => raise @thrift.Truncated }
-  let len = @thrift.frame_len(head) catch { _ => raise @thrift.Truncated }
-  if len < 0 || len > @thrift.max_frame {
-    raise @thrift.Application("frame too large")
-  }
-  self.conn.read_exactly(len) catch {
-    _ => raise @thrift.Truncated
-  }
+  self.exchange(body)
 }
 
 ///|
@@ -92,27 +113,33 @@ async fn[P : @thrift.Protocol] serve_connection(
   processor : @thrift.Processor,
   make : () -> P,
 ) -> Unit {
-  let proto : &@thrift.Protocol = make()
-  for ;; {
-    let head = conn.read_exactly(4) catch { _ => break }
-    let len = @thrift.frame_len(head)
-    if len < 0 || len > @thrift.max_frame {
-      break
-    }
-    let body = conn.read_exactly(len)
-    let reply = processor.process(proto, body)
-    if reply.length() > 0 {
-      conn.write(@thrift.frame(reply))
-    }
+  serve_framed(conn, processor, make) catch {
+    _ => ()
   }
 }
 
 ///|
-/// A ONEWAY call writes its frame and returns: there is no reply to wait for, and waiting for
-/// one would block until the peer closed.
+/// A ONEWAY call writes its message and returns: there is no reply to wait for, and waiting
+/// for one would block until the peer closed. A POST still has an answer to read — the HTTP
+/// exchange has to be finished or the next call would read this one's reply — so it is read
+/// and dropped.
 pub impl @thrift.Transport for ThriftClient with fn send(self, body) {
-  self.conn.write(@thrift.frame(body)) catch {
-    _ => raise @thrift.Truncated
+  match self.wire {
+    Http => ignore(self.post(body))
+    Zlib => {
+      let compressed = match self.zlib_out {
+        Some(deflater) => deflater.write(body)
+        None => raise @thrift.Malformed("this client has no compressor")
+      }
+      self.conn.write(compressed) catch {
+        _ => raise @thrift.Truncated
+      }
+    }
+    Framed =>
+      self.conn.write(@thrift.frame(body)) catch {
+        _ => raise @thrift.Truncated
+      }
+    Buffered => self.conn.write(body) catch { _ => raise @thrift.Truncated }
   }
 }
 

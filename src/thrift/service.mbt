@@ -18,6 +18,20 @@ pub fn message_len(
   input : Bytes,
 ) -> Int32? raise ThriftError {
   proto.reset(input)
+  let walked : Result[Unit, ThriftError] = Ok(walk_one(proto)) catch {
+    e => Err(e)
+  }
+  match walked {
+    Ok(_) => Some(proto.consumed())
+    // Not all there yet, which is what a growing buffer is looking for. Anything else is a
+    // message this protocol cannot read, and the caller has to decide what that means.
+    Err(Truncated) => None
+    Err(other) => raise other
+  }
+}
+
+///|
+fn walk_one(proto : &Protocol) -> Unit raise ThriftError {
   ignore(proto.read_message_begin())
   proto.read_struct_begin()
   for ;; {
@@ -29,7 +43,6 @@ pub fn message_len(
   }
   proto.read_struct_end()
   proto.read_message_end()
-  Some(proto.consumed())
 }
 
 ///|

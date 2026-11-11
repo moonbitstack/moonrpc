@@ -90,35 +90,32 @@ for mode in plaintext tls; do
   done
 done
 
-# The Thrift pair: both transports, both protocols inside each, and the transform the header
-# transport can carry. `thriftd check` sends a ONEWAY call and then asks what the server saw,
-# so a stray reply frame would arrive as the answer to the wrong call.
-for wire in framed header; do
-  for proto in binary compact; do
-    for xform in identity zlib; do
-      if [ "$wire" = framed ] && [ "$xform" = zlib ]; then continue; fi
-      label="thrift/$wire/$proto/$xform"
-      port=$((port + 2))
-      echo "== $label: moonrpc client -> moonrpc server =="
-      "$THRIFTD" "$port" "$wire" "$proto" >/dev/null 2>&1 &
-      server=$!
-      wait_for "$port"
+# The Thrift pair: every transport this stack serves, every protocol inside each, and the
+# transform the header transport can carry. `thriftd check` sends a ONEWAY call and then asks
+# what the server saw, so a stray reply frame would arrive as the answer to the wrong call.
+for wire in framed buffered zlib http header header-zlib; do
+  for proto in binary compact json; do
+    if [ "$wire" = "header-zlib" ] && [ "$proto" = "json" ]; then continue; fi
+    if [ "$wire" = "header" ] && [ "$proto" = "json" ]; then continue; fi
+    label="thrift/$wire/$proto"
+    port=$((port + 2))
+    echo "== $label: moonrpc client -> moonrpc server =="
+    "$THRIFTD" "$port" "$wire" "$proto" >/dev/null 2>&1 &
+    server=$!
+    wait_for "$port"
 
-      args=("$port" "$wire" "$proto")
-      if [ "$xform" = zlib ]; then args+=("zlib"); fi
-      "$THRIFTD" check "${args[@]}" | tee "$work/out.txt"
+    "$THRIFTD" check "$port" "$wire" "$proto" | tee "$work/out.txt"
 
-      grep -q 'ping  pong:moonrpc' "$work/out.txt"
-      grep -q 'add   42' "$work/out.txt"
-      grep -q 'double 3' "$work/out.txt"
-      grep -q 'boom:no' "$work/out.txt"
-      grep -q 'note  moonrpc' "$work/out.txt"
+    grep -q 'ping  pong:moonrpc' "$work/out.txt"
+    grep -q 'add   42' "$work/out.txt"
+    grep -q 'double 3' "$work/out.txt"
+    grep -q 'boom:no' "$work/out.txt"
+    grep -q 'note  moonrpc' "$work/out.txt"
 
-      kill "$server" 2>/dev/null || true
-      wait "$server" 2>/dev/null || true
-      server=""
-    done
+    kill "$server" 2>/dev/null || true
+    wait "$server" 2>/dev/null || true
+    server=""
   done
 done
 
-echo "moonrpc self interop passed: gRPC plaintext/TLS x identity/gzip; Thrift framed/header x binary/compact x identity/zlib"
+echo "moonrpc self interop passed: gRPC plaintext/TLS x identity/gzip; Thrift framed/buffered/zlib/http/header/header-zlib x binary/compact/json"

@@ -310,23 +310,8 @@ test "a message that stops in the middle is not a message" {
     let bytes = @utf8.encode(pair.1)
     for cut in [1, bytes.length() / 2, bytes.length() - 1] {
       let src = Json::new(b"")
-      let outcome : Result[Int32?, ThriftError] = Ok(
-        message_len(src, bytes[:cut].to_owned()),
-      ) catch {
-        e => Err(e)
-      }
-      match outcome {
-        Ok(_) => abort("a message cut at " + cut.to_string() + " parsed")
-        Err(Truncated) => ()
-        Err(other) =>
-          abort(
-            "a message cut at " +
-            cut.to_string() +
-            " was " +
-            other.to_string() +
-            " rather than Truncated",
-          )
-      }
+      let length = message_len(src, bytes[:cut].to_owned())
+      assert_eq(length, None)
     }
   }
 }

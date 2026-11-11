@@ -1,11 +1,13 @@
-// A Thrift service over TBinaryProtocol or TCompactProtocol, framed or behind the header
-// transport, on one socket.
+// A Thrift service on one socket, in whichever transport and protocol the words pick.
 //
-//     thriftd [port] [framed|header] [binary|compact]          serve on 127.0.0.1 (9090)
-//     thriftd check [port] [framed|header] [binary|compact]    call it with this library
+//     thriftd [port] [transport] [protocol]        serve on 127.0.0.1 (9090)
+//     thriftd check [port] [transport] [protocol]  call it with this library
 //
-// The handlers below only see `Protocol`, so the same service answers in either protocol and
-// either transport; the words pick the bytes on the wire, not the service. The header
+//   transport: framed | buffered | zlib | http | header | header-zlib
+//   protocol:  binary | compact | json
+//
+// The handlers below only see `Protocol`, so the same service answers in every protocol and
+// every transport; the words pick the bytes on the wire, not the service. The header
 // transport carries the inner protocol in each frame, so it can answer both at once.
 
 ///|
@@ -108,54 +110,68 @@ fn read_boom(
 }
 
 ///|
-/// The transport a run speaks: a length in front of every message, or the header transport's
-/// frame — which carries its own length, the inner protocol's name, and optional headers.
+/// The transport a run speaks. `Header` is the header transport over a plain frame;
+/// `HeaderZlib` is the same frames through its zlib transform.
 priv enum Wire {
   Framed
+  Buffered
+  Zlib
+  Http
   Header
+  HeaderZlib
 }
 
 ///|
-/// The protocol for one call: the plain one, or the header transport with `protocol` inside.
-/// `zlib` asks the header transport to compress every frame with its zlib transform, which is
-/// the one transform this build reads and writes.
-fn protocol_of(wire : Wire, compact : Bool, zlib : Bool) -> &@thrift.Protocol {
+/// The protocol for one call: one of the three this package implements, or one of them inside
+/// the header transport, which carries the inner protocol's name in each frame.
+priv enum Coded {
+  Binary
+  Compact
+  Json
+}
+
+///|
+fn protocol_of(wire : Wire, codec : Coded) -> &@thrift.Protocol {
   match wire {
-    Framed =>
-      if compact {
-        (@thrift.Compact::new(b"") : &@thrift.Protocol)
-      } else {
-        (@thrift.Binary::new(b"") : &@thrift.Protocol)
-      }
-    Header => {
-      let header = header_protocol(compact)
-      if zlib {
+    Header | HeaderZlib => {
+      let header = header_protocol(codec)
+      if wire is HeaderZlib {
         header.add_transform(@thrift.header_transform_zlib)
       }
       (header : &@thrift.Protocol)
     }
+    _ =>
+      match codec {
+        Binary => (@thrift.Binary::new(b"") : &@thrift.Protocol)
+        Compact => (@thrift.Compact::new(b"") : &@thrift.Protocol)
+        Json => (@thrift.Json::new(b"") : &@thrift.Protocol)
+      }
   }
 }
 
 ///|
 /// A fresh header-protocol endpoint, which is what the accept loop asks for once per
 /// connection: a protocol object carries the connection's state.
-fn header_protocol(compact : Bool) -> @thrift.Header {
+fn header_protocol(codec : Coded) -> @thrift.Header {
   let header = @thrift.Header::new()
   header.set_protocol(
-    if compact {
-      @thrift.header_protocol_compact
-    } else {
-      @thrift.header_protocol_binary
+    match codec {
+      Compact => @thrift.header_protocol_compact
+      _ => @thrift.header_protocol_binary
     },
   )
   header
 }
 
 ///|
-async fn check(port : Int32, wire : Wire, compact : Bool, zlib : Bool) -> Unit {
-  let proto = protocol_of(wire, compact, zlib)
-  let client = @net.ThriftClient::connect("127.0.0.1", port, proto)
+async fn check(port : Int32, wire : Wire, codec : Coded) -> Unit {
+  let proto = protocol_of(wire, codec)
+  let client = @net.ThriftClient::connect(
+    "127.0.0.1",
+    port,
+    proto,
+    wire=wire_of(wire),
+  )
   defer client.close()
   let pong = @thrift.call(
     client,
@@ -265,11 +281,23 @@ async fn check(port : Int32, wire : Wire, compact : Bool, zlib : Bool) -> Unit {
 }
 
 ///|
+/// The driver's name for a transport.
+fn wire_of(wire : Wire) -> @net.ThriftWire {
+  match wire {
+    Framed => @net.ThriftWire::Framed
+    Buffered => @net.ThriftWire::Buffered
+    Zlib => @net.ThriftWire::Zlib
+    Http => @net.ThriftWire::Http
+    // The header transport frames its own messages, so the driver sees ordinary frames.
+    Header | HeaderZlib => @net.ThriftWire::Framed
+  }
+}
+
+///|
 fn main {
   let mut checking = false
-  let mut compact = false
+  let mut codec = Binary
   let mut wire = Framed
-  let mut zlib = false
   let mut port = 9090
   let args = @env.args()
   for i = 1; i < args.length(); i = i + 1 {
@@ -279,43 +307,52 @@ fn main {
     match arg {
       "check" => checking = true
       "framed" => wire = Framed
+      "buffered" => wire = Buffered
+      "zlib" => wire = Zlib
+      "http" => wire = Http
       "header" => wire = Header
-      "compact" => compact = true
-      "binary" => compact = false
-      "zlib" => zlib = true
+      "header-zlib" => wire = HeaderZlib
+      "binary" => codec = Binary
+      "compact" => codec = Compact
+      "json" => codec = Json
       _ => port = @string.parse_int(arg[:]) catch { _ => port }
     }
   }
-  let protocol_word = if compact { "compact" } else { "binary" }
+  let protocol_word = match codec {
+    Binary => "binary"
+    Compact => "compact"
+    Json => "json"
+  }
   let wire_word = match wire {
     Framed => "framed"
+    Buffered => "buffered"
+    Zlib => "zlib"
+    Http => "http"
     Header => "header"
+    HeaderZlib => "header-zlib"
   }
   @async.run_async_main(() => {
     if checking {
-      check(port, wire, compact, zlib)
+      check(port, wire, codec)
     } else {
       println(
         "thrift serving on 127.0.0.1:\{port} (\{wire_word}, \{protocol_word})",
       )
-      match (wire, compact) {
-        (Framed, true) =>
-          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
-            @thrift.Compact::new(b"")
-          })
-        (Framed, false) =>
-          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
-            @thrift.Binary::new(b"")
-          })
-        (Header, true) =>
-          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
-            header_protocol(true)
-          })
-        (Header, false) =>
-          @net.serve_thrift(host="127.0.0.1", port~, processor(), () => {
-            header_protocol(false)
-          })
-      }
+      serve(wire, codec, port)
     }
   })
+}
+
+///|
+/// Serve the same service over any of the transports and protocols. The dispatch is in `net/`,
+/// which takes a closure for the protocol because a connection owns a protocol object of its
+/// own — a compact reader's field-id deltas and a text reader's cursor are its state.
+async fn serve(wire : Wire, codec : Coded, port : Int32) -> Unit {
+  @net.serve_thrift_wire(
+    host="127.0.0.1",
+    port~,
+    wire=wire_of(wire),
+    processor(),
+    () => protocol_of(wire, codec),
+  )
 }

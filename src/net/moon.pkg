@@ -11,6 +11,8 @@ import {
   "moonbitstack/moonrpc/trpc",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonhttp/hpack",
+  "moonbitstack/moonzip/deflate",
+  "moonbitstack/moonzip/zlib",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonnet/tcp",
   "moonbitstack/moontls/tls",

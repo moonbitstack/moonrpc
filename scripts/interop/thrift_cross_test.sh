@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# Apache Thrift's cross test against this stack, in both directions and both protocols.
+# Apache Thrift's cross test against this stack, in both directions, over every transport and
+# every protocol the two have in common.
 #
-# Stage 1: an Apache Thrift client (`test/go/src/bin/testclient`) calls `ThriftTest` as
-#          this repository serves it.
-# Stage 2: this repository's client calls the Apache Thrift server (`testserver`) and
-#          checks every answer the reference client checks.
+# Stage 1: an Apache Thrift client (`test/go/src/bin/testclient`) calls `ThriftTest` as this
+#          repository serves it.
+# Stage 2: this repository's client calls the Apache Thrift server (`testserver`) and checks
+#          every answer the reference client checks.
 #
 # Usage: thrift_cross_test.sh <athrift-checkout> <thriftcrosstest-binary>
 #
-# The checkout must already hold the generated Go bindings and both built binaries; the
-# CI job does that, and so does `scripts/interop/build_thrift_peers.sh`.
+# The checkout must already hold the generated Go bindings and both built binaries; the CI job
+# does that, and so does `scripts/interop/build_thrift_peers.sh`.
 #
-# Only the framed transport is driven here, because Apache's Go test client has no header
-# transport to drive (its `-transport` flag takes buffered, framed, http and zlib). The header
-# transport is covered instead by `scripts/interop/thriftclient` and `thriftserver`, which use
-# Apache's Go *library* — the same implementation, called directly.
+# Apache's own cross test drives four transports (`-transport buffered|framed|http|zlib`) and
+# three protocols (`-protocol binary|compact|json`), and the twelve pairings are run here in
+# both directions. The header transport is not among them: Apache's test binaries reach it
+# through `-protocol header`, which this repository covers in `scripts/interop/thriftclient`
+# and `thriftserver` instead — the same library, called directly.
 set -euo pipefail
 
 REF=${1:?the Apache Thrift checkout that holds test/go/bin}
@@ -41,29 +43,32 @@ stop() {
 }
 
 port=9300
-for protocol in binary compact; do
-  arg=""
-  if [ "$protocol" = compact ]; then arg=compact; fi
-  port=$((port + 2))
+for transport in framed buffered zlib http; do
+  for protocol in binary compact json; do
+    port=$((port + 2))
 
-  echo "== $protocol: Apache Thrift client -> this server =="
-  "$MOON" "$port" $arg &
-  server=$!
-  trap 'stop "$server"' EXIT
-  wait_for "$port"
-  "$PEERS/testclient$SUFFIX" -host 127.0.0.1 -port "$port" -transport framed -protocol "$protocol"
-  stop "$server"
-  trap - EXIT
+    echo "== $transport/$protocol: Apache Thrift client -> this server =="
+    "$MOON" "$port" "$transport" "$protocol" &
+    server=$!
+    trap 'stop "$server"' EXIT
+    wait_for "$port"
+    "$PEERS/testclient$SUFFIX" -host 127.0.0.1 -port "$port" \
+      -transport "$transport" -protocol "$protocol"
+    stop "$server"
+    trap - EXIT
 
-  echo "== $protocol: this client -> Apache Thrift server =="
-  "$PEERS/testserver$SUFFIX" -host 127.0.0.1 -port "$((port + 1))" -transport framed -protocol "$protocol" \
-    > "${TMPDIR:-/tmp}/athrift-$protocol-server.log" 2>&1 &
-  server=$!
-  trap 'stop "$server"' EXIT
-  wait_for "$((port + 1))"
-  "$MOON" check "$((port + 1))" $arg | grep -q "cross test passed ($protocol)"
-  stop "$server"
-  trap - EXIT
+    echo "== $transport/$protocol: this client -> Apache Thrift server =="
+    "$PEERS/testserver$SUFFIX" -host 127.0.0.1 -port "$((port + 1))" \
+      -transport "$transport" -protocol "$protocol" \
+      > "${TMPDIR:-/tmp}/athrift-$transport-$protocol-server.log" 2>&1 &
+    server=$!
+    trap 'stop "$server"' EXIT
+    wait_for "$((port + 1))"
+    "$MOON" check "$((port + 1))" "$transport" "$protocol" \
+      | grep -q "cross test passed ($protocol)"
+    stop "$server"
+    trap - EXIT
+  done
 done
 
-echo "Apache Thrift cross test passed: both directions, both protocols"
+echo "Apache Thrift cross test passed: four transports and three protocols, both directions"

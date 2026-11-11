@@ -1,9 +1,10 @@
-// An Apache Thrift client that calls the moonrpc Thrift server: TBinaryProtocol or
-// TCompactProtocol, over TFramedTransport or Apache's own header transport, plus a ONEWAY
-// call — the same service `thriftd` serves, in every combination it claims.
+// An Apache Thrift client that calls the moonrpc Thrift server: one of Apache's three
+// protocols, over one of its four transports, plus a ONEWAY call — the same service `thriftd`
+// serves, in every combination it claims.
 package main
 
 import (
+	"compress/zlib"
 	"context"
 	"flag"
 	"fmt"
@@ -33,38 +34,78 @@ type wire struct {
 	close func()
 }
 
-// dial opens a connection speaking `transport` ("framed" or "header") and `protocol`
-// ("binary" or "compact"), and turns on the zlib transform when asked.
-func dial(addr, transport, protocol string, zlib bool) (thrift.TProtocol, wire) {
+// dial opens a connection speaking `transport` and `protocol`, and turns on the header
+// transport's zlib transform when asked.
+//
+// The four transports are Apache's own: framed, buffered, zlib (a stream over the socket) and
+// http (one POST per call). The header transport is a fifth, which Apache treats as a protocol
+// because it carries the inner protocol's name in each frame.
+func dial(addr, transport, protocol string, zlibTransform bool) (thrift.TProtocol, wire) {
 	conf := &thrift.TConfiguration{}
-	socket := thrift.NewTSocketConf(addr, conf)
+	protocolOf := func(t thrift.TTransport) thrift.TProtocol {
+		switch protocol {
+		case "compact":
+			return thrift.NewTCompactProtocolConf(t, conf)
+		case "json":
+			return thrift.NewTJSONProtocol(t)
+		default:
+			return thrift.NewTBinaryProtocolConf(t, conf)
+		}
+	}
+	// A message leaves when the protocol is flushed: the two binary protocols write straight
+	// through and their flush is the transport's, while the JSON one keeps a text buffer and
+	// flushes that first. Flushing the transport as well would be a second flush of a framed
+	// transport that has nothing left to send, which Apache's own implementation does not
+	// survive.
+	pair := func(p thrift.TProtocol, close func()) (thrift.TProtocol, wire) {
+		return p, wire{flush: p.Flush, close: close}
+	}
 	if transport == "header" {
 		conf.THeaderProtocolID = thrift.THeaderProtocolIDPtrMust(thrift.THeaderProtocolBinary)
 		if protocol == "compact" {
 			conf.THeaderProtocolID = thrift.THeaderProtocolIDPtrMust(thrift.THeaderProtocolCompact)
 		}
+		socket := thrift.NewTSocketConf(addr, conf)
 		if err := socket.Open(); err != nil {
 			fail("open: %v", err)
 		}
 		header := thrift.NewTHeaderProtocolConf(socket, conf)
-		if zlib {
+		if zlibTransform {
 			if err := header.AddTransform(thrift.TransformZlib); err != nil {
 				fail("zlib transform: %v", err)
 			}
 		}
-		return header, wire{flush: header.Flush, close: func() { socket.Close() }}
+		return pair(header, func() { socket.Close() })
 	}
-	if transport != "framed" {
-		fail("transport %q is not one this probe speaks: framed or header", transport)
+	if transport == "http" {
+		http, err := thrift.NewTHttpClient("http://" + addr + "/")
+		if err != nil {
+			fail("http client: %v", err)
+		}
+		if err := http.Open(); err != nil {
+			fail("open: %v", err)
+		}
+		return pair(protocolOf(http), func() { http.Close() })
 	}
-	trans := thrift.NewTFramedTransportConf(socket, conf)
+	var trans thrift.TTransport
+	switch transport {
+	case "framed":
+		trans = thrift.NewTFramedTransportConf(thrift.NewTSocketConf(addr, conf), conf)
+	case "buffered":
+		trans = thrift.NewTBufferedTransport(thrift.NewTSocketConf(addr, conf), 8192)
+	case "zlib":
+		compressed, err := thrift.NewTZlibTransport(thrift.NewTSocketConf(addr, conf), zlib.BestCompression)
+		if err != nil {
+			fail("zlib transport: %v", err)
+		}
+		trans = compressed
+	default:
+		fail("transport %q is not one this probe speaks: framed, buffered, zlib, http or header", transport)
+	}
 	if err := trans.Open(); err != nil {
 		fail("open: %v", err)
 	}
-	if protocol == "compact" {
-		return thrift.NewTCompactProtocolConf(trans, conf), wire{flush: trans.Flush, close: func() { trans.Close() }}
-	}
-	return thrift.NewTBinaryProtocolConf(trans, conf), wire{flush: trans.Flush, close: func() { trans.Close() }}
+	return pair(protocolOf(trans), func() { trans.Close() })
 }
 
 func call(ctx context.Context, w wire, p thrift.TProtocol, name string, seq int32, write func() error, want thrift.TType) any {
@@ -226,8 +267,8 @@ func callException(ctx context.Context, w wire, p thrift.TProtocol, name string,
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9090", "thrift address")
-	protocol := flag.String("protocol", "binary", "TBinaryProtocol or TCompactProtocol")
-	transport := flag.String("transport", "framed", "framed transport, or Apache's header transport")
+	protocol := flag.String("protocol", "binary", "binary, compact or json")
+	transport := flag.String("transport", "framed", "framed, buffered, zlib, http, or the header transport")
 	zlib := flag.Bool("zlib", false, "header transport only: compress every frame with the zlib transform")
 	compact := flag.Bool("compact", false, "compatibility: same as -protocol compact")
 	flag.Parse()

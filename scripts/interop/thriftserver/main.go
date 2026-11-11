@@ -1,13 +1,15 @@
 // An Apache Thrift server implementing the same methods as moonrpc's `thriftd`, so the
-// moonrpc client can call it: binary or compact, over TFramedTransport or Apache's header
-// transport, with a ONEWAY method that answers nothing.
+// moonrpc client can call it: one of Apache's three protocols, over one of its four
+// transports, with a ONEWAY method that answers nothing.
 package main
 
 import (
+	"compress/zlib"
 	"context"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 
 	"github.com/apache/thrift/lib/go/thrift"
@@ -182,32 +184,50 @@ func (processor) AddToProcessorMap(string, thrift.TProcessorFunction) {}
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:9091", "listen address")
-	protocol := flag.String("protocol", "binary", "TBinaryProtocol or TCompactProtocol")
-	transport := flag.String("transport", "framed", "framed transport, or Apache's header transport")
+	protocol := flag.String("protocol", "binary", "binary, compact or json")
+	transport := flag.String("transport", "framed", "framed, buffered, zlib, http, or the header transport")
+	zlibTransform := flag.Bool("zlib", false, "header transport only: compress every frame with the zlib transform")
 	compact := flag.Bool("compact", false, "compatibility: same as -protocol compact")
 	flag.Parse()
 	if *compact {
 		*protocol = "compact"
 	}
-	if *protocol != "binary" && *protocol != "compact" {
-		log.Fatalf("protocol %q is not one this probe speaks: binary or compact", *protocol)
+	conf := &thrift.TConfiguration{}
+
+	// The http transport is not a TTransport on the server side: Apache brings a handler that
+	// speaks HTTP for it, one POST per call, which is the mirror of its THttpClient.
+	if *transport == "http" {
+		var inFactory, outFactory thrift.TProtocolFactory
+		switch *protocol {
+		case "compact":
+			inFactory = thrift.NewTCompactProtocolFactoryConf(conf)
+			outFactory = thrift.NewTCompactProtocolFactoryConf(conf)
+		case "json":
+			inFactory = thrift.NewTJSONProtocolFactory()
+			outFactory = thrift.NewTJSONProtocolFactory()
+		case "binary":
+			inFactory = thrift.NewTBinaryProtocolFactoryConf(conf)
+			outFactory = thrift.NewTBinaryProtocolFactoryConf(conf)
+		default:
+			log.Fatalf("protocol %q is not one this probe speaks: binary, compact or json", *protocol)
+		}
+		handler := thrift.NewThriftHandlerFunc(processor{}, inFactory, outFactory)
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", handler)
+		fmt.Printf("apache thrift greeter listening on %s (http, %s)\n", *addr, *protocol)
+		if err := http.ListenAndServe(*addr, mux); err != nil {
+			log.Fatalf("serve: %v", err)
+		}
+		return
 	}
+
 	socket, err := thrift.NewTServerSocket(*addr)
 	if err != nil {
 		log.Fatalf("socket: %v", err)
 	}
-	conf := &thrift.TConfiguration{}
 	var transportFactory thrift.TTransportFactory
 	var protocolFactory thrift.TProtocolFactory
-	switch *transport {
-	case "framed":
-		transportFactory = thrift.NewTFramedTransportFactoryConf(thrift.NewTTransportFactory(), conf)
-		if *protocol == "compact" {
-			protocolFactory = thrift.NewTCompactProtocolFactoryConf(conf)
-		} else {
-			protocolFactory = thrift.NewTBinaryProtocolFactoryConf(conf)
-		}
-	case "header":
+	if *transport == "header" {
 		// The header transport carries the inner protocol's name in each frame, so the factory
 		// below is the pairing Apache's own tests use: the transport factory frames, the
 		// protocol factory decides what goes inside.
@@ -218,11 +238,31 @@ func main() {
 			conf.THeaderProtocolID = thrift.THeaderProtocolIDPtrMust(thrift.THeaderProtocolBinary)
 		}
 		protocolFactory = thrift.NewTHeaderProtocolFactoryConf(conf)
-	default:
-		log.Fatalf("transport %q is not one this probe speaks: framed or header", *transport)
+	} else {
+		switch *transport {
+		case "framed":
+			transportFactory = thrift.NewTFramedTransportFactoryConf(thrift.NewTTransportFactory(), conf)
+		case "buffered":
+			transportFactory = thrift.NewTBufferedTransportFactory(8192)
+		case "zlib":
+			transportFactory = thrift.NewTZlibTransportFactoryWithFactory(zlib.BestCompression, thrift.NewTTransportFactory())
+		default:
+			log.Fatalf("transport %q is not one this probe speaks: framed, buffered, zlib, http or header", *transport)
+		}
+		switch *protocol {
+		case "compact":
+			protocolFactory = thrift.NewTCompactProtocolFactoryConf(conf)
+		case "json":
+			protocolFactory = thrift.NewTJSONProtocolFactory()
+		case "binary":
+			protocolFactory = thrift.NewTBinaryProtocolFactoryConf(conf)
+		default:
+			log.Fatalf("protocol %q is not one this probe speaks: binary, compact or json", *protocol)
+		}
 	}
+	_ = zlibTransform
 	server := thrift.NewTSimpleServer4(processor{}, socket, transportFactory, protocolFactory)
-	fmt.Printf("apache thrift greeter listening on %s\n", *addr)
+	fmt.Printf("apache thrift greeter listening on %s (%s, %s)\n", *addr, *transport, *protocol)
 	if err := server.Serve(); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
