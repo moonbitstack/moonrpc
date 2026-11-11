@@ -2,6 +2,7 @@
 // connectivity states, load-balancing policies, connection pools, retry and
 // hedging policies.
 import {
+  "moonbitstack/moonjson",
   "moonbitstack/moonrpc/wire",
   "moonbitstack/moondate",
   "moonbitstack/moonward",

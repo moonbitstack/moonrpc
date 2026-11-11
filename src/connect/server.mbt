@@ -204,7 +204,7 @@ fn Server::decode_message(
       if body.length() == 0 {
         return b""
       }
-      let value = @json.parse(@utf8.decode_lossy(body)) catch {
+      let value = @moonjson.loads(@utf8.decode_lossy(body)[:], @moonjson.strict) catch {
         _ => raise @wire.StatusError(Internal, "the request body is not JSON")
       }
       self.schema.to_bytes(name, value) catch {
@@ -239,7 +239,7 @@ fn Server::encode_message(
         _ =>
           raise @wire.StatusError(Internal, "the reply does not fit the schema")
       }
-      @utf8.encode(value.stringify())
+      @utf8.encode(@moonjson.dumps(value))
     }
   }
 }
@@ -764,7 +764,7 @@ fn Session::end_marker(self : Session) -> Bytes {
     members["metadata"] = Json::object(encoded)
   }
   encode_envelope(
-    @utf8.encode(Json::object(members).stringify()),
+    @utf8.encode(@moonjson.dumps(Json::object(members))),
     flags=flag_end_stream,
   )
 }
@@ -954,11 +954,11 @@ fn failure(
     return {
       status: http_status,
       headers: fields,
-      body: @utf8.encode(body.stringify()),
+      body: @utf8.encode(@moonjson.dumps(body)),
     }
   }
   let end = encode_envelope(
-    @utf8.encode(body.stringify()),
+    @utf8.encode(@moonjson.dumps(body)),
     flags=flag_end_stream,
   )
   let headers : Array[@header.Header] = [

@@ -97,7 +97,10 @@ fn read_stream(body : Bytes) -> (Array[Bytes], Array[@header.Header]) {
   let (envelopes, _at) = split_envelopes(body)
   for envelope in envelopes {
     if envelope.is_end_stream() {
-      let value = @json.parse(@utf8.decode_lossy(envelope.payload)) catch {
+      let value = @moonjson.loads(
+        @utf8.decode_lossy(envelope.payload)[:],
+        @moonjson.strict,
+      ) catch {
         _ => Json::null()
       }
       match value {
@@ -106,7 +109,7 @@ fn read_stream(body : Bytes) -> (Array[Bytes], Array[@header.Header]) {
             Some(error) =>
               trailers.push({
                 name: b"connect-error",
-                value: @utf8.encode(error.stringify()),
+                value: @utf8.encode(@moonjson.dumps(error)),
               })
             None => ()
           }
@@ -212,7 +215,7 @@ pub async fn[T : Transport] Client::server_stream(
   for trailer in trailers {
     if @utf8.decode_lossy(trailer.name) == "connect-error" {
       let (code, message) = error_of_json(
-        @json.parse(@utf8.decode_lossy(trailer.value)) catch {
+        @moonjson.loads(@utf8.decode_lossy(trailer.value)[:], @moonjson.strict) catch {
           _ => Json::null()
         },
       )
@@ -303,7 +306,9 @@ fn trailers_without_error(
 /// mapped.
 fn error_of_status(status : Int32, body : Bytes) -> (@wire.Status, String) {
   let text = @utf8.decode_lossy(body)
-  let value = @json.parse(text) catch { _ => Json::null() }
+  let value = @moonjson.loads(text[:], @moonjson.strict) catch {
+    _ => Json::null()
+  }
   match value {
     Object(_) => error_of_json(value)
     _ => (status_of_http(status), "")

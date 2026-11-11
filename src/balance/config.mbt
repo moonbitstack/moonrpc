@@ -32,11 +32,12 @@ pub fn ServiceConfig::empty() -> ServiceConfig {
 }
 
 ///|
-/// Parse a service config document, as grpc-go's `encoding/json` does.
+/// Parse a service config document. The reader is the family's: a JSON text is JSON, and one
+/// parser with line and column in its errors serves every library that has to read one.
 pub fn ServiceConfig::parse(
   text : String,
-) -> ServiceConfig raise @json.ParseError {
-  ServiceConfig::of_json(@json.parse(text))
+) -> ServiceConfig raise @moonjson.Refused {
+  ServiceConfig::of_json(@moonjson.loads(text[:], @moonjson.strict))
 }
 
 ///|

@@ -204,7 +204,7 @@ test "conformance: a server stream answers one envelope per message it was asked
 ///|
 /// A body read as JSON, or null when it is not JSON at all.
 fn parse_json(body : Bytes) -> Json {
-  @json.parse(@utf8.decode_lossy(body)) catch {
+  @moonjson.loads(@utf8.decode_lossy(body)[:], @moonjson.strict) catch {
     _ => Json::null()
   }
 }

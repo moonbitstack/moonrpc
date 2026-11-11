@@ -39,7 +39,7 @@ fn say_request(text : String) -> Bytes {
 /// A body read as JSON, or null when it is not JSON at all — a test that expected JSON fails
 /// on the assertion below rather than on a parse.
 fn parse_json(body : Bytes) -> Json {
-  @json.parse(@utf8.decode_lossy(body)) catch {
+  @moonjson.loads(@utf8.decode_lossy(body)[:], @moonjson.strict) catch {
     _ => Json::null()
   }
 }

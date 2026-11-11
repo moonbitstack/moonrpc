@@ -2,6 +2,7 @@
 // into, the error body it answers with, and the dispatch that turns one request into one
 // response. Pure: the drivers that move the bytes live in `net`.
 import {
+  "moonbitstack/moonjson",
   "moonbitstack/moonrpc/wire",
   "moonbitstack/moonrpc/proto",
   "moonbitstack/moonrpc/stream",
@@ -9,7 +10,6 @@ import {
   "moonbitstack/moonbase/base64",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
-  "moonbitlang/core/json",
   "moonbitlang/core/string",
   "moonbitlang/core/encoding/utf8",
 }
