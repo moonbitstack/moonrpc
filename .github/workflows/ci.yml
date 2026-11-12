@@ -797,3 +797,47 @@ jobs:
             --mode server \
             --conf scripts/conformance/connect.yaml \
             -- ./_build/native/debug/build/cmd/conformance/conformance.exe
+
+  # The other half of the official Connect suite: this client under test, calling the runner's
+  # reference server. The one-shot POST transport cannot issue a cancellation before its send
+  # side closes, so those twenty cases are named in the known-failing file. The runner still
+  # runs them, and fails the build if one starts passing without the list being updated.
+  connect-client-conformance:
+    name: Connect conformance (client)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - name: build the client under test
+        run: moon build --target native src/cmd/conformance
+
+      - name: fetch the runner, at a pinned version
+        env:
+          VERSION: v1.0.4
+        run: |
+          url="https://github.com/connectrpc/conformance/releases/download/${VERSION}/connectconformance-${VERSION}-Linux-x86_64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/runner.tar.gz" "$url"
+          tar xzf "$RUNNER_TEMP/runner.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/connectconformance" --version
+
+      # The `client` argument selects the driver half: it reads length-delimited requests on
+      # stdin and writes one response per case, while the same binary without it serves.
+      - name: run the suite
+        run: |
+          "$RUNNER_TEMP/connectconformance" \
+            --mode client \
+            --conf scripts/conformance/connect_client.yaml \
+            --known-failing @scripts/conformance/connect_client_known_failing.txt \
+            -- ./_build/native/debug/build/cmd/conformance/conformance.exe client

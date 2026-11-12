@@ -109,6 +109,52 @@ pub fn error_json(
 }
 
 ///|
+/// The details an error body carries, each rebuilt as the `google.protobuf.Any` bytes the
+/// protocol sent: a type name and a value that is base64 in the body and protobuf on the wire.
+pub fn error_details(value : Json) -> Array[Bytes] {
+  let out : Array[Bytes] = []
+  let entries = match value {
+    Object(members) =>
+      match members.get("details") {
+        Some(Array(items)) => items
+        _ => []
+      }
+    _ => []
+  }
+  for entry in entries {
+    match entry {
+      Object(members) => {
+        // The body names the type the way a URL does without its prefix — `google.protobuf.
+        // FileDescriptorProto` — and the message this rebuilds is an `Any`, whose first field
+        // is a type URL. A peer that put a URL there already keeps it.
+        let type_url = match members.get("type") {
+          Some(String(name)) =>
+            if name.contains("/") {
+              name
+            } else {
+              "type.googleapis.com/" + name
+            }
+          _ => ""
+        }
+        let value = match members.get("value") {
+          Some(String(text)) =>
+            @base64.decode(text[:], padding=false) catch {
+              _ => b""
+            }
+          _ => b""
+        }
+        let any = @proto.PbWriter::new()
+        any.string_(1, type_url)
+        any.bytes_(2, value)
+        out.push(any.to_bytes())
+      }
+      _ => ()
+    }
+  }
+  out
+}
+
+///|
 /// The status and message a peer's error body carries. A body this build cannot read is
 /// `unknown` with the text it was given, since the alternative — pretending the call succeeded
 /// — is worse.

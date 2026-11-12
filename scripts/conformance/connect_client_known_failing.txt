@@ -1,0 +1,37 @@
+# Cases the Connect client driver cannot pass, in the suite's own names.
+#
+# All twenty are Client Cancellation. The transport this client speaks is one HTTP exchange:
+# it writes every request envelope and the end-stream envelope in a single body, then reads the
+# whole reply. A cancellation that happens *before* the send side closes (or in the middle of a
+# full-duplex exchange) has no point in that exchange at which it can be issued. The driver can
+# abandon a call after its send side is closed — that is what `cancel_after` does — but it
+# cannot cancel a request it has not finished writing.
+#
+# The half-duplex cases use `cancel.before_close_send`; the full-duplex HTTP/2 ones use
+# `cancel.after_close_send_ms` with a response that arrives before the timer fires. Both need a
+# caller that drives the stream message by message. Everything else the runner sends — 856 of
+# 876 cases — passes.
+#
+# The runner requires every name here to fail. When a driver gains incremental sending, remove
+# this file and the flag that reads it: a pattern that unexpectedly passes fails the run, which
+# is what keeps the list honest.
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/full-duplex/cancel-after-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_GZIP/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/full-duplex/cancel-after-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_IDENTITY/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/full-duplex/cancel-after-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_GZIP/TLS:false/client-stream/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/full-duplex/cancel-after-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/bidi-stream/half-duplex/cancel-before-close-send
+Client Cancellation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_IDENTITY/TLS:false/client-stream/cancel-before-close-send

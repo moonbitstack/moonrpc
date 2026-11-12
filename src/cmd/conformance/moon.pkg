@@ -1,12 +1,19 @@
-// The reference server, as the Connect conformance suite starts one: read where to listen from
-// the suite's handshake, announce the port that was bound, and serve until killed.
+// Both halves of the Connect conformance suite, in one binary. Without an argument it is the
+// reference server: announce the port it bound and serve until killed. With `client` it is the
+// client under test: read one length-delimited request per case on stdin and answer each one.
 import {
   "moonbitstack/moonrpc/conformance" @reference,
+  "moonbitstack/moonrpc/connect",
   "moonbitstack/moonrpc/net",
   "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonrpc/wire",
+  "moonbitstack/moonjson",
+  "moonbitstack/moonhttp/header",
   "moonbitlang/async",
   "moonbitlang/async/stdio",
   "moonbitlang/core/buffer",
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
 }
 
 pkgtype(kind: "executable")

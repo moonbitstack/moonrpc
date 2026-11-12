@@ -283,9 +283,9 @@ async test "connect client: a failing call raises the status the server answered
       ignore(client.unary("/test.Echo/Fail", b""))
       false
     } catch {
-      @wire.StatusError(status, message) => {
-        assert_eq(status, @wire.Status::PermissionDenied)
-        assert_eq(message, "not allowed")
+      @connect.CallFailed(failure) => {
+        assert_eq(failure.status, @wire.Status::PermissionDenied)
+        assert_eq(failure.message, "not allowed")
         true
       }
       _ => false

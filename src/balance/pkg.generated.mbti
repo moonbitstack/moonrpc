@@ -3,9 +3,9 @@ package "moonbitstack/moonrpc/balance"
 
 import {
   "moonbitlang/core/debug",
-  "moonbitlang/core/json",
   "moonbitstack/moondate",
   "moonbitstack/moonhttp/header",
+  "moonbitstack/moonjson",
   "moonbitstack/moonrpc/wire",
   "moonbitstack/moonward",
 }
@@ -174,7 +174,7 @@ pub(all) struct ServiceConfig {
 }
 pub fn ServiceConfig::empty() -> Self
 pub fn ServiceConfig::for_method(Self, String) -> MethodConfig?
-pub fn ServiceConfig::parse(String) -> Self raise @json.ParseError
+pub fn ServiceConfig::parse(String) -> Self raise @moonjson.Refused
 
 pub struct SubConn {
   address : String

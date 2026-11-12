@@ -4,10 +4,19 @@
 //
 // The suite's request is not read. It says which protocol and HTTP version to support, and this
 // server supports all of them on one listener: whether a connection speaks HTTP/1.1 or HTTP/2 is
-// decided from its first octets.
+// decided from its first octets. The `client` argument selects the other half, whose entry
+// point is in `client.mbt`.
 
 ///|
 fn main {
+  // `client` is the half the suite drives by writing one request per case to standard input;
+  // anything else is the server half, which announces the port it bound and then serves.
+  for arg in @env.args() {
+    if arg == "client" {
+      client_main()
+      return
+    }
+  }
   @async.run_async_main(() => {
     let service = @reference.Service::new() catch {
       e => {

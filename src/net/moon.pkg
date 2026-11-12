@@ -24,6 +24,7 @@ import {
   "moonbitlang/core/buffer",
   "moonbitlang/core/random",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
   "moonbitstack/moonrpc",
 }
 

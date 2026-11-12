@@ -112,12 +112,25 @@ pub struct Client {
   streams : @set.Set[String]
   mut next_id : Int64
 }
+pub async fn Client::bidi(Self, String, Array[Bytes], metadata? : Array[@header.Header], content_encoding? : UInt32) -> Array[Bytes] raise @wire.StatusError
+pub async fn Client::client_stream(Self, String, Array[Bytes], metadata? : Array[@header.Header], content_encoding? : UInt32) -> Bytes raise @wire.StatusError
 pub fn Client::declare_streams(Self, @proto.FileDescriptor) -> Unit
 pub async fn Client::invoke(Self, String, Array[Bytes], Array[@header.Header], Int32?, @balance.Retry?) -> @client.CallReply
 pub fn Client::new(&Link, caller? : String) -> Self
+pub async fn Client::open(Self, String, metadata? : Array[@header.Header], content_encoding? : UInt32) -> Exchange raise @wire.StatusError
 pub async fn Client::stream(Self, String, Array[Bytes], metadata? : Array[@header.Header], content_encoding? : UInt32) -> Array[Bytes] raise @wire.StatusError
 pub async fn Client::unary(Self, String, Bytes, metadata? : Array[@header.Header], timeout_millis? : Int32, content_encoding? : UInt32) -> Bytes raise @wire.StatusError
 pub impl @client.Caller for Client
+
+pub struct Exchange {
+  // private fields
+}
+pub async fn Exchange::close(Self) -> Unit raise @wire.StatusError
+pub fn Exchange::ended(Self) -> Bool
+pub async fn Exchange::next(Self) -> Bytes? raise @wire.StatusError
+pub fn Exchange::replies(Self) -> Array[Bytes]
+pub async fn Exchange::send(Self, Bytes) -> Unit raise @wire.StatusError
+pub fn Exchange::trailers(Self) -> Array[@header.Header]
 
 pub(all) struct Frame {
   kind : FrameKind
