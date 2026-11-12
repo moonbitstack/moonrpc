@@ -223,7 +223,7 @@ pub async fn Exchange::send(
   guard !self.ended else {
     raise @wire.StatusError(Internal, "a message after the stream closed")
   }
-  if self.send_window >= 0 && body.length().to_int64() <= self.send_window {
+  if self.send_window >= 0 && body.length().to_int64() > self.send_window {
     self.await_window(body.length().to_int64())
   }
   self.write(Frame::new(Data, self.id, body))
@@ -235,9 +235,9 @@ pub async fn Exchange::send(
 ///|
 /// Wait until the far end's window can take `needed` octets. Frames that arrive while waiting
 /// are not lost: a reply goes to the queue, a CLOSE ends the call, and a FEEDBACK adds its
-/// credit. A message larger than the window the far end ever granted is not waited for — no
-/// amount of FEEDBACK would make room for it, and stalling would deadlock a call the peer is
-/// willing to answer.
+/// credit. A message larger than the window as it stands waits for the credit that covers it,
+/// which is what the window is for — writing past it is what a strict peer closes a connection
+/// over, and tRPC-Go does.
 async fn Exchange::await_window(
   self : Exchange,
   needed : Int64,
@@ -309,6 +309,11 @@ pub async fn Exchange::next(self : Exchange) -> Bytes? raise @wire.StatusError {
 ///|
 /// Close the send side and read what the far end still owes: the messages this call never
 /// asked for land in [`Exchange::replies`] once the stream is over.
+///
+/// Nothing is written after the CLOSE. A FEEDBACK for a message that arrives behind it is a
+/// frame for a stream the far end has already forgotten — tRPC-Go answers one with
+/// `uninitialized meta` and drops the connection — and the window it would have returned is
+/// worth nothing to a stream that is ending.
 pub async fn Exchange::close(self : Exchange) -> Unit raise @wire.StatusError {
   if self.ended {
     return
@@ -320,10 +325,7 @@ pub async fn Exchange::close(self : Exchange) -> Unit raise @wire.StatusError {
       continue
     }
     match frame.kind {
-      Data => {
-        self.credit(frame.payload.length())
-        self.queue.push(frame.payload)
-      }
+      Data => self.queue.push(frame.payload)
       Close => {
         self.finish_with(frame)
         break

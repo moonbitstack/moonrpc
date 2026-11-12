@@ -189,7 +189,7 @@ impl Link for LoggingLink with fn read(self) {
 pub extend LoggingLink with Link::{read, write}
 
 ///|
-async test "flow: a reply that is read is credited back to the far end" {
+async test "flow: a reply behind the CLOSE is kept, and nothing is credited for it" {
   let message = b"reply"
   let link = LoggingLink::new(Session::new(windowed_server(message)))
   let client = Client::new(link)
@@ -197,14 +197,17 @@ async test "flow: a reply that is read is credited back to the far end" {
     e => abort("the call was refused: \{e.to_string()}")
   }
   exchange.send(b"ask") catch {
-    e => abort("the request was refused: \{e.to_string()}")
+    _ => abort("the request was refused")
   }
+  // This peer answers only once the send side closes, so both replies arrive behind the CLOSE.
   exchange.close() catch {
     e => abort("the call did not close: \{e.to_string()}")
   }
+  // They are still the caller's: a reply that arrives as the stream ends is not lost.
   assert_eq(exchange.replies().length(), 2)
-  // Every reply the client took back hands its octets over as credit. The frames it wrote also
-  // include the INIT, the request and the CLOSE; only the credits are counted here.
+  // But no credit goes back for them. A FEEDBACK written after the CLOSE is a frame for a
+  // stream the far end has already dropped — tRPC-Go answers one with `uninitialized meta` —
+  // and the window it would return is worth nothing to a stream that is ending.
   let mut credited = 0
   for bytes in link.written {
     let (frame, _) = Frame::decode(bytes)
@@ -215,5 +218,70 @@ async test "flow: a reply that is read is credited back to the far end" {
       credited = credited + meta.window_increment.reinterpret_as_int()
     }
   }
-  assert_eq(credited, 2 * message.length())
+  assert_eq(credited, 0)
+  // And the CLOSE is the last thing written: nothing follows it.
+  let (last, _) = Frame::decode(link.written[link.written.length() - 1])
+  assert_eq(last.kind, Close)
+}
+
+///|
+async test "flow: a message past the window is not written until its credit is read" {
+  let opening = StreamInitMeta::new(
+    request_meta=StreamInitRequestMeta::new(
+      caller="test",
+      callee="test.Window",
+      func="/test.Window/Echo",
+    ),
+    window=10,
+  )
+  let link = ScriptedLink::new([
+    Frame::new(Init, 1L, opening.encode()),
+    Frame::new(
+      Feedback,
+      1L,
+      StreamFeedbackMeta::new(window_increment=10).encode(),
+    ),
+  ])
+  let client = Client::new(link)
+  let exchange = client.open("/test.Window/Echo") catch {
+    e => abort("the call was refused: \{e.to_string()}")
+  }
+  // The INIT is the one frame read so far, and it named ten octets.
+  assert_eq(link.at, (1 : Int32))
+  exchange.send(b"0123456789") catch {
+    _ => abort("the first message was refused")
+  }
+  // It fit, so no credit was read for it: the write went out on the window that was already
+  // there.
+  assert_eq(link.at, (1 : Int32))
+  // Ten octets past what is left must be paid for first, and the credit is read before the
+  // octets go out — a sender that wrote them anyway is what a strict peer disconnects over.
+  exchange.send(b"abcdefghij") catch {
+    _ => abort("the second message was refused")
+  }
+  assert_eq(link.at, (2 : Int32))
+  assert_eq(link.written.length(), 3)
+}
+
+///|
+async test "flow: nothing goes out after the CLOSE, not even credit" {
+  // A message that arrives behind the CLOSE is kept for the caller, and no credit is written
+  // for it: the far end has dropped the stream by then, and tRPC-Go answers a FEEDBACK for a
+  // stream it no longer holds with `uninitialized meta`.
+  let link = ScriptedLink::new([
+    init_frame(1L, 100),
+    Frame::new(Data, 1L, b"late"),
+    Frame::new(Close, 1L, StreamCloseMeta::new().encode()),
+  ])
+  let client = Client::new(link)
+  let exchange = client.open("/test.Window/Echo") catch {
+    e => abort("the call was refused: \{e.to_string()}")
+  }
+  exchange.close() catch {
+    e => abort("the call did not close: \{e.to_string()}")
+  }
+  assert_eq(exchange.replies().length(), 1)
+  // The INIT and the CLOSE, and nothing else.
+  assert_eq(link.written.length(), 2)
+  assert_eq(link.written[1].kind, Close)
 }
