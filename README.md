@@ -12,7 +12,7 @@
 
 > Moved on mooncakes from `Lfan-ke/moonrpc` to `moonbitstack/moonrpc`.
 
-`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing, a stats observable and a channelz registry, and service-config driven retries with WaitForReady. Beside it sit three more protocol stacks: Thrift (framed, buffered, zlib, HTTP and header transports; binary, compact and JSON protocols; a processor, a client and an IDL compiler), trpc.group's tRPC (all four call kinds, interoperating with tRPC-Go and tRPC-Python), and Connect over HTTP/1.1 and HTTP/2 (the same four call kinds in protobuf or JSON, driven by the official conformance suite from both sides). The client and server engines are pure functions over frames and run on every backend; only the socket drivers in `net` are native.
+`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing, a stats observable and a channelz registry, and service-config driven retries with WaitForReady. Beside it sit four more protocol stacks: Thrift (framed, buffered, zlib, HTTP and header transports; binary, compact and JSON protocols; a processor, a client and an IDL compiler), trpc.group's tRPC (all four call kinds, interoperating with tRPC-Go and tRPC-Python), tRPC for TypeScript (JSON over HTTP with its batching envelope, interoperating with `@trpc/client` and `@trpc/server`), and Connect over HTTP/1.1 and HTTP/2 (the same four call kinds in protobuf or JSON, driven by the official conformance suite from both sides). The client and server engines are pure functions over frames and run on every backend; only the socket drivers in `net` are native.
 
 ```moonbit
 #rpc.message
@@ -215,6 +215,8 @@ Each layer is its own subpackage, so a program links the layers it uses and no o
 | `moonrpc/channelz` | the canonical `grpc.channelz.v1.Channelz` descriptor and its seven RPCs | `service`, `stream`, `proto`, `wire` |
 | `moonrpc/thrift` | the `Protocol` contract, TBinaryProtocol and TCompactProtocol, TFramedTransport, the processor and the client, independent of gRPC | core |
 | `moonrpc/trpc` | the tRPC frame and its two unary headers, the four streaming frames, a server over `Registrar` and a client over a byte link | `stream`, `client`, `proto`, `wire` |
+| `moonrpc/connect` | the Connect protocol: content types, the streaming envelope, the error body, and the dispatch that turns a request into a response | `wire`, `proto`, `stream`, moonhttp, moonjson, moonzip |
+| `moonrpc/trpcio` | tRPC for TypeScript: the JSON body, the batching envelope, a procedure table and a client, independent of gRPC | moonjson |
 | `moonrpc/cmd/rpc` | the generator behind the `#rpc` annotations | moonast |
 | `moonrpc/cmd/thriftc` | the `.thrift` IDL compiler: types, codecs, service registration and client | core |
 | `moonrpc/net` | `GrpcServer`, `Channel`, `MuxChannel`, `ManagedChannel` over TCP and TLS (native) | the root, moonnet, moontls, moonbitlang/async |
@@ -366,7 +368,10 @@ over TLS:
 | tRPC-Go | server | the same four calls, through `trpcd check` | identity | — | no | pass |
 | tRPC-Python | client | the same four calls | identity | — | no | pass |
 | tRPC-Python | server | the same four calls, through `trpcd check` | identity | — | no | pass |
+| tRPC for TypeScript (`@trpc/client`) | client | `greet.hello`, `math.add`, `greet.remember` (a mutation), `greet.fail`, and a three-call batch through `httpBatchLink` | identity | — | no | pass |
+| tRPC for TypeScript (`@trpc/server`) | server | the same calls, through `trpciod check` | identity | — | no | pass |
 | moonrpc | client and server | `trpcd check` against `trpcd` | identity | — | no | pass |
+| moonrpc | client and server | `trpciod check` against `trpciod` | identity | — | no | pass |
 
 `cmd/greetd` is the server the first two call; the third runs the same generated client
 against a grpc-go server and requires the two answers to match byte for byte. The
@@ -388,6 +393,10 @@ with binary, compact or JSON inside each, and the header transport's zlib transf
 ONEWAY method — it must leave no reply on the wire, which the call that follows would otherwise
 read as its own. The tRPC rows run one method per cardinality, the bidirectional one message at
 a time: a server that waited for the send side to close before answering would deadlock against it.
+The tRPC-for-TypeScript rows are not the same protocol as those: they are JSON over HTTP, and
+what they check is the batching envelope — three calls in one request, answered in the order
+they were asked, each either a result or an error — through the peer's real `httpLink` and
+`httpBatchLink`.
 
 The two `moonrpc` rows are the third pairing, this stack against itself, and they cover what
 no foreign job can: one transport on **both** sides at once. A peer picks its own settings, so
@@ -415,7 +424,8 @@ built from a pinned tag with bindings generated by that release's compiler.
 | tRPC-Go, both directions | `scripts/interop/trpc_interop.sh`: their codec's frames to this server and this client's frames to their server, one method per cardinality | pass |
 | tRPC-Python, both directions | the same pairings, with `TrpcClientCodec`/`TrpcServerCodec` | pass |
 | tRPC differential | five requests and three response headers encoded by tRPC-Python 1.0.0, reproduced octet for octet | pass |
-| `connectrpc/conformance`, server | 724 cases: this reference service against the runner's reference client, both HTTP versions, both codecs, identity and gzip | pass |
+| tRPC for TypeScript, both directions | `scripts/interop/trpcio_interop.sh`: their client's links to this server and this client to their server, four procedures plus the batch envelope | pass |
+| `connectrpc/conformance`, server | 724 cases: this reference service against the runner's reference client, both HTTP versions, both codecs, identity and gzip | 654 pass, 70 known-failing |
 | `connectrpc/conformance`, client | 876 cases: this client against the runner's reference server, including all 76 cancellation cases | pass |
 
 `scripts/interop/build_thrift_peers.sh` builds the reference client and server;
@@ -840,6 +850,67 @@ same against tRPC-Go's and tRPC-Python's own codecs.
 | Multiplexed streams on one connection | stream ids in the head; `Session` keeps one table per connection |
 | Streaming back-pressure | `INIT`'s window and `FEEDBACK` increments, granted per frame consumed |
 
+## tRPC for TypeScript
+
+The `trpc.io` protocol is not the `trpc.group` one above. It is JSON over HTTP, one call per
+request or several in a batch, with no frame and no session: the call names its own path in the
+URL, and the body carries only its input. It is what a `@trpc/server` router speaks, and its
+envelope borrows JSON-RPC's shape without its method dispatch.
+
+`@trpcio.Server` is a table of procedures, and `handle` is one request in, one answer out — a
+pure function, so a test drives the server half without a socket, and `net::serve_trpcio` is the
+HTTP/1.1 driver over it:
+
+```moonbit native
+fn trpcio_service() -> @trpcio.Server {
+  let server = @trpcio.Server::new()
+  // A query answers a value and may be asked for with GET; a mutation may not.
+  server.query("greet.hello", input => Ok({ "greeting": Json::string("hello") }))
+  server.mutation("greet.remember", input => {
+    let name = match input {
+      Some(value) => value
+      None => Json::null()
+    }
+    Ok({ "name": name })
+  })
+  // A failure names its tRPC code, and the code carries the HTTP status.
+  server.query("greet.fail", _input => {
+    Failed(@trpcio.failure_of("FORBIDDEN", "not for you", path="greet.fail"))
+  })
+  server
+}
+```
+
+The verb follows the kind, and `@trpc/server` enforces it in both directions: a query is a GET
+with its input in `?input=`, a mutation is a POST with its input as the body, and a POST to a
+query or a GET to a mutation is a `405`. A batch carries one verb for all of its calls, so one
+batch is one kind — `{"0":<input>,"1":<input>}`, keyed by position, with a call that has no input
+left out rather than written as `null` — and a batch with both kinds in it is two requests whose
+answers are merged back into the order the calls were given, which is what tRPC's own link does.
+The reply to one request is an array in the same order, each element either
+`{"result":{"data":...}}` or `{"error":{...}}`; a failure in one call does not disturb its
+neighbours:
+
+```moonbit native
+async fn trpcio_calls(port : Int32) -> Unit raise {
+  let client = @net.trpcio_client("127.0.0.1", port, base="/trpc")
+  let greeting = client.query("greet.hello", input=Json::string("moon"))
+  // One request, three answers, in the order they were asked for.
+  let outcomes = client.batch([
+    @trpcio.Call::new("greet.hello", input=Json::string("batch")),
+    @trpcio.Call::new("math.add", input={ "a": Json::number(1), "b": Json::number(2) }),
+    @trpcio.Call::new("greet.fail"),
+  ])
+  println(greeting.to_string() + outcomes.length().to_string())
+}
+```
+
+`scripts/interop/trpcio_peers` is the other implementation: `@trpc/server` behind `createHTTPServer`
+with the same four procedures, and a client that goes through the real `httpLink` and
+`httpBatchLink`. `cmd/trpciod` is this side of each — it serves, and `trpciod check` calls a server
+and verifies every answer, including a batch that mixes a query with a mutation — so CI runs their
+client against this server, this client against their server, and this stack against itself.
+
 ## Connect
 
 Beside gRPC sits the Connect protocol: the same four call kinds and the same handlers, over
@@ -883,8 +954,17 @@ over both HTTP versions. The same binary with a `client` argument is the other h
 length-delimited `ClientCompatRequest` per case on stdin, drives the call with `connect.Client`,
 and writes the result back in the runner's terms.
 
-That job gates the build: the suite is clean — 724 of 724 cases pass, over both HTTP versions, both
-codecs, and identity and gzip. Every failure it drove out along the way was a disagreement
+That job gates the build: the runner drives 724 cases over both HTTP versions, both codecs, and
+identity and gzip, and 654 of them pass. The other seventy are one class — every `Deadline
+Propagation` permutation over TLS — and they are declared in
+`scripts/conformance/connect_server_known_failing.txt` rather than skipped: each needs a TLS
+handshake inside a two-second deadline while the suite drives forty-eight RPCs at once, and a
+handshake here costs one RSA-2048 private-key operation in pure MoonBit, measured at 0.49 s.
+Forty-eight of those interleaved on one event loop cannot meet the deadline. The same cases pass
+with the suite run one at a time (`-p 1`: 140 of 140 TLS cases), and every other TLS case passes
+at full parallelism, so what falls short is the crypto stack's throughput, not this server's TLS.
+The list is a statement, not a hole: the runner still runs all seventy, and a case that starts
+passing fails the build until the list is updated. Every failure it drove out along the way was a disagreement
 between this encoder and the protocol rather than a missing feature: `metadata` as a map of
 lists, the `connect-timeout-ms` header, error details as `Any` in unpadded base64, a gzip'd unary
 body, a reply head sent before the request was read, `415` for a content type the server does not
@@ -1107,8 +1187,9 @@ async fn throttled_call(host : String) -> Unit raise {
   peer's remaining window, so a sender that outruns the window is not throttled; and a
   bidirectional call answers each `DATA` as it arrives but does not run the handler on a task
   of its own, so one slow handler holds the connection's frames.
-- tRPC: the TypeScript `trpc.io` protocol is a different protocol from this one — JSON-RPC
-  calls over HTTP with its own batching and link semantics — and nothing here speaks it.
+- tRPC for TypeScript: no subscriptions — the protocol's WebSocket link — and the transformer is
+  identity, so a `superjson`-transformed body is the caller's to serialise and the reply's to
+  read back; `Server::new` bounds a batch at 32 calls, where tRPC's own server leaves it open.
 
 ## Licence
 

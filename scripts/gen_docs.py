@@ -65,6 +65,11 @@ SECTIONS = [
      "through the same Registrar the gRPC engines implement; Client is written against a "
      "Link, so the socket driver in net is the only native part. RetCode carries the "
      "framework's own codes and how each reads as a gRPC status."),
+    ("trpcio", "trpcio", "trpcio — tRPC for TypeScript",
+     "The `trpc.io` protocol, which is JSON over HTTP rather than the framed protocol above: "
+     "the single-call body and the batch envelope keyed by position, the result and error "
+     "shapes, the failure codes and the HTTP status each maps to, a procedure table whose "
+     "handler returns a Json, and a client written against one transport function."),
     ("net", "net", "net — sockets (native)",
      "GrpcServer serves the engine over a real TCP socket (h2c); Channel, the "
      "multiplexing channel and the managed channel dial one or many backends. Native "
