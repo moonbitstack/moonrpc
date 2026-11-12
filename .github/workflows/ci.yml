@@ -756,6 +756,48 @@ jobs:
           TRPCD=$(ls ./_build/native/debug/build/cmd/trpcd/trpcd ./_build/native/debug/build/cmd/trpcd/trpcd.exe 2>/dev/null | head -1)
           bash scripts/interop/trpc_interop.sh "$TRPCD" ./scripts/interop/bin/trpcgo python3
 
+  # tRPC for TypeScript is a different protocol from the `trpc.group` one above — JSON over
+  # HTTP with a batching envelope, not a binary frame — so it has its own peer: `@trpc/server`
+  # and `@trpc/client` at pinned versions, which encode with their own links. Their bytes reach
+  # this server, this client's bytes reach their server, and the batch envelope is checked in
+  # the order it was asked for.
+  trpcio-interop:
+    name: real tRPC-for-TypeScript interop (@trpc/server and @trpc/client)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: install moon
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+
+      - name: post install
+        run: |
+          moon version --all
+          moon update
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `npm ci` rather than `npm install`: the lockfile is committed, so the peer's whole tree
+      # is the one this job was written against.
+      - name: the TypeScript peer, at a pinned version
+        working-directory: scripts/interop/trpcio_peers
+        run: npm ci --no-audit --no-fund
+
+      - name: build this stack
+        run: moon build --target native
+
+      - name: this server to their client, their server to this client, and itself
+        run: |
+          # The program itself, not a core file that happens to share its prefix.
+          TRPCIOD=$(ls ./_build/native/debug/build/cmd/trpciod/trpciod ./_build/native/debug/build/cmd/trpciod/trpciod.exe 2>/dev/null | head -1)
+          bash scripts/interop/trpcio_interop.sh "$TRPCIOD"
+
   # The official Connect suite, driving the reference service in `src/conformance` as a server
   # under test. What it exercises is `scripts/conformance/connect.yaml`: Connect over both HTTP
   # versions, both codecs, identity and gzip.
