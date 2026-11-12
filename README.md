@@ -970,9 +970,11 @@ server's TLS. `--known-flaky` is the runner's word for a race: all seventy still
 failing one is still named in the output, but the outcome of a timing race does not decide the
 build — `--known-failing` would fail it in the other direction, on a machine fast enough to pass
 them. And the class is not left at that: CI runs it a second time with `--parallel 1` and nothing
-tolerated, where the handshakes no longer compete and all seventy pass outright. The tolerated
-run is what keeps the full matrix gating every other dimension; the single-RPC run is what keeps
-`known-flaky` from becoming a place to hide.
+tolerated, where the handshakes no longer compete and the whole class passes — 70 of 70 in 33
+seconds. In run 43238907338 the parallel run passed 3505 of the 3556 and left 51 to the race; the
+serial run passed all 70 of the class, those 51 among them. Between the two, every case the suite
+defines for this service passes. The tolerated run is what keeps the full matrix gating every
+other dimension; the serial run is what keeps `known-flaky` from becoming a place to hide.
 
 Every failure it drove out along the way was a disagreement between this encoder and the
 protocol rather than a missing feature: `metadata` as a map of lists, the `connect-timeout-ms`
