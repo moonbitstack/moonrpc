@@ -48,6 +48,12 @@ keywords = [
   "trpc",
   "trpc-go",
   "trpc-python",
+  "trpc-io",
+  "typescript",
+  "connect",
+  "connect-protocol",
+  "connectrpc",
+  "conformance",
   "wasm",
   "moonbit",
 ]
