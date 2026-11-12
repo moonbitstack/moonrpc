@@ -6,6 +6,10 @@
 //   transport: framed | buffered | zlib | http | header | header-zlib
 //   protocol:  binary | compact | json
 //
+// `header` and `zlib` are also two words, because that is how Apache Thrift's own peers spell
+// the header transport with its zlib transform: `header binary zlib` is read as `header-zlib`,
+// not as the plain zlib transport with the header word ignored.
+//
 // The handlers below only see `Protocol`, so the same service answers in every protocol and
 // every transport; the words pick the bytes on the wire, not the service. The header
 // transport carries the inner protocol in each frame, so it can answer both at once.
@@ -298,6 +302,9 @@ fn main {
   let mut checking = false
   let mut codec = Binary
   let mut wire = Framed
+  // Kept apart from `wire` so the two words `header` and `zlib` mean the header transport's
+  // transform rather than the plain zlib transport, whatever order they arrive in.
+  let mut zlib_transform = false
   let mut port = 9090
   let args = @env.args()
   for i = 1; i < args.length(); i = i + 1 {
@@ -308,7 +315,7 @@ fn main {
       "check" => checking = true
       "framed" => wire = Framed
       "buffered" => wire = Buffered
-      "zlib" => wire = Zlib
+      "zlib" => zlib_transform = true
       "http" => wire = Http
       "header" => wire = Header
       "header-zlib" => wire = HeaderZlib
@@ -317,6 +324,16 @@ fn main {
       "json" => codec = Json
       _ => port = @string.parse_int(arg[:]) catch { _ => port }
     }
+  }
+  let wire = if zlib_transform {
+    match wire {
+      // The header transport names its compression in the frame, so this is its transform.
+      Header | HeaderZlib => HeaderZlib
+      // Any other transport with `zlib` is TZlibTransport, which is what the word always meant.
+      _ => Zlib
+    }
+  } else {
+    wire
   }
   let protocol_word = match codec {
     Binary => "binary"
