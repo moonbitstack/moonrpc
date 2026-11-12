@@ -38,6 +38,17 @@ test "connect: an envelope is a flag byte and a big-endian length" {
 }
 
 ///|
+test "connect: the two flag bits are the numbers the protocol gives them" {
+  // The far end recognises a stream's last envelope by this octet, and a compressed one by the
+  // other, so the numbers are the contract — not a value this side may choose.
+  assert_eq(flag_compressed, b'\x01')
+  assert_eq(flag_end_stream, b'\x02')
+  let end = encode_envelope(b"{}", flags=flag_end_stream)
+  assert_eq(end[0], b'\x02')
+  assert_eq(end[1:5], b"\x00\x00\x00\x02")
+}
+
+///|
 test "connect: the end-stream envelope carries the flags bit and a JSON payload" {
   let end = encode_envelope(b"{}", flags=flag_end_stream)
   let (envelope, _) = decode_envelope(end[:]).unwrap()
