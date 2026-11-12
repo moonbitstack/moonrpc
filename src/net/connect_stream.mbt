@@ -13,6 +13,7 @@ let h2_cancel : Int32 = 8
 pub(all) struct Http1StreamTransport {
   host : String
   port : Int32
+  tls : @tls.Client?
   conn : Ref[@tcp.Conn?]
   http : Ref[@http1.Conn?]
   status : Ref[Int32]
@@ -30,6 +31,7 @@ pub fn Http1StreamTransport::new(
   {
     host,
     port,
+    tls: None,
     conn: Ref(None),
     http: Ref(None),
     status: Ref(0),
@@ -41,6 +43,18 @@ pub fn Http1StreamTransport::new(
 }
 
 ///|
+
+///|
+pub fn Http1StreamTransport::secure(
+  host : String,
+  port : Int32,
+  tls : @tls.Client,
+) -> Http1StreamTransport {
+  let plain = Http1StreamTransport::new(host, port)
+  { ..plain, tls: Some(tls), }
+}
+
+///|
 pub impl @connect.StreamTransport for Http1StreamTransport with fn open(
   self,
   path,
@@ -48,7 +62,7 @@ pub impl @connect.StreamTransport for Http1StreamTransport with fn open(
   headers,
 ) {
   ignore(content)
-  let conn = @tcp.dial(self.host, port=self.port)
+  let conn = @tcp.dial(self.host, port=self.port, tls?=self.tls)
   self.conn.val = Some(conn)
   self.http.val = Some(@http1.Conn::new(@http1.Role::Client))
   let mut text = "POST " + path + " HTTP/1.1\r\nHost: " + self.host + "\r\n"
@@ -191,6 +205,7 @@ pub extend Http1StreamTransport with @connect.StreamTransport::{
 pub(all) struct Http2StreamTransport {
   host : String
   port : Int32
+  tls : @tls.Client?
   conn : Ref[@tcp.Conn?]
   encoder : Ref[@hpack.Encoder?]
   decoder : Ref[@hpack.Decoder?]
@@ -210,6 +225,7 @@ pub fn Http2StreamTransport::new(
   {
     host,
     port,
+    tls: None,
     conn: Ref(None),
     encoder: Ref(None),
     decoder: Ref(None),
@@ -223,6 +239,18 @@ pub fn Http2StreamTransport::new(
 }
 
 ///|
+
+///|
+pub fn Http2StreamTransport::secure(
+  host : String,
+  port : Int32,
+  tls : @tls.Client,
+) -> Http2StreamTransport {
+  let plain = Http2StreamTransport::new(host, port)
+  { ..plain, tls: Some(tls), }
+}
+
+///|
 pub impl @connect.StreamTransport for Http2StreamTransport with fn open(
   self,
   path,
@@ -230,7 +258,7 @@ pub impl @connect.StreamTransport for Http2StreamTransport with fn open(
   headers,
 ) {
   ignore(content)
-  let conn = @tcp.dial(self.host, port=self.port)
+  let conn = @tcp.dial(self.host, port=self.port, tls?=self.tls)
   self.conn.val = Some(conn)
   self.encoder.val = Some(@hpack.Encoder::new())
   self.decoder.val = Some(@hpack.Decoder::new())

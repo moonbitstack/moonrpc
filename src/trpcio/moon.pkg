@@ -1,0 +1,11 @@
+// tRPC for TypeScript: JSON over HTTP, with tRPC's batching envelope around it. Not the
+// `trpc.group` protocol in `trpc/`, which is a binary framed protocol of its own.
+import {
+  "moonbitlang/core/encoding/utf8",
+  "moonbitstack/moonjson",
+}
+
+import {
+  "moonbitlang/async",
+  "moonbitlang/core/debug",
+} for "wbtest"

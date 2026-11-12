@@ -156,7 +156,7 @@ pub async fn Exchange::next(self : Exchange) -> Bytes? {
         self.body.reset()
         self.body.write_bytes(data[stop:].to_owned())
         if envelope.is_end_stream() {
-          for trailer in trailers_of_end(envelope) {
+          for trailer in trailers_of_end(envelope, self.reply_encoding()) {
             self.trailers.push(trailer)
           }
           self.stream_end = true
@@ -164,8 +164,9 @@ pub async fn Exchange::next(self : Exchange) -> Bytes? {
         }
         let message = if envelope.is_compressed() {
           self.compressed = true
-          @gzip.gunzip(envelope.payload[:]) catch {
-            _ => envelope.payload
+          match decode_compression(self.reply_encoding(), envelope.payload) {
+            Some(plain) => plain
+            None => envelope.payload
           }
         } else {
           envelope.payload
@@ -190,6 +191,12 @@ pub async fn Exchange::next(self : Exchange) -> Bytes? {
       }
     }
   }
+}
+
+///|
+/// The encoding the peer named for the reply's envelopes.
+fn Exchange::reply_encoding(self : Exchange) -> String {
+  response_encoding(self.raw, true)
 }
 
 ///|

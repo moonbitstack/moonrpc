@@ -12,3 +12,7 @@ scripts/interop/bin/
 
 # A suite run's log, when one is fetched for reading.
 suite.log
+
+# TypeScript interop peer node_modules
+scripts/interop/**/node_modules/
+scripts/interop/**/package-lock.json

@@ -2,6 +2,8 @@
 // reference server: announce the port it bound and serve until killed. With `client` it is the
 // client under test: read one length-delimited request per case on stdin and answer each one.
 import {
+  "moonbitstack/moontls/tls",
+  "moonbitstack/mooncred/x509",
   "moonbitstack/moonrpc/conformance" @reference,
   "moonbitstack/moonrpc/connect",
   "moonbitstack/moonrpc/net",

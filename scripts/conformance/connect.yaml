@@ -11,7 +11,14 @@ features:
   versions: [HTTP_VERSION_1, HTTP_VERSION_2]
   protocols: [PROTOCOL_CONNECT]
   codecs: [CODEC_PROTO, CODEC_JSON]
-  compressions: [COMPRESSION_IDENTITY, COMPRESSION_GZIP]
+  # zstd is deliberately absent: moonzip's zstd decoder only handles raw/RLE blocks, and
+  # Go's encoder emits entropy-coded ones. The library can still *write* zstd requests.
+  compressions:
+    - COMPRESSION_IDENTITY
+    - COMPRESSION_GZIP
+    - COMPRESSION_BR
+    - COMPRESSION_DEFLATE
+    - COMPRESSION_SNAPPY
   streamTypes:
     - STREAM_TYPE_UNARY
     - STREAM_TYPE_CLIENT_STREAM
@@ -19,10 +26,10 @@ features:
     - STREAM_TYPE_HALF_DUPLEX_BIDI_STREAM
     - STREAM_TYPE_FULL_DUPLEX_BIDI_STREAM
   supportsH2c: true
-  supportsTls: false
+  supportsTls: true
   supportsTrailers: true
   supportsHalfDuplexBidiOverHttp1: true
-  supportsConnectGet: false
+  supportsConnectGet: true
   supportsMessageReceiveLimit: false
 
 # Also run, though nothing here declares it: the `Timeouts` group. It asks the server to miss a

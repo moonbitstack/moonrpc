@@ -7,11 +7,31 @@
 pub(all) struct Http1Transport {
   host : String
   port : Int32
+  use_get : Bool
+  tls : @tls.Client?
 }
 
 ///|
 pub fn Http1Transport::new(host : String, port : Int32) -> Http1Transport {
-  { host, port, }
+  { host, port, use_get: false, tls: None, }
+}
+
+///|
+/// The GET form of an idempotent unary call: the message travels in the query string.
+pub fn Http1Transport::get(host : String, port : Int32) -> Http1Transport {
+  { host, port, use_get: true, tls: None, }
+}
+
+///|
+/// The same transport over TLS. `tls` is built from the certificate the peer presented, with
+/// the ALPN name the HTTP version this call speaks needs.
+pub fn Http1Transport::secure(
+  host : String,
+  port : Int32,
+  use_get~ : Bool = false,
+  tls : @tls.Client,
+) -> Http1Transport {
+  { host, port, use_get, tls: Some(tls), }
 }
 
 ///|
@@ -22,28 +42,46 @@ pub impl @connect.Transport for Http1Transport with fn post(
   body,
   headers,
 ) {
-  let conn = @tcp.dial(self.host, port=self.port)
+  let conn = @tcp.dial(self.host, port=self.port, tls?=self.tls)
   defer conn.close()
   let http = @http1.Conn::new(@http1.Role::Client)
   let fields : Array[@header.Header] = [
     @header.Header::of("host", self.host),
     @header.Header::of("accept", "*/*"),
   ]
+  let (verb, target, wire) = if self.use_get {
+    let name = @connect.compression_of(
+      @connect.header_of(headers, "content-encoding"),
+    )
+    ("GET", @connect.get_target(path, content, body, name), b"")
+  } else {
+    ("POST", path, body)
+  }
   for h in headers {
+    let lower = @utf8.decode_lossy(h.name).to_lower()
+    // A GET carries its codec and compression in the query, not in headers.
+    if self.use_get &&
+      (
+        lower == "content-type" ||
+        lower == "content-encoding" ||
+        lower == "content-length" ||
+        lower == "connect-protocol-version"
+      ) {
+      continue
+    }
     fields.push(h)
   }
   let request = @http1.Request::of(
-    "POST",
-    path,
+    verb,
+    target,
     fields~,
-    body=@http1.Body::Sized(body.length()),
+    body=@http1.Body::Sized(wire.length()),
   )
   conn.write(http.send(@http1.Event::Request(request)))
-  if body.length() > 0 {
-    conn.write(http.send(@http1.Event::Data(body)))
+  if wire.length() > 0 {
+    conn.write(http.send(@http1.Event::Data(wire)))
   }
   conn.write(http.send(@http1.Event::End([])))
-  ignore(content)
   let status = Ref(0)
   let answer = Buffer()
   let reply_headers : Array[@header.Header] = []
@@ -85,11 +123,29 @@ pub extend Http1Transport with @connect.Transport::{post}
 pub(all) struct Http2Transport {
   host : String
   port : Int32
+  use_get : Bool
+  tls : @tls.Client?
 }
 
 ///|
 pub fn Http2Transport::new(host : String, port : Int32) -> Http2Transport {
-  { host, port, }
+  { host, port, use_get: false, tls: None, }
+}
+
+///|
+/// The GET form of an idempotent unary call over HTTP/2.
+pub fn Http2Transport::get(host : String, port : Int32) -> Http2Transport {
+  { host, port, use_get: true, tls: None, }
+}
+
+///|
+pub fn Http2Transport::secure(
+  host : String,
+  port : Int32,
+  use_get~ : Bool = false,
+  tls : @tls.Client,
+) -> Http2Transport {
+  { host, port, use_get, tls: Some(tls), }
 }
 
 ///|
@@ -104,30 +160,44 @@ pub impl @connect.Transport for Http2Transport with fn post(
   body,
   headers,
 ) {
-  ignore(content)
-  let conn = @tcp.dial(self.host, port=self.port)
+  let conn = @tcp.dial(self.host, port=self.port, tls?=self.tls)
   defer conn.close()
   let encoder = @hpack.Encoder::new()
   let decoder = @hpack.Decoder::new()
   conn.write(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
   conn.write(@http2.Frame::Settings(params=[], ack=false).encode())
+  let (verb, target, wire) = if self.use_get {
+    let name = @connect.compression_of(
+      @connect.header_of(headers, "content-encoding"),
+    )
+    ("GET", @connect.get_target(path, content, body, name), b"")
+  } else {
+    ("POST", path, body)
+  }
   let fields : Array[@header.Header] = [
-    { name: b":method", value: b"POST", },
+    { name: b":method", value: @utf8.encode(verb), },
     { name: b":scheme", value: b"http", },
     { name: b":authority", value: @utf8.encode(self.host), },
-    { name: b":path", value: @utf8.encode(path), },
+    { name: b":path", value: @utf8.encode(target), },
   ]
   for h in headers {
-    fields.push({
-      name: @utf8.encode(@utf8.decode_lossy(h.name).to_lower()),
-      value: h.value,
-    })
+    let lower = @utf8.decode_lossy(h.name).to_lower()
+    if self.use_get &&
+      (
+        lower == "content-type" ||
+        lower == "content-encoding" ||
+        lower == "content-length" ||
+        lower == "connect-protocol-version"
+      ) {
+      continue
+    }
+    fields.push({ name: @utf8.encode(lower), value: h.value, })
   }
   conn.write(
     @http2.Frame::Headers(
       stream_id=1,
       fragment=encoder.encode(fields),
-      end_stream=body.length() == 0,
+      end_stream=wire.length() == 0,
       end_headers=true,
       priority=None,
       padding=0,
@@ -148,27 +218,27 @@ pub impl @connect.Transport for Http2Transport with fn post(
   let reply_headers : Array[@header.Header] = []
   let answer = Buffer()
   let mut status = 0
-  let mut done = body.length() == 0
+  let mut done = wire.length() == 0
   for ;; {
     // Send what the window allows before reading anything: the reply may be waiting for room
     // a body the peer is still reading from us would otherwise use up.
-    while sent < body.length() && window > 0 {
-      let room = body.length() - sent
+    while sent < wire.length() && window > 0 {
+      let room = wire.length() - sent
       let allowed = if window < h2_chunk { window } else { h2_chunk }
       let size = if room < allowed { room } else { allowed }
-      let piece = body[sent:sent + size].to_owned()
+      let piece = wire[sent:sent + size].to_owned()
       sent = sent + size
       window = window - size
       conn.write(
         @http2.Frame::Data(
           stream_id=1,
           data=piece,
-          end_stream=sent >= body.length(),
+          end_stream=sent >= wire.length(),
           padding=0,
         ).encode(),
       )
     }
-    done = sent >= body.length()
+    done = sent >= wire.length()
     let frame = read_frame(conn) catch { _ => break }
     match frame {
       @http2.Frame::Settings(ack~, params~) =>

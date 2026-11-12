@@ -70,7 +70,9 @@ pub fn Service::routes(_self : Service) -> Array[(String, @connect.Route)] {
       {
         input: idempotent_request,
         output: idempotent_response,
-        handler: @stream.Handler::Unary((ctx, req) => answer_unary(ctx, req)),
+        handler: @stream.Handler::Unary((ctx, req) => {
+          answer_idempotent_unary(ctx, req)
+        }),
       },
     ),
     (
@@ -165,6 +167,23 @@ fn type_url(message : String) -> String {
 ///|
 /// One message back, or the error the definition named.
 fn answer_unary(ctx : @stream.RpcContext, request : Bytes) -> Bytes {
+  answer_unary_as(ctx, request, "UnaryRequest")
+}
+
+///|
+/// The idempotent method echoes its request too, but the `Any` in `request_info` has to name
+/// `IdempotentUnaryRequest`: the two messages share a shape on the wire, and a type URL that
+/// guessed the more common one would fail the suite's round-trip comparison.
+fn answer_idempotent_unary(ctx : @stream.RpcContext, request : Bytes) -> Bytes {
+  answer_unary_as(ctx, request, "IdempotentUnaryRequest")
+}
+
+///|
+fn answer_unary_as(
+  ctx : @stream.RpcContext,
+  request : Bytes,
+  request_name : String,
+) -> Bytes {
   let definition = decode_unary_def(definition_of(request))
   apply_headers(ctx, definition.headers)
   apply_trailers(ctx, definition.trailers)
@@ -172,7 +191,7 @@ fn answer_unary(ctx : @stream.RpcContext, request : Bytes) -> Bytes {
     seen_headers(ctx),
     ctx.deadline_millis,
     [request],
-    type_url("UnaryRequest"),
+    type_url(request_name),
   )
   if too_late(ctx, definition.delay_ms) {
     ctx.fail(code_deadline_exceeded, "the deadline passed before the response")

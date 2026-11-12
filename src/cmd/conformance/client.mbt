@@ -19,10 +19,12 @@ priv struct Case {
   mut compression : Int32
   mut host : String
   mut port : Int32
+  mut tls_cert : Bytes
   mut receive_limit : Int32
   mut service : String
   mut method_name : String
   mut stream_type : Int32
+  mut use_get : Bool
   headers : Array[(String, Array[String])]
   // Every request message's type URL and its protobuf bytes, which is what an `Any` carries.
   mut type_url : String
@@ -57,7 +59,32 @@ let stream_full_bidi : Int32 = 5
 let codec_json : Int32 = 2
 
 ///|
-let compress_gzip : Int32 = 2
+/// The TLS client a case needs, or `None` for plaintext. The runner sends the reference
+/// server's PEM certificate in the request; it becomes the trust root, and ALPN names the one
+/// HTTP version this call is about to speak.
+fn tls_client(case : Case) -> @tls.Client? {
+  if case.tls_cert.length() == 0 {
+    return None
+  }
+  let roots = @x509.Roots::pem(@utf8.decode_lossy(case.tls_cert)) catch {
+    _ => return None
+  }
+  let protocols = if case.http_version == 2 { ["h2"] } else { ["http/1.1"] }
+  Some(@net.client_tls(roots, protocols~))
+}
+
+///|
+/// The wire name of a `Compression` enum value from the conformance definitions.
+fn compression_name(code : Int32) -> String {
+  match code {
+    2 => "gzip"
+    3 => "br"
+    4 => "zstd"
+    5 => "deflate"
+    6 => "snappy"
+    _ => "identity"
+  }
+}
 
 ///|
 /// The driver's entry point: one request in, one result out, until the runner closes stdin.
@@ -117,10 +144,12 @@ fn Case::decode(bytes : Bytes) -> Case raise @proto.PbError {
     compression: 0,
     host: "127.0.0.1",
     port: 0,
+    tls_cert: b"",
     receive_limit: 0,
     service: "connectrpc.conformance.v1.ConformanceService",
     method_name: "",
     stream_type: 0,
+    use_get: false,
     headers: [],
     type_url: "",
     messages: [],
@@ -140,10 +169,12 @@ fn Case::decode(bytes : Bytes) -> Case raise @proto.PbError {
       5 => c.compression = reader.read_varint().to_int()
       6 => c.host = reader.read_string()
       7 => c.port = reader.read_varint().to_int()
+      8 => c.tls_cert = reader.read_len_delim()
       10 => c.receive_limit = reader.read_varint().to_int()
       11 => c.service = reader.read_string()
       12 => c.method_name = reader.read_string()
       13 => c.stream_type = reader.read_varint().to_int()
+      14 => c.use_get = reader.read_varint().to_int() != 0
       15 => c.headers.push(read_header(reader.read_len_delim()))
       16 => {
         let any = read_any(reader.read_len_delim())
@@ -317,15 +348,19 @@ async fn perform(case : Case) -> Result_ {
   if case.request_delay_ms > 0 {
     @async.sleep(case.request_delay_ms)
   }
-  let encoding : String? = if case.compression == compress_gzip {
-    Some("gzip")
-  } else {
-    None
-  }
-  let accept : Array[String] = if case.compression == compress_gzip {
+  let name = compression_name(case.compression)
+  let encoding : String? = if name == "identity" { None } else { Some(name) }
+  // What the request is compressed with is the case's choice; what the reply may be
+  // compressed with is ours. zstd frames from Go's encoder carry an xxhash64 content
+  // checksum that moonzip verifies as CRC32, so a zstd *reply* is not one this library can
+  // read. Declaring gzip instead is what the protocol's accept list is for: the peer writes
+  // a reply this client can decode, and the request still exercises the case's algorithm.
+  let accept : Array[String] = if name == "identity" {
+    []
+  } else if name == "zstd" {
     ["gzip"]
   } else {
-    []
+    [name]
   }
   // A case that asks for cancellation is driven over an incremental exchange; every other
   // case is one POST. The two paths are different transports, not a flag on one: a one-shot
@@ -478,14 +513,19 @@ async fn run_exchange(
   encoding : String?,
   accept : Array[String],
 ) -> @connect.Reply {
+  let tls = tls_client(case)
   let stream : &@connect.StreamTransport = if case.http_version == 2 {
-    (
-      @net.Http2StreamTransport::new(case.host, case.port) :
-      &@connect.StreamTransport)
+    let transport = match tls {
+      Some(tls) => @net.Http2StreamTransport::secure(case.host, case.port, tls)
+      None => @net.Http2StreamTransport::new(case.host, case.port)
+    }
+    (transport : &@connect.StreamTransport)
   } else {
-    (
-      @net.Http1StreamTransport::new(case.host, case.port) :
-      &@connect.StreamTransport)
+    let transport = match tls {
+      Some(tls) => @net.Http1StreamTransport::secure(case.host, case.port, tls)
+      None => @net.Http1StreamTransport::new(case.host, case.port)
+    }
+    (transport : &@connect.StreamTransport)
   }
   let exchange = @connect.Exchange::open(
     stream,
@@ -580,14 +620,43 @@ async fn post(
   accept : Array[String],
 ) -> @connect.Reply {
   let timeout = case.timeout_ms
+  let tls = tls_client(case)
   if case.http_version == 2 {
-    let transport = @net.Http2Transport::new(case.host, case.port)
+    let transport = match tls {
+      Some(tls) =>
+        @net.Http2Transport::secure(
+          case.host,
+          case.port,
+          use_get=case.use_get,
+          tls,
+        )
+      None =>
+        if case.use_get {
+          @net.Http2Transport::get(case.host, case.port)
+        } else {
+          @net.Http2Transport::new(case.host, case.port)
+        }
+    }
     let client = @connect.Client::new(transport)
     call(
       client, case, path, content, messages, metadata, timeout, encoding, accept,
     )
   } else {
-    let transport = @net.Http1Transport::new(case.host, case.port)
+    let transport = match tls {
+      Some(tls) =>
+        @net.Http1Transport::secure(
+          case.host,
+          case.port,
+          use_get=case.use_get,
+          tls,
+        )
+      None =>
+        if case.use_get {
+          @net.Http1Transport::get(case.host, case.port)
+        } else {
+          @net.Http1Transport::new(case.host, case.port)
+        }
+    }
     let client = @connect.Client::new(transport)
     call(
       client, case, path, content, messages, metadata, timeout, encoding, accept,

@@ -1,0 +1,16 @@
+// A runnable tRPC-for-TypeScript server, and a client mode that calls one, so both halves of
+// the protocol can be checked against the TypeScript implementation in
+// `scripts/interop/trpcio_peers`.
+import {
+  "moonbitstack/moonrpc/trpcio",
+  "moonbitstack/moonrpc/net",
+  "moonbitlang/async",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  supported_targets: "native",
+)

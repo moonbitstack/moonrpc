@@ -66,26 +66,6 @@ fn header_value(headers : Array[@header.Header], name : Bytes) -> String? {
 }
 
 ///|
-/// Whether the first header named `name`, read as a comma-separated list, names `want`.
-fn header_lists(
-  headers : Array[@header.Header],
-  name : Bytes,
-  want : String,
-) -> Bool {
-  match header_value(headers, name) {
-    None => false
-    Some(text) => {
-      for part in text.split(",") {
-        if part.trim(chars=" \t").to_owned() == want {
-          return true
-        }
-      }
-      false
-    }
-  }
-}
-
-///|
 /// The headers that are the call's metadata: everything but the HTTP's own and the protocol's
 /// own, with a `-bin` value decoded from base64 as gRPC metadata is.
 fn metadata_of(headers : Array[@header.Header]) -> Array[@header.Header] {
@@ -245,17 +225,40 @@ fn Server::encode_message(
 }
 
 ///|
-/// Compress `body` when the caller said it reads gzip, and say so in the reply's headers.
+/// The first encoding the caller offered that this server can write. The order in
+/// `connect-accept-encoding` is the caller's preference, so it is the one the reply follows;
+/// `identity` is always acceptable but never chosen as a compression.
+fn choose_encoding(headers : Array[@header.Header]) -> String {
+  match header_value(headers, b"connect-accept-encoding") {
+    Some(text) => {
+      for part in text.split(",") {
+        let name = part.trim(chars=" \t").to_owned().to_lower()
+        if name != "identity" && known_compression(name) {
+          return name
+        }
+      }
+      "identity"
+    }
+    None => "identity"
+  }
+}
+
+///|
+/// Compress `body` with the encoding the caller offered, and mark the envelope as compressed
+/// when one was used. The same choice is written into the reply's headers by the caller.
 fn maybe_compress(
   headers : Array[@header.Header],
   body : Bytes,
   flags : Byte,
 ) -> (Bytes, Byte) {
-  if !header_lists(headers, b"connect-accept-encoding", "gzip") {
+  let name = choose_encoding(headers)
+  if name == "identity" {
     return (body, flags)
   }
-  let compressed = @gzip.gzip(body)
-  (compressed, (flags.to_int() | flag_compressed.to_int()).to_byte())
+  (
+    encode_compression(name, body),
+    (flags.to_int() | flag_compressed.to_int()).to_byte(),
+  )
 }
 
 // -- a call in progress -----------------------------------------------------
@@ -400,8 +403,12 @@ pub fn Session::head(self : Session) -> Response {
       failure(self.content, status, message, http~)
     None => {
       let headers = response_headers(self.ctx, self.content)
-      if header_lists(self.headers, b"connect-accept-encoding", "gzip") {
-        headers.push({ name: b"connect-content-encoding", value: b"gzip", })
+      let name = choose_encoding(self.headers)
+      if name != "identity" {
+        headers.push({
+          name: b"connect-content-encoding",
+          value: @utf8.encode(name),
+        })
       }
       { status: 200, headers, body: b"", }
     }
@@ -496,7 +503,11 @@ fn Session::inflate(self : Session, envelope : Envelope) -> Bytes? {
   if !envelope.is_compressed() {
     return Some(envelope.payload)
   }
-  if !header_lists(self.headers, b"connect-content-encoding", "gzip") {
+  let name = match header_value(self.headers, b"connect-content-encoding") {
+    Some(text) => text.to_lower()
+    None => "identity"
+  }
+  if name == "identity" || !known_compression(name) {
     // A message flagged as compressed on a call that declared no encoding it decodes is a
     // disagreement between the envelope and the head, not a feature this server lacks.
     self.failure = Some(
@@ -507,12 +518,9 @@ fn Session::inflate(self : Session, envelope : Envelope) -> Bytes? {
     )
     return None
   }
-  let inflated : Result[Bytes, Error] = Ok(@gzip.gunzip(envelope.payload[:])) catch {
-    e => Err(e)
-  }
-  match inflated {
-    Ok(bytes) => Some(bytes)
-    Err(_) => {
+  match decode_compression(name, envelope.payload) {
+    Some(bytes) => Some(bytes)
+    None => {
       self.failure = Some(
         (@wire.Status::Internal, "a compressed message would not inflate"),
       )
@@ -596,17 +604,11 @@ fn Session::finish_unary(self : Session) -> Response {
   // call carries.
   let raw = self.body.to_bytes()
   let bytes = match header_value(self.headers, b"content-encoding") {
-    Some(encoding) =>
-      if encoding.to_lower() == "gzip" {
-        @gzip.gunzip(raw[:]) catch {
-          _ => {
-            self.failure = Some(
-              (@wire.Status::Internal, "the request body would not inflate"),
-            )
-            b""
-          }
-        }
-      } else {
+    Some(text) => {
+      let name = text.to_lower()
+      if name == "identity" {
+        raw
+      } else if !known_compression(name) {
         // An encoding this server does not read leaves the body unusable, which is what the
         // protocol's `unimplemented` is for.
         self.failure = Some(
@@ -616,7 +618,18 @@ fn Session::finish_unary(self : Session) -> Response {
           ),
         )
         b""
+      } else {
+        match decode_compression(name, raw) {
+          Some(plain) => plain
+          None => {
+            self.failure = Some(
+              (@wire.Status::Internal, "the request body would not inflate"),
+            )
+            b""
+          }
+        }
       }
+    }
     None => raw
   }
   let messages : Array[Bytes] = []
@@ -684,8 +697,9 @@ fn Session::finish_unary(self : Session) -> Response {
   }
   let (body, _) = maybe_compress(self.headers, encoded, b'\x00')
   let headers = response_headers(self.ctx, self.content)
-  if header_lists(self.headers, b"connect-accept-encoding", "gzip") {
-    headers.push({ name: b"connect-content-encoding", value: b"gzip", })
+  let name = choose_encoding(self.headers)
+  if name != "identity" {
+    headers.push({ name: b"content-encoding", value: @utf8.encode(name), })
   }
   { status: 200, headers, body, }
 }

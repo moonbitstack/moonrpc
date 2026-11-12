@@ -60,11 +60,16 @@ struct Live {
 pub struct Session {
   server : Server
   streams : Map[Int64, Live]
+  // Octets the peer still permits this end to send. -1 means the peer named no window, in
+  // which case the connection is left unthrottled rather than stalled on a value it never
+  // gave. DATA frames that do not fit wait in `pending` for a FEEDBACK.
+  windows : Map[Int64, Int64]
+  pending : Map[Int64, Array[Bytes]]
 }
 
 ///|
 pub fn Session::new(server : Server) -> Session {
-  { server, streams: Map([]), }
+  { server, streams: Map([]), windows: Map([]), pending: Map([]), }
 }
 
 ///|
@@ -132,9 +137,121 @@ pub fn Session::handle(self : Session, frame : Frame) -> Array[Bytes] {
   match frame.kind {
     Unary => [self.answer_unary(frame)]
     Init => self.open(frame)
-    Data => self.receive(frame)
-    Feedback => []
-    Close => self.close(frame)
+    Data => self.emit(frame.stream_id, self.receive(frame))
+    Feedback => self.feedback(frame)
+    Close => {
+      let replies = self.emit(frame.stream_id, self.close(frame))
+      self.streams.remove(frame.stream_id)
+      // A CLOSE queued behind frames the window has not let out yet stays in `pending`: the
+      // peer must not see the end of the stream before the messages that come before it. The
+      // bookkeeping is dropped once that CLOSE is finally released.
+      if self.pending.get(frame.stream_id) is None {
+        self.windows.remove(frame.stream_id)
+        self.pending.remove(frame.stream_id)
+      }
+      replies
+    }
+  }
+}
+
+///|
+/// Let a DATA frame out only while the peer's window can still take it. Everything else —
+/// INIT, FEEDBACK, CLOSE — costs no window. Frames held back keep their order, so a later
+/// FEEDBACK releases them before anything newly produced.
+fn Session::emit(
+  self : Session,
+  stream_id : Int64,
+  frames : Array[Bytes],
+) -> Array[Bytes] {
+  let window = match self.windows.get(stream_id) {
+    Some(w) => w
+    None => return frames
+  }
+  if window < 0 {
+    return frames
+  }
+  let held = match self.pending.get(stream_id) {
+    Some(frames) => frames
+    None => []
+  }
+  let all = []
+  for f in held {
+    all.push(f)
+  }
+  for f in frames {
+    all.push(f)
+  }
+  let out : Array[Bytes] = []
+  let rest : Array[Bytes] = []
+  let mut left = window
+  for bytes in all {
+    // Once one frame waits, everything after it waits too, whatever it is: a CLOSE that
+    // overtook a held message would tell the peer the stream ended before it did.
+    if rest.length() > 0 {
+      rest.push(bytes)
+      continue
+    }
+    let (decoded, _) = Frame::decode(bytes) catch {
+      _ => {
+        out.push(bytes)
+        continue
+      }
+    }
+    if decoded.kind != Data {
+      out.push(bytes)
+      continue
+    }
+    let cost = decoded.payload.length().to_int64()
+    if cost <= left {
+      left = left - cost
+      out.push(bytes)
+    } else {
+      rest.push(bytes)
+    }
+  }
+  self.windows[stream_id] = left
+  self.pending[stream_id] = rest
+  out
+}
+
+///|
+/// A FEEDBACK returns window the peer has freed by consuming what we sent. Credit it, then
+/// release as many held frames as it now covers.
+fn Session::feedback(self : Session, frame : Frame) -> Array[Bytes] {
+  let meta = StreamFeedbackMeta::decode(frame.payload) catch {
+    _ => StreamFeedbackMeta::new()
+  }
+  match self.windows.get(frame.stream_id) {
+    Some(w) =>
+      if w >= 0 {
+        self.windows[frame.stream_id] = w + meta.window_increment.to_int64()
+      }
+    None => ()
+  }
+  let held = match self.pending.get(frame.stream_id) {
+    Some(frames) => frames
+    None => []
+  }
+  self.pending[frame.stream_id] = []
+  let out = self.emit(frame.stream_id, held)
+  // A stream that has already closed, and whose last frames were only waiting on this credit,
+  // is now finished: nothing else will arrive for it.
+  if self.streams.get(frame.stream_id) is None &&
+    self.pending.get(frame.stream_id) is None {
+    self.windows.remove(frame.stream_id)
+    self.pending.remove(frame.stream_id)
+  }
+  out
+}
+
+///|
+/// Whether a stream's handler is bidirectional. The socket driver uses this to run a slow
+/// bidi handler on a task of its own instead of holding up every other frame on the
+/// connection.
+pub fn Session::bidi_stream(self : Session, stream_id : Int64) -> Bool {
+  match self.streams.get(stream_id) {
+    Some(live) => live.bidi is Some(_)
+    None => false
   }
 }
 
@@ -278,6 +395,12 @@ fn Session::open(self : Session, frame : Frame) -> Array[Bytes] {
   }
   let live : Live = { path, ctx, request, inbound: [], bidi, }
   self.streams[frame.stream_id] = live
+  self.windows[frame.stream_id] = if meta.window == 0 {
+    -1L
+  } else {
+    meta.window.to_int64()
+  }
+  self.pending[frame.stream_id] = []
   let reply = StreamInitMeta::new(
     request_meta=meta.request_meta,
     response_meta=StreamInitResponseMeta::new(),
@@ -356,7 +479,6 @@ fn Session::close(self : Session, frame : Frame) -> Array[Bytes] {
   let meta = StreamCloseMeta::decode(frame.payload) catch {
     _ => StreamCloseMeta::new()
   }
-  self.streams.remove(frame.stream_id)
   if meta.close_type == close_reset {
     let reset = StreamCloseMeta::new(close_type=close_reset)
     return [Frame::new(Close, frame.stream_id, reset.encode()).encode()]

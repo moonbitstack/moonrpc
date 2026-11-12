@@ -228,6 +228,39 @@ async fn open_h2_call(
     Some(m) => m
     None => b""
   }
+  let path = match field_value(call.headers, b":path") {
+    Some(p) => @utf8.decode_lossy(p)
+    None => ""
+  }
+  if verb == b"GET" && @connect.is_get_target(path) {
+    // A GET has no body to stream: the whole answer is ready as soon as the query is read.
+    // Writing it here and marking the stream done keeps `finish_h2_call` from answering a
+    // second time when END_STREAM arrives on the request's HEADERS.
+    match @connect.parse_get_request(path, call.headers) {
+      Some(get_request) => {
+        let answer = engine.serve(get_request)
+        write_h2_get(conn, encoder, call, answer)
+      }
+      None => {
+        let head = encoder.encode(
+          lower_fields([{ name: b":status", value: b"400", }]),
+        )
+        conn.write(
+          @http2.Frame::Headers(
+            stream_id=call.id,
+            fragment=head,
+            end_stream=true,
+            end_headers=true,
+            priority=None,
+            padding=0,
+          ).encode(),
+        )
+        call.head_sent = true
+        call.end_sent = true
+      }
+    }
+    return
+  }
   if verb != b"POST" {
     let head = encoder.encode(
       lower_fields([
@@ -249,15 +282,65 @@ async fn open_h2_call(
     call.end_sent = true
     return
   }
-  let path = match field_value(call.headers, b":path") {
-    Some(p) => @utf8.decode_lossy(p)
-    None => ""
-  }
   let session = engine.start(path, call.headers)
   call.session = Some(session)
   // The reply head waits for the first envelope, in `flush_h2`: the headers to send are the ones
   // a handler sets from the request, and the request has not been read yet.
   ignore(encoder)
+}
+
+///|
+/// Answer a GET call in one go. The reply is a unary one, so its head carries the status and
+/// its body follows in DATA frames that respect the peer's window; the last one closes the
+/// stream.
+async fn write_h2_get(
+  conn : @tcp.Conn,
+  encoder : @hpack.Encoder,
+  call : H2Call,
+  answer : @connect.Response,
+) -> Unit {
+  let fields : Array[@header.Header] = [
+    { name: b":status", value: @utf8.encode(answer.status.to_string()), },
+  ]
+  for h in answer.headers {
+    fields.push(h)
+  }
+  conn.write(
+    @http2.Frame::Headers(
+      stream_id=call.id,
+      fragment=encoder.encode(lower_fields(fields)),
+      end_stream=answer.body.length() == 0,
+      end_headers=true,
+      priority=None,
+      padding=0,
+    ).encode(),
+  )
+  let mut sent = 0
+  while sent < answer.body.length() {
+    let room = if call.window < @wire.default_max_frame_size {
+      call.window
+    } else {
+      @wire.default_max_frame_size
+    }
+    if room <= 0 {
+      break
+    }
+    let left = answer.body.length() - sent
+    let size = if left < room { left } else { room }
+    let last = sent + size >= answer.body.length()
+    conn.write(
+      @http2.Frame::Data(
+        stream_id=call.id,
+        data=answer.body[sent:sent + size].to_owned(),
+        end_stream=last,
+        padding=0,
+      ).encode(),
+    )
+    sent = sent + size
+    call.window = call.window - size
+  }
+  call.head_sent = true
+  call.end_sent = true
 }
 
 ///|

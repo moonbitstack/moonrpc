@@ -139,7 +139,7 @@ fn check_response(
   }
   match header_of(headers, "content-encoding") {
     Some(name) =>
-      if name != "identity" && name != "gzip" {
+      if !known_compression(name) {
         violation(
           Internal,
           "the reply uses an encoding this client cannot read",
@@ -149,7 +149,7 @@ fn check_response(
   }
   match header_of(headers, "connect-content-encoding") {
     Some(name) =>
-      if name != "identity" && name != "gzip" {
+      if !known_compression(name) {
         violation(
           Internal,
           "the stream uses an encoding this client cannot read",
@@ -195,9 +195,11 @@ fn with_timeout(
 ///|
 /// One message as an envelope, compressed with the request's encoding when it has one.
 fn envelope_of(encoding : String?, message : Bytes) -> Bytes {
-  match encoding {
-    Some("gzip") => encode_envelope(@gzip.gzip(message), flags=flag_compressed)
-    _ => encode_envelope(message)
+  let name = compression_of(encoding)
+  if name == "identity" {
+    encode_envelope(message)
+  } else {
+    encode_envelope(encode_compression(name, message), flags=flag_compressed)
   }
 }
 
@@ -268,15 +270,12 @@ fn join(names : Array[String]) -> String {
 ///|
 /// The body of a request, compressed when the caller asked for an encoding this client writes.
 fn encode_request(encoding : String?, body : Bytes) -> Bytes {
-  match encoding {
-    Some("gzip") => @gzip.gzip(body)
-    _ => body
-  }
+  encode_compression(compression_of(encoding), body)
 }
 
 ///|
 /// The value of the first header named `name`.
-fn header_of(headers : Array[@header.Header], name : String) -> String? {
+pub fn header_of(headers : Array[@header.Header], name : String) -> String? {
   for h in headers {
     if @utf8.decode_lossy(h.name).to_lower() == name {
       return Some(@utf8.decode_lossy(h.value).to_lower())
@@ -291,20 +290,21 @@ fn decode_reply(
   headers : Array[@header.Header],
   body : Bytes,
 ) -> Bytes raise CallFailed {
-  match header_of(headers, "content-encoding") {
-    Some("gzip") =>
-      @gzip.gunzip(body[:]) catch {
-        _ =>
-          raise CallFailed({
-            status: Internal,
-            message: "the reply body would not inflate",
-            details: [],
-            headers: [],
-            trailers: [],
-            payloads: [],
-          })
-      }
-    _ => body
+  let name = compression_of(header_of(headers, "content-encoding"))
+  if name == "identity" {
+    return body
+  }
+  match decode_compression(name, body) {
+    Some(plain) => plain
+    None =>
+      raise CallFailed({
+        status: Internal,
+        message: "the reply body would not inflate",
+        details: [],
+        headers: [],
+        trailers: [],
+        payloads: [],
+      })
   }
 }
 
@@ -313,24 +313,20 @@ fn decode_reply(
 /// turned back into trailing headers and its `error` into a trailer the caller can see.
 fn read_stream(
   body : Bytes,
+  encoding : String,
 ) -> (Array[Bytes], Array[@header.Header]) raise CallFailed {
   let messages : Array[Bytes] = []
   let trailers : Array[@header.Header] = []
   let (envelopes, _at) = split_envelopes(body)
   for envelope in envelopes {
     if envelope.is_end_stream() {
-      for trailer in trailers_of_end(envelope) {
+      for trailer in trailers_of_end(envelope, encoding) {
         trailers.push(trailer)
       }
     } else if envelope.is_compressed() {
-      let inflated : Result[Bytes, Error] = Ok(
-        @gzip.gunzip(envelope.payload[:]),
-      ) catch {
-        e => Err(e)
-      }
-      match inflated {
-        Ok(bytes) => messages.push(bytes)
-        Err(_) =>
+      match decode_compression(encoding, envelope.payload) {
+        Some(bytes) => messages.push(bytes)
+        None =>
           raise CallFailed({
             status: Internal,
             message: "a reply message would not inflate",
@@ -351,11 +347,15 @@ fn read_stream(
 /// The trailing metadata an end-stream envelope carries, with an `error` object relayed as
 /// the protocol's own error header. The end-stream message may itself be compressed, and a
 /// `null` error means the call succeeded — only an object is a failure.
-fn trailers_of_end(envelope : Envelope) -> Array[@header.Header] {
+fn trailers_of_end(
+  envelope : Envelope,
+  encoding : String,
+) -> Array[@header.Header] {
   let trailers : Array[@header.Header] = []
   let payload = if envelope.is_compressed() {
-    @gzip.gunzip(envelope.payload[:]) catch {
-      _ => b""
+    match decode_compression(encoding, envelope.payload) {
+      Some(plain) => plain
+      None => b""
     }
   } else {
     envelope.payload
@@ -444,6 +444,25 @@ fn finish_stream(
 }
 
 ///|
+/// The encoding a reply's messages were compressed with. A unary body names it in
+/// `content-encoding`; a run of envelopes names it in `connect-content-encoding`.
+fn response_encoding(
+  headers : Array[@header.Header],
+  streaming : Bool,
+) -> String {
+  compression_of(
+    header_of(
+      headers,
+      if streaming {
+        "connect-content-encoding"
+      } else {
+        "content-encoding"
+      },
+    ),
+  )
+}
+
+///|
 /// A unary call: one request message out, one reply message back, or the failure the server
 /// answered with.
 pub async fn[T : Transport] Client::unary(
@@ -520,7 +539,10 @@ pub async fn[T : Transport] Client::server_stream(
   }
   let (headers, unary_trailers) = split_unary_headers(raw_headers)
   check_response(content, headers, any_compressed(answer))
-  let (messages, trailers) = read_stream(answer)
+  let (messages, trailers) = read_stream(
+    answer,
+    response_encoding(raw_headers, true),
+  )
   finish_stream(
     headers,
     messages,
@@ -573,7 +595,10 @@ pub async fn[T : Transport] Client::client_stream(
   // A failure answers with envelopes too — often only the end-stream one — so the stream is
   // read before the reply's cardinality is judged.
   let reply = if looks_enveloped(answer) {
-    let (messages, stream_trailers) = read_stream(answer)
+    let (messages, stream_trailers) = read_stream(
+      answer,
+      response_encoding(raw_headers, true),
+    )
     finish_stream(
       headers,
       messages,
@@ -638,7 +663,10 @@ pub async fn[T : Transport] Client::bidi(
   }
   let (headers, unary_trailers) = split_unary_headers(raw_headers)
   check_response(content, headers, any_compressed(answer))
-  let (messages, trailers) = read_stream(answer)
+  let (messages, trailers) = read_stream(
+    answer,
+    response_encoding(raw_headers, true),
+  )
   finish_stream(
     headers,
     messages,
@@ -687,9 +715,10 @@ fn failure_of(
 ) -> Failure {
   // An error body is compressed like any other response body. The header that says so is a
   // protocol header, so it is still in `headers` here rather than filtered out.
-  let plain = match header_of(headers, "content-encoding") {
-    Some("gzip") => @gzip.gunzip(body[:]) catch { _ => body }
-    _ => body
+  let name = compression_of(header_of(headers, "content-encoding"))
+  let plain = match decode_compression(name, body) {
+    Some(bytes) => bytes
+    None => body
   }
   let value = @moonjson.loads(@utf8.decode_lossy(plain)[:], @moonjson.strict) catch {
     _ => Json::null()

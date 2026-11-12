@@ -12,7 +12,13 @@
 /// listens on.
 pub(all) struct ConnectServer {
   engine : @connect.Server
-  mut listener : @tcp.Listener?
+  // The socket is held rather than handed to `@tcp.Listener`, because that type performs the
+  // TLS handshake inside `accept`: with a hundred connections arriving at once, every one of
+  // them would wait behind the RSA operations of the ones before it, and a call with a
+  // two-second deadline would expire before its first octet was read. Accepted here and
+  // handshaken on the connection's own task instead.
+  mut listener : @socket.TcpServer?
+  mut tls : @tls.Server?
   mut draining : Bool
 }
 
@@ -20,7 +26,12 @@ pub(all) struct ConnectServer {
 pub fn ConnectServer::new(
   schema~ : @proto.Schema = @proto.Schema::empty(),
 ) -> ConnectServer {
-  { engine: @connect.Server::new(schema~), listener: None, draining: false, }
+  {
+    engine: @connect.Server::new(schema~),
+    listener: None,
+    tls: None,
+    draining: false,
+  }
 }
 
 ///|
@@ -37,7 +48,7 @@ pub fn ConnectServer::add(
 ///|
 pub fn ConnectServer::addr(self : ConnectServer) -> @socket.Addr? {
   match self.listener {
-    Some(l) => Some(l.addr())
+    Some(l) => Some(l.addr)
     None => None
   }
 }
@@ -51,9 +62,20 @@ pub async fn ConnectServer::bind(
   port~ : Int32 = port,
   tls? : @tls.Server,
 ) -> @socket.Addr {
-  let server = @tcp.listen(host~, port~, tls?)
+  let server = @socket.TcpServer(@socket.Addr::parse(join(host, port)))
   self.listener = Some(server)
-  server.addr()
+  self.tls = tls
+  server.addr
+}
+
+///|
+/// `host:port`, with an IPv6 literal in brackets (RFC 3986 §3.2.2).
+fn join(host : String, port : Int32) -> String {
+  if host.contains(":") && !host.has_prefix("[") {
+    "[\{host}]:\{port}"
+  } else {
+    "\{host}:\{port}"
+  }
 }
 
 ///|
@@ -67,14 +89,34 @@ pub async fn ConnectServer::serve(
 ) -> Unit {
   let server = match self.listener {
     Some(l) => l
-    None => @tcp.listen(host~, port~, tls?)
+    None => {
+      let opened = @socket.TcpServer(@socket.Addr::parse(join(host, port)))
+      self.listener = Some(opened)
+      opened
+    }
   }
-  self.listener = Some(server)
+  if self.tls is None {
+    self.tls = tls
+  }
   defer server.close()
   @async.with_task_group(group => {
     for ;; {
-      let (conn, _addr) = server.accept() catch { _ => continue }
+      let (sock, _addr) = server.accept() catch { _ => continue }
       group.spawn_bg(allow_failure=true, () => {
+        // The handshake belongs to this task: a slow one costs its own connection, not the
+        // rest of the accept queue.
+        let conn = match self.tls {
+          Some(config) =>
+            @async.with_timeout(@tcp.handshake, () => {
+              @tcp.Conn::server(sock, config)
+            }) catch {
+              _ => {
+                sock.close()
+                return
+              }
+            }
+          None => @tcp.Conn::plain(sock)
+        }
         defer conn.close()
         serve_connect_connection(conn, self.engine) catch {
           _ => ()
@@ -134,10 +176,38 @@ async fn serve_h1_connection(
       _ => break
     }
     match event {
-      @http1.Event::Request(request) => {
-        // A Connect call is a POST; any other verb is answered with the one status that says
-        // so, before a body is read.
-        if request.verb != "POST" {
+      @http1.Event::Request(request) =>
+        // A Connect call is normally a POST. An idempotent unary call may instead be a GET
+        // whose message is in the query string; that body is handed to the same dispatch as
+        // soon as the head arrives, so `Event::End` needs no special case.
+        if request.verb == "GET" && @connect.is_get_target(request.target) {
+          match @connect.parse_get_request(request.target, request.fields) {
+            Some(get_request) => {
+              let started = engine.start(get_request.path, get_request.headers)
+              ignore(started.feed(get_request.body))
+              head = Some(request)
+              version = request.version
+              body.reset()
+              streamed = false
+              session = Some(started)
+              head_pending = false
+            }
+            None => {
+              let refusal = @http1.Response::of(
+                400,
+                fields=[],
+                body=@http1.Body::Sized(0),
+              )
+              conn.write(http.send(@http1.Event::Response(refusal))) catch {
+                _ => break
+              }
+              conn.write(http.send(@http1.Event::End([]))) catch {
+                _ => break
+              }
+              break
+            }
+          }
+        } else if request.verb != "POST" {
           let refusal = @http1.Response::of(
             405,
             fields=[{ name: b"allow", value: b"POST", }],
@@ -150,15 +220,15 @@ async fn serve_h1_connection(
             _ => break
           }
           break
+        } else {
+          head = Some(request)
+          version = request.version
+          body.reset()
+          let started = engine.start(request.target, request.fields)
+          streamed = started.streaming() && !started.refused()
+          session = Some(started)
+          head_pending = streamed
         }
-        head = Some(request)
-        version = request.version
-        body.reset()
-        let started = engine.start(request.target, request.fields)
-        streamed = started.streaming() && !started.refused()
-        session = Some(started)
-        head_pending = streamed
-      }
       @http1.Event::Data(bytes) =>
         match session {
           Some(s) => {

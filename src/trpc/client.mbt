@@ -145,6 +145,10 @@ pub struct Exchange {
   // before reading gets all of them here.
   priv queue : Array[Bytes]
   priv trailers : Array[@header.Header]
+  // Octets the far end still permits this call to send, as INIT and FEEDBACK frames count it.
+  // Negative means the far end named no window, and this end does not throttle: a peer that
+  // never said how much it can take is not one to stall on a number it never gave.
+  priv mut send_window : Int64
 }
 
 ///|
@@ -172,6 +176,7 @@ pub async fn Client::open(
     ended: false,
     queue: [],
     trailers: [],
+    send_window: -1L,
   }
   exchange.write(Frame::new(Init, id, init.encode()))
   for ;; {
@@ -190,6 +195,12 @@ pub async fn Client::open(
             ret_status(meta.response_meta.ret),
             @utf8.decode_lossy(meta.response_meta.error_msg),
           )
+        }
+        // The window the far end opened with. Zero is "no window named", not "no room".
+        exchange.send_window = if meta.window == 0 {
+          -1L
+        } else {
+          meta.window.to_int64()
         }
         break
       }
@@ -212,7 +223,60 @@ pub async fn Exchange::send(
   guard !self.ended else {
     raise @wire.StatusError(Internal, "a message after the stream closed")
   }
+  if self.send_window >= 0 && body.length().to_int64() <= self.send_window {
+    self.await_window(body.length().to_int64())
+  }
   self.write(Frame::new(Data, self.id, body))
+  if self.send_window >= 0 {
+    self.send_window = self.send_window - body.length().to_int64()
+  }
+}
+
+///|
+/// Wait until the far end's window can take `needed` octets. Frames that arrive while waiting
+/// are not lost: a reply goes to the queue, a CLOSE ends the call, and a FEEDBACK adds its
+/// credit. A message larger than the window the far end ever granted is not waited for — no
+/// amount of FEEDBACK would make room for it, and stalling would deadlock a call the peer is
+/// willing to answer.
+async fn Exchange::await_window(
+  self : Exchange,
+  needed : Int64,
+) -> Unit raise @wire.StatusError {
+  while self.send_window >= 0 && self.send_window < needed && !self.ended {
+    let frame = self.client.receive()
+    if frame.stream_id != self.id {
+      continue
+    }
+    match frame.kind {
+      Feedback => {
+        let meta = StreamFeedbackMeta::decode(frame.payload) catch {
+          _ => StreamFeedbackMeta::new()
+        }
+        self.send_window = self.send_window +
+          meta.window_increment.to_int64()
+      }
+      Data => {
+        self.credit(frame.payload.length())
+        self.queue.push(frame.payload)
+      }
+      Close => self.finish_with(frame)
+      _ => ()
+    }
+  }
+}
+
+///|
+/// Hand the far end back the window one consumed message cost. Without this a long stream
+/// stops after the first window's worth: the peer has no other way to learn that the message
+/// left this end's buffer.
+async fn Exchange::credit(
+  self : Exchange,
+  octets : Int32,
+) -> Unit raise @wire.StatusError {
+  let meta = StreamFeedbackMeta::new(
+    window_increment=octets.reinterpret_as_uint(),
+  )
+  self.write(Frame::new(Feedback, self.id, meta.encode()))
 }
 
 ///|
@@ -230,7 +294,10 @@ pub async fn Exchange::next(self : Exchange) -> Bytes? raise @wire.StatusError {
       continue
     }
     match frame.kind {
-      Data => return Some(frame.payload)
+      Data => {
+        self.credit(frame.payload.length())
+        return Some(frame.payload)
+      }
       Close => {
         self.finish_with(frame)
         return None
@@ -254,7 +321,10 @@ pub async fn Exchange::close(self : Exchange) -> Unit raise @wire.StatusError {
       continue
     }
     match frame.kind {
-      Data => self.queue.push(frame.payload)
+      Data => {
+        self.credit(frame.payload.length())
+        self.queue.push(frame.payload)
+      }
       Close => {
         self.finish_with(frame)
         break

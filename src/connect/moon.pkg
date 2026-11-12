@@ -11,6 +11,10 @@ import {
   "moonbitstack/moonbase/base64",
   "moonbitstack/moonhttp/header",
   "moonbitstack/moonzip/gzip",
+  "moonbitstack/moonzip/zlib",
+  "moonbitstack/moonzip/zstd",
+  "moonbitstack/moonzip/brotli",
+  "moonbitstack/moonzip/snappy",
   "moonbitlang/core/string",
   "moonbitlang/core/encoding/utf8",
 }
