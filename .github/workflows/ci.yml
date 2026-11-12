@@ -849,6 +849,25 @@ jobs:
             --known-flaky @scripts/conformance/connect_server_known_flaky.txt \
             -- ./_build/native/debug/build/cmd/conformance/conformance.exe
 
+      # The same seventy cases once more, one RPC at a time, with nothing tolerated. The run
+      # above says a timing race does not decide the build; this one says the race is the only
+      # thing that was ever in the way. A TLS handshake here costs one RSA-2048 private-key
+      # operation in pure MoonBit, 0.49 s measured, so forty-eight of them cannot share a
+      # two-second deadline — but one at a time they are simply handshakes, and the class passes
+      # whole. If that ever stops being true this step fails and the list stops being an excuse.
+      - name: the TLS deadline class, one RPC at a time
+        run: |
+          "$RUNNER_TEMP/connectconformance" \
+            --mode server \
+            --conf scripts/conformance/connect.yaml \
+            --run 'Deadline Propagation/**/TLS:true/**' \
+            --parallel 1 \
+            -- ./_build/native/debug/build/cmd/conformance/conformance.exe | tee /tmp/deadline-tls.txt
+          # A selection that matched nothing also exits zero, so the counts are checked rather
+          # than trusted: the class has cases, and every one of them passed.
+          grep -qE 'Total cases: [1-9]' /tmp/deadline-tls.txt
+          grep -qE '[1-9][0-9]* passed, 0 failed' /tmp/deadline-tls.txt
+
   # The other half of the official Connect suite: this client under test, calling the runner's
   # reference server. Every case is gated directly — including the cancellation cases, which
   # run over the incremental transport in `net::Http1StreamTransport` / `Http2StreamTransport`.

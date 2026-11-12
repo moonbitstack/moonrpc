@@ -13,6 +13,11 @@
 # turn the build red, and a slower one that fails them does not either. They are still run and
 # still reported — a case that fails is named in the output. `--known-failing` would have been
 # wrong in both directions: it fails the run when a listed case passes.
+#
+# This list is not the whole statement. CI runs the class a second time with `--parallel 1` and
+# nothing tolerated (`--run 'Deadline Propagation/**/TLS:true/**'`), because at one RPC at a time
+# the handshakes no longer compete and all seventy pass. If that second run ever fails, this list
+# stops being an explanation and becomes an excuse.
 Deadline Propagation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_BR/TLS:true/client-stream/success
 Deadline Propagation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_BR/TLS:true/server-stream/success
 Deadline Propagation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_BR/TLS:true/unary/success
