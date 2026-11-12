@@ -1,0 +1,110 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitstack/moonrpc/trpcio"
+
+import {
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn batch_body(Array[Call]) -> String
+
+pub fn batch_request_of(Array[Call], get? : Bool) -> Request
+
+pub fn decode_inputs(String, batch~ : Bool) -> Array[@json.Json?]?
+
+pub fn decode_paths(String) -> Array[String]
+
+pub fn decode_reply(String, batch~ : Bool) -> Array[Outcome]?
+
+pub fn encode_reply(Array[Outcome], batch~ : Bool) -> String
+
+pub fn failure_code(String) -> Int32
+
+pub fn failure_name(Int32) -> String
+
+pub fn failure_of(String, String, path? : String, cause? : @json.Json) -> Failure
+
+pub fn failure_status(String) -> Int32
+
+pub fn percent_decode(String) -> String
+
+pub fn percent_encode(String) -> String
+
+pub fn request_of(Call, get? : Bool) -> Request
+
+pub fn single_body(Call) -> String
+
+// Errors
+pub(all) suberror CallFailed {
+  CallFailed(Failure)
+}
+
+// Types and methods
+pub(all) struct Answer {
+  status : Int32
+  body : String
+  content_type : String
+}
+
+pub(all) struct Call {
+  path : String
+  input : @json.Json?
+  mutation : Bool
+}
+pub fn Call::new(String, input? : @json.Json, mutation? : Bool) -> Self
+
+pub struct Client {
+  send : async (Request) -> (Int32, String)
+  get_queries : Bool
+}
+pub async fn Client::batch(Self, Array[Call]) -> Array[Outcome] raise CallFailed
+pub async fn Client::mutate(Self, String, input? : @json.Json) -> @json.Json raise CallFailed
+pub fn Client::new(async (Request) -> (Int32, String), get_queries? : Bool) -> Self
+pub async fn Client::query(Self, String, input? : @json.Json) -> @json.Json raise CallFailed
+
+pub(all) struct Failure {
+  code : Int32
+  name : String
+  http_status : Int32
+  message : String
+  path : String
+  data : @json.Json
+}
+
+pub(all) enum Kind {
+  Query
+  Mutation
+}
+
+pub(all) enum Outcome {
+  Ok(@json.Json)
+  Failed(Failure)
+}
+
+pub(all) struct Procedure {
+  kind : Kind
+  handler : (@json.Json?) -> Outcome
+}
+
+pub(all) struct Request {
+  target : String
+  batch : Bool
+  body : String
+  get : Bool
+}
+
+pub struct Server {
+  procedures : Map[String, Procedure]
+  max_batch : Int32
+}
+pub fn Server::handle(Self, String, String, String) -> Answer
+pub fn Server::mutation(Self, String, (@json.Json?) -> Outcome) -> Unit
+pub fn Server::new(max_batch? : Int32) -> Self
+pub fn Server::query(Self, String, (@json.Json?) -> Outcome) -> Unit
+
+// Type aliases
+pub type Handler = (@json.Json?) -> Outcome
+
+pub type Send = async (Request) -> (Int32, String)
+
+// Traits

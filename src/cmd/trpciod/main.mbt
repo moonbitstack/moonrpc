@@ -48,7 +48,10 @@ fn service(server : @trpcio.Server) -> Unit {
     Ok(Json::number(a + b))
   })
   server.mutation("greet.remember", input => {
-    Ok({ "ok": Json::boolean(true), "name": Json::string(as_string(field_of(input, "name"))) })
+    Ok({
+      "ok": Json::boolean(true),
+      "name": Json::string(as_string(field_of(input, "name"))),
+    })
   })
   server.query("greet.fail", _input => {
     Failed(@trpcio.failure_of("FORBIDDEN", "not for you", path="greet.fail"))
@@ -83,7 +86,10 @@ async fn check(host : String, port : Int32) -> Unit {
     failures = failures + 1
   }
 
-  let sum = client.query("math.add", input={ "a": Json::number(2), "b": Json::number(40) }) catch {
+  let sum = client.query("math.add", input={
+    "a": Json::number(2),
+    "b": Json::number(40),
+  }) catch {
     _ => {
       println("check: math.add did not answer")
       failures = failures + 1
@@ -95,7 +101,9 @@ async fn check(host : String, port : Int32) -> Unit {
     failures = failures + 1
   }
 
-  let remembered = client.mutate("greet.remember", input={ "name": Json::string("moon") }) catch {
+  let remembered = client.mutate("greet.remember", input={
+    "name": Json::string("moon"),
+  }) catch {
     _ => {
       println("check: greet.remember did not answer")
       failures = failures + 1
@@ -107,9 +115,7 @@ async fn check(host : String, port : Int32) -> Unit {
     failures = failures + 1
   }
 
-  let refused : Result[Json, @trpcio.Failure] = try {
-    Ok(client.query("greet.fail"))
-  } catch {
+  let refused : Result[Json, @trpcio.Failure] = Ok(client.query("greet.fail")) catch {
     @trpcio.CallFailed(failure) => Err(failure)
   }
   match refused {
@@ -130,18 +136,16 @@ async fn check(host : String, port : Int32) -> Unit {
   }
 
   // One request, three answers, in the order they were asked for.
-  let batch = try {
-    Ok(
-      client.batch([
-        @trpcio.Call::new("greet.hello", input=Json::string("batch")),
-        @trpcio.Call::new("math.add", input={
-          "a": Json::number(1),
-          "b": Json::number(2),
-        }),
-        @trpcio.Call::new("greet.fail"),
-      ]),
-    )
-  } catch {
+  let batch = Ok(
+    client.batch([
+      @trpcio.Call::new("greet.hello", input=Json::string("batch")),
+      @trpcio.Call::new("math.add", input={
+        "a": Json::number(1),
+        "b": Json::number(2),
+      }),
+      @trpcio.Call::new("greet.fail"),
+    ]),
+  ) catch {
     _ => Err("the batch did not answer")
   }
   match batch {
@@ -172,6 +176,46 @@ async fn check(host : String, port : Int32) -> Unit {
     }
   }
 
+  // A batch with a mutation in it travels as one POST, since a query is the only kind that
+  // may be asked for with GET — a server reads the verb for the whole batch at once.
+  let mixed = Ok(
+    client.batch([
+      @trpcio.Call::new("greet.hello", input=Json::string("mixed")),
+      @trpcio.Call::new(
+        "greet.remember",
+        input={ "name": Json::string("mixed") },
+        mutation=true,
+      ),
+    ]),
+  ) catch {
+    _ => Err("the batch with a mutation did not answer")
+  }
+  match mixed {
+    Ok(outcomes) =>
+      match outcomes {
+        [Ok(first), Ok(second)] => {
+          if as_string(field(first, "greeting")) != "hello mixed" {
+            println(
+              "check: the mixed batch's query answer was not the greeting",
+            )
+            failures = failures + 1
+          }
+          if as_string(field(second, "name")) != "mixed" {
+            println("check: the mixed batch's mutation did not echo its input")
+            failures = failures + 1
+          }
+        }
+        _ => {
+          println("check: the mixed batch did not answer both calls")
+          failures = failures + 1
+        }
+      }
+    Err(why) => {
+      println("check: " + why)
+      failures = failures + 1
+    }
+  }
+
   if failures == 0 {
     println("trpciod check: ok")
   } else {
@@ -185,7 +229,9 @@ async fn main {
   let check_mode = args.length() > 1 && args[1] == "check"
   let port_index = if check_mode { 2 } else { 1 }
   let port = if args.length() > port_index {
-    @string.parse_int(args[port_index][:]) catch { _ => 12000 }
+    @string.parse_int(args[port_index][:]) catch {
+      _ => 12000
+    }
   } else {
     12000
   }

@@ -10,22 +10,20 @@ pub fn trpcio_client(
   base~ : String = "",
 ) -> @trpcio.Client {
   let send : @trpcio.Send = async fn(request) {
-    let method = if request.get {
-      "GET"
-    } else {
-      "POST"
-    }
+    let verb = if request.get { "GET" } else { "POST" }
     let body = if request.get { "" } else { request.body }
     let (status, answer) = http_call(
       host,
       port,
-      method,
+      verb,
       base + "/" + request.target,
       body,
     )
     (status, answer)
   }
-  @trpcio.Client::new(send)
+  // A query is a GET: `@trpc/server` answers a POST to one with 405, and tRPC's own
+  // `httpLink` sends GET for exactly this reason.
+  @trpcio.Client::new(send, get_queries=true)
 }
 
 ///|
@@ -33,10 +31,10 @@ pub fn trpcio_client(
 async fn http_call(
   host : String,
   port : Int32,
-  method : String,
+  verb : String,
   target : String,
   body : String,
-) -> (Int, String) {
+) -> (Int32, String) {
   let conn = @tcp.dial(host, port~)
   defer conn.close()
   let http = @http1.Conn::new(@http1.Role::Client)
@@ -49,7 +47,7 @@ async fn http_call(
     @header.Header::of("x-trpc-source", "moonrpc"),
   ]
   let request = @http1.Request::of(
-    method,
+    verb,
     target,
     fields~,
     body=@http1.Body::Sized(payload.length()),
@@ -62,14 +60,25 @@ async fn http_call(
   let mut status = 0
   let answer = Buffer()
   for ;; {
-    let event = http.next() catch {
-      _ => break
-    }
+    let event = http.next() catch { _ => break }
     match event {
       @http1.Event::Response(response) => status = response.status
       @http1.Event::Data(bytes) => answer.write_bytes(bytes)
       @http1.Event::End(_) => break
-      _ => ()
+      // The parser consumes what it was handed and asks for more; reading the peer is this
+      // loop's half of that contract, and a loop that ignored it would wait forever.
+      @http1.Event::NeedData => {
+        let more = conn.read_some() catch { _ => break }
+        let chunk = match more {
+          Some(bytes) => bytes
+          None => break
+        }
+        if chunk.length() == 0 {
+          break
+        }
+        http.receive(chunk[:])
+      }
+      _ => break
     }
   }
   (status, @utf8.decode_lossy(answer.to_bytes()))
@@ -119,11 +128,15 @@ pub async fn serve_trpcio_on(
 /// One connection: a request in, an answer out, and around again while the peer keeps it
 /// alive. The body is read whole before the dispatch sees it — a tRPC call is one object,
 /// not a stream.
+///
+/// The parser is fed by this loop, not by the socket: `next` answers `NeedData` when it has
+/// consumed what it was given, and reading the peer is the driver's half of that contract. A
+/// loop that ignored it would answer nothing and spin.
 async fn serve_trpcio_connection(
   conn : @tcp.Conn,
   server : @trpcio.Server,
   base~ : String,
-) -> Unit raise {
+) -> Unit {
   let http = @http1.Conn::new(@http1.Role::Server)
   let body = Buffer()
   let mut head : @http1.Request? = None
@@ -135,7 +148,7 @@ async fn serve_trpcio_connection(
         body.reset()
       }
       @http1.Event::Data(bytes) => body.write_bytes(bytes)
-      @http1.Event::End(_) => {
+      @http1.Event::End(_) =>
         match head {
           Some(request) => {
             let path = strip_base(request.target, base)
@@ -158,12 +171,30 @@ async fn serve_trpcio_connection(
               conn.write(http.send(@http1.Event::Data(payload)))
             }
             conn.write(http.send(@http1.Event::End([])))
+            head = None
+            // A connection the peer asked to keep goes round again; one it did not is done.
+            if request.keep_alive {
+              http.start_next() catch {
+                _ => break
+              }
+            } else {
+              break
+            }
           }
           None => break
         }
-        head = None
+      @http1.Event::NeedData => {
+        let more = conn.read_some() catch { _ => break }
+        let chunk = match more {
+          Some(bytes) => bytes
+          None => break
+        }
+        if chunk.length() == 0 {
+          break
+        }
+        http.receive(chunk[:])
       }
-      _ => ()
+      _ => break
     }
   }
 }
@@ -176,7 +207,7 @@ fn strip_base(target : String, base : String) -> String {
     return target
   }
   match target.strip_prefix(base + "/") {
-    Some(rest) => rest.to_string()
+    Some(rest) => rest.to_owned()
     None => target
   }
 }

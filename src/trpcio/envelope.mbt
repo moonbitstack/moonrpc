@@ -21,11 +21,19 @@
 pub(all) struct Call {
   path : String
   input : Json?
+  // Whether this call is a mutation. The kind decides the verb, because tRPC's own server
+  // refuses both a POST to a query and a GET to a mutation, and a batch travels as one verb
+  // for all of its calls: a batch with one mutation in it is a POST.
+  mutation : Bool
 }
 
 ///|
-pub fn Call::new(path : String, input? : Json) -> Call {
-  { path, input }
+pub fn Call::new(
+  path : String,
+  input? : Json,
+  mutation~ : Bool = false,
+) -> Call {
+  { path, input, mutation, }
 }
 
 ///|
@@ -88,9 +96,9 @@ pub(all) enum Outcome {
 /// A tRPC failure as the server states it: the JSON-RPC code, the name of the tRPC code, the
 /// HTTP status it maps to, the message, and the procedure it happened in.
 pub(all) struct Failure {
-  code : Int
+  code : Int32
   name : String
-  http_status : Int
+  http_status : Int32
   message : String
   path : String
   data : Json
@@ -99,7 +107,7 @@ pub(all) struct Failure {
 ///|
 /// The name a JSON-RPC code stands for, from tRPC's own table: the codes above -32000 are
 /// JSON-RPC's, and the rest are tRPC's, ending in the digits of the HTTP status they carry.
-pub fn failure_name(code : Int) -> String {
+pub fn failure_name(code : Int32) -> String {
   match code {
     -32700 => "PARSE_ERROR"
     -32600 => "BAD_REQUEST"
@@ -125,7 +133,7 @@ pub fn failure_name(code : Int) -> String {
 ///|
 /// The JSON-RPC code a name stands for — the inverse of `failure_name`, used by a server
 /// answering in this protocol.
-pub fn failure_code(name : String) -> Int {
+pub fn failure_code(name : String) -> Int32 {
   match name {
     "PARSE_ERROR" => -32700
     "BAD_REQUEST" => -32600
@@ -150,7 +158,7 @@ pub fn failure_code(name : String) -> Int {
 ///|
 /// The HTTP status a tRPC code is carried under. Every one of tRPC's codes is named after an
 /// HTTP status, and this is that mapping read the other way.
-pub fn failure_status(name : String) -> Int {
+pub fn failure_status(name : String) -> Int32 {
   match name {
     "PARSE_ERROR" => 400
     "BAD_REQUEST" => 400
@@ -282,7 +290,7 @@ fn failure_from_json(value : Json) -> Failure {
       }
     _ => ""
   }
-  { code, name, http_status, message, path, data }
+  { code, name, http_status, message, path, data, }
 }
 
 ///|
@@ -307,17 +315,21 @@ fn outcome_of_json(value : Json) -> Outcome {
 }
 
 ///|
-/// Read a reply body. `batch` says whether an array is the shape the caller asked for;
-/// a server that answers a single call with an array is still understood, because that is
-/// what a batch of one looks like.
+/// Read a reply body. `batch` says whether an array is the shape the caller asked for; a
+/// server that answers a single call with an array is still understood, because that is what
+/// a batch of one looks like. What the shape cannot excuse is the count: one call has one
+/// answer, and two is not it.
 pub fn decode_reply(body : String, batch~ : Bool) -> Array[Outcome]? {
-  let value = @moonjson.loads(body, @moonjson.strict) catch {
-    _ => return None
-  }
+  let value = @moonjson.loads(body, @moonjson.strict) catch { _ => return None }
   // A batch answered with one object is a batch of one, and a single call answered with an
-  // array is the same thing read the other way: the shape does not decide the meaning.
+  // array is the same thing read the other way, so the shape does not decide the meaning.
   match value {
-    Array(items) => Some(items.map(outcome_of_json))
+    Array(items) =>
+      if !batch && items.length() > 1 {
+        None
+      } else {
+        Some(items.map(outcome_of_json))
+      }
     _ => Some([outcome_of_json(value)])
   }
 }
@@ -329,9 +341,7 @@ pub fn decode_inputs(body : String, batch~ : Bool) -> Array[Json?]? {
   if body.length() == 0 {
     return Some(if batch { [] } else { [None] })
   }
-  let value = @moonjson.loads(body, @moonjson.strict) catch {
-    _ => return None
-  }
+  let value = @moonjson.loads(body, @moonjson.strict) catch { _ => return None }
   if !batch {
     return Some([Some(value)])
   }
@@ -377,19 +387,24 @@ pub(all) struct Request {
 }
 
 ///|
-/// The request one call is made with. A query goes out as a GET with its input in the query
-/// string, as tRPC's httpLink does, and anything else is a POST.
+/// The request one call is made with. A query goes out as a GET, with its input in the query
+/// string when it has one, as tRPC's httpLink does; anything else is a POST. The verb is what
+/// the kind decides — a query with no input is still a GET, and still names no `input`.
 pub fn request_of(call : Call, get~ : Bool = false) -> Request {
   let body = single_body(call)
-  if get && body.length() > 0 {
+  if get {
     {
-      target: call.path + "?input=" + percent_encode(body),
+      target: if body.length() > 0 {
+        call.path + "?input=" + percent_encode(body)
+      } else {
+        call.path
+      },
       batch: false,
       body: "",
       get: true,
     }
   } else {
-    { target: call.path, batch: false, body, get: false }
+    { target: call.path, batch: false, body, get: false, }
   }
 }
 
@@ -400,15 +415,13 @@ pub fn batch_request_of(calls : Array[Call], get~ : Bool = false) -> Request {
   let paths = paths_of(calls)
   if get && body.length() > 0 {
     {
-      target: paths +
-        "?batch=1&input=" +
-        percent_encode(body),
+      target: paths + "?batch=1&input=" + percent_encode(body),
       batch: true,
       body: "",
       get: true,
     }
   } else {
-    { target: paths + "?batch=1", batch: true, body, get: false }
+    { target: paths + "?batch=1", batch: true, body, get: false, }
   }
 }
 
@@ -444,7 +457,7 @@ pub fn percent_encode(text : String) -> String {
 }
 
 ///|
-fn hex_of(nibble : Int) -> String {
+fn hex_of(nibble : Int32) -> String {
   let digits = "0123456789ABCDEF"
   digits[nibble:nibble + 1].to_owned()
 }
@@ -477,7 +490,7 @@ pub fn percent_decode(text : String) -> String {
 }
 
 ///|
-fn hex_value(value : Int) -> Int {
+fn hex_value(value : Int32) -> Int32 {
   if value >= 0x30 && value <= 0x39 {
     value - 0x30
   } else if value >= 0x61 && value <= 0x66 {

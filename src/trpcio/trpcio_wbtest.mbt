@@ -37,7 +37,10 @@ test "trpcio: a batch keys its inputs by position and names its paths in order" 
 
 ///|
 test "trpcio: a reply is a result or an error, alone or in an array" {
-  let one = decode_reply("{\"result\":{\"data\":{\"greeting\":\"hi\"}}}", batch=false)
+  let one = decode_reply(
+    "{\"result\":{\"data\":{\"greeting\":\"hi\"}}}",
+    batch=false,
+  )
   match one {
     Some([Ok(value)]) =>
       match value {
@@ -87,9 +90,9 @@ test "trpcio: percent-encoding leaves what encodeURIComponent leaves" {
 ///|
 /// A transport that answers from a table and records what it was asked, so a test sees the
 /// request the protocol produced.
-fn answering(status : Int, body : String) -> (Send, Ref[String]) {
+fn answering(status : Int32, body : String) -> (Send, Ref[String]) {
   let seen = Ref("")
-  let send : Send = async fn(request) {
+  let send : Send = fn(request) {
     seen.val = request.target + " " + request.body
     (status, body)
   }
@@ -102,7 +105,7 @@ async test "trpcio: the client asks for a query and reads its value" {
   let (send, seen) = answering(200, "{\"result\":{\"data\":\"hello\"}}")
   let client = Client::new(send)
   let value = client.query("greet.hello", input=Json::string("moon")) catch {
-    e => abort("the call failed")
+    _ => abort("the call failed")
   }
   assert_eq(@moonjson.dumps(value), "\"hello\"")
   assert_eq(seen.val, "greet.hello \"moon\"")
@@ -111,13 +114,10 @@ async test "trpcio: the client asks for a query and reads its value" {
 ///|
 async test "trpcio: the client raises the failure the server named" {
   let (send, _seen) = answering(
-    404,
-    "{\"error\":{\"message\":\"No procedure found on path \\\"x.y\\\"\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"x.y\"}}}",
+    404, "{\"error\":{\"message\":\"No procedure found on path \\\"x.y\\\"\",\"code\":-32004,\"data\":{\"code\":\"NOT_FOUND\",\"httpStatus\":404,\"path\":\"x.y\"}}}",
   )
   let client = Client::new(send)
-  let outcome : Result[Json, Failure] = try {
-    Ok(client.query("x.y"))
-  } catch {
+  let outcome : Result[Json, Failure] = Ok(client.query("x.y")) catch {
     CallFailed(failure) => Err(failure)
   }
   match outcome {
@@ -132,14 +132,14 @@ async test "trpcio: the client raises the failure the server named" {
 ///|
 async test "trpcio: a batch answers every call in the order it was asked" {
   let (send, seen) = answering(
-    200,
-    "[{\"result\":{\"data\":1}},{\"error\":{\"message\":\"no\",\"code\":-32603,\"data\":{\"code\":\"INTERNAL_SERVER_ERROR\",\"httpStatus\":500}}}]",
+    200, "[{\"result\":{\"data\":1}},{\"error\":{\"message\":\"no\",\"code\":-32603,\"data\":{\"code\":\"INTERNAL_SERVER_ERROR\",\"httpStatus\":500}}}]",
   )
   let client = Client::new(send)
-  let outcomes : Array[Outcome] = try {
-    client.batch([Call::new("a.one"), Call::new("b.two")])
-  } catch {
-    e => abort("the batch failed")
+  let outcomes : Array[Outcome] = client.batch([
+    Call::new("a.one"),
+    Call::new("b.two"),
+  ]) catch {
+    _ => abort("the batch failed")
   }
   assert_eq(outcomes.length(), 2)
   assert_eq(seen.val, "a.one,b.two?batch=1 {}")
@@ -172,10 +172,7 @@ test "trpcio: a server answers a GET query, a POST mutation, and what it does no
   let server = sample_server()
   let hello = server.handle("GET", "greet.hello?input=%22moon%22", "")
   assert_eq(hello.status, 200)
-  assert_eq(
-    hello.body,
-    "{\"result\":{\"data\":{\"greeting\":\"hello moon\"}}}",
-  )
+  assert_eq(hello.body, "{\"result\":{\"data\":{\"greeting\":\"hello moon\"}}}")
 
   let mutation = server.handle("POST", "greet.remember", "{\"name\":\"moon\"}")
   assert_eq(mutation.status, 200)
@@ -203,9 +200,7 @@ test "trpcio: a server answers a GET query, a POST mutation, and what it does no
 test "trpcio: a server answers a batch, failures included, in the caller's order" {
   let server = sample_server()
   let answer = server.handle(
-    "POST",
-    "greet.hello,greet.fail?batch=1",
-    "{\"0\":\"moon\"}",
+    "POST", "greet.hello,greet.fail?batch=1", "{\"0\":\"moon\"}",
   )
   // The first failure decides the status, as tRPC's own `initResponse` does.
   assert_eq(answer.status, 403)
@@ -218,14 +213,82 @@ test "trpcio: a server answers a batch, failures included, in the caller's order
 ///|
 async test "trpcio: the client and the server agree without a socket" {
   let server = sample_server()
-  let send : Send = async fn(request) {
-    let method = if request.get { "GET" } else { "POST" }
-    let answer = server.handle(method, request.target, request.body)
+  let send : Send = fn(request) {
+    let verb = if request.get { "GET" } else { "POST" }
+    let answer = server.handle(verb, request.target, request.body)
     (answer.status, answer.body)
   }
   let client = Client::new(send)
-  let value = try client.query("greet.hello", input=Json::string("moon")) catch {
-    e => abort("the call failed")
+  let value = client.query("greet.hello", input=Json::string("moon")) catch {
+    _ => abort("the call failed")
   }
   assert_eq(@moonjson.dumps(value), "{\"greeting\":\"hello moon\"}")
+}
+
+///|
+test "trpcio: one call has one answer, in an array or alone" {
+  // Two answers to one call is not that call's reply, whatever the shape.
+  let two = decode_reply(
+    "[{\"result\":{\"data\":1}},{\"result\":{\"data\":2}}]",
+    batch=false,
+  )
+  assert_true(two is None)
+  // One answer in an array is what a batch of one looks like, and is read as one answer.
+  let one = decode_reply("[{\"result\":{\"data\":1}}]", batch=false)
+  match one {
+    Some([Ok(_)]) => ()
+    _ => abort("a single answer in an array did not decode")
+  }
+}
+
+///|
+async test "trpcio: a batch splits by kind, and the answers land in the order it was asked" {
+  let seen : Array[String] = []
+  let send : Send = fn(request) {
+    let verb = if request.get { "GET" } else { "POST" }
+    seen.push(verb + " " + request.target + " " + request.body)
+    // The queries went as one GET and the mutation as one POST, so the answer is the shape
+    // that group asked for.
+    if request.get {
+      (200, "[{\"result\":{\"data\":\"q1\"}},{\"result\":{\"data\":\"q2\"}}]")
+    } else {
+      (200, "{\"result\":{\"data\":\"m1\"}}")
+    }
+  }
+  let client = Client::new(send, get_queries=true)
+  let outcomes = client.batch([
+    Call::new("a.one", input=Json::string("x")),
+    Call::new("b.two", input=Json::string("y"), mutation=true),
+    Call::new("c.three", input=Json::string("z")),
+  ]) catch {
+    _ => abort("the batch failed")
+  }
+  // Two requests, queries first: a batch has one verb, so a mixed one is two.
+  assert_eq(seen.length(), 2)
+  assert_eq(
+    seen[0],
+    "GET a.one,c.three?batch=1&input=%7B%220%22%3A%22x%22%2C%221%22%3A%22z%22%7D ",
+  )
+  assert_eq(seen[1], "POST b.two?batch=1 {\"0\":\"y\"}")
+  // And the answers come back where the calls were given, not grouped by verb.
+  match outcomes {
+    [Ok(first), Ok(second), Ok(third)] => {
+      assert_eq(@moonjson.dumps(first), "\"q1\"")
+      assert_eq(@moonjson.dumps(second), "\"m1\"")
+      assert_eq(@moonjson.dumps(third), "\"q2\"")
+    }
+    _ => abort("the answers were not in the order the calls were given")
+  }
+}
+
+///|
+async test "trpcio: a query with no input is still a GET, and names no input" {
+  let seen = Ref("")
+  let send : Send = fn(request) {
+    seen.val = (if request.get { "GET" } else { "POST" }) + " " + request.target
+    (200, "{\"result\":{\"data\":null}}")
+  }
+  let client = Client::new(send, get_queries=true)
+  ignore(client.query("greet.now") catch { _ => Json::null() })
+  assert_eq(seen.val, "GET greet.now")
 }

@@ -36,41 +36,42 @@ pub struct Server {
 
 ///|
 pub fn Server::new(max_batch~ : Int32 = 32) -> Server {
-  { procedures: Map([]), max_batch }
+  { procedures: Map([]), max_batch, }
 }
 
 ///|
 pub fn Server::query(self : Server, path : String, handler : Handler) -> Unit {
-  self.procedures[path] = { kind: Query, handler }
+  self.procedures[path] = { kind: Query, handler, }
 }
 
 ///|
-pub fn Server::mutation(self : Server, path : String, handler : Handler) -> Unit {
-  self.procedures[path] = { kind: Mutation, handler }
+pub fn Server::mutation(
+  self : Server,
+  path : String,
+  handler : Handler,
+) -> Unit {
+  self.procedures[path] = { kind: Mutation, handler, }
 }
 
 ///|
 /// One answer to one request: the status, and the body to send with it.
 pub(all) struct Answer {
-  status : Int
+  status : Int32
   body : String
   // The content type the body is in. A failure answers in JSON like a success does.
   content_type : String
 }
 
 ///|
-fn json_answer(status : Int, body : String) -> Answer {
-  { status, body, content_type: "application/json" }
+fn json_answer(status : Int32, body : String) -> Answer {
+  { status, body, content_type: "application/json", }
 }
 
 ///|
 /// The failure answer: the same error shape a successful call's failure would carry, at the
 /// status that shape names.
 fn failure_answer(failure : Failure, batch~ : Bool) -> Answer {
-  json_answer(
-    failure.http_status,
-    encode_reply([Failed(failure)], batch~),
-  )
+  json_answer(failure.http_status, encode_reply([Failed(failure)], batch~))
 }
 
 ///|
@@ -78,12 +79,11 @@ fn failure_answer(failure : Failure, batch~ : Bool) -> Answer {
 fn parameter(query : String, name : String) -> String? {
   for part in query.split("&") {
     match part.split_once("=") {
-      Some((key, value)) => if key.to_string() == name {
-        return Some(percent_decode(value.to_string()))
-      }
-      None => if part == name {
-        return Some("")
-      }
+      Some((key, value)) =>
+        if key == name {
+          return Some(percent_decode(value.to_owned()))
+        }
+      None => if part == name { return Some("") }
     }
   }
   None
@@ -93,18 +93,18 @@ fn parameter(query : String, name : String) -> String? {
 /// Split a request target into its path and its query string.
 fn split_target(target : String) -> (String, String) {
   match target.split_once("?") {
-    Some((path, query)) => (path.to_string(), query.to_string())
+    Some((path, query)) => (path.to_owned(), query.to_owned())
     None => (target, "")
   }
 }
 
 ///|
-/// Answer one HTTP request. `method` is the verb, `target` the request target as it arrived
-/// (path and query), and `body` the request body — empty for a GET, whose input travels in
-/// the query string.
+/// Answer one HTTP request. `verb` is the method it arrived with, `target` the request target
+/// as it arrived (path and query), and `body` the request body — empty for a GET, whose input
+/// travels in the query string.
 pub fn Server::handle(
   self : Server,
-  method : String,
+  verb : String,
   target : String,
   body : String,
 ) -> Answer {
@@ -120,15 +120,20 @@ pub fn Server::handle(
   }
   let paths = decode_paths(path)
   if paths.length() == 0 {
-    return failure_answer(failure_of("NOT_FOUND", "no procedure was named"), batch~)
-  }
-  if batch && paths.length() > self.max_batch {
     return failure_answer(
-      failure_of("PAYLOAD_TOO_LARGE", "the batch is larger than this server accepts"),
+      failure_of("NOT_FOUND", "no procedure was named"),
       batch~,
     )
   }
-  let raw = if method == "GET" {
+  if batch && paths.length() > self.max_batch {
+    return failure_answer(
+      failure_of(
+        "PAYLOAD_TOO_LARGE", "the batch is larger than this server accepts",
+      ),
+      batch~,
+    )
+  }
+  let raw = if verb == "GET" {
     match parameter(query, "input") {
       Some(text) => text
       None => ""
@@ -147,7 +152,7 @@ pub fn Server::handle(
   let outcomes : Array[Outcome] = []
   for index, name in paths {
     let input = if index < inputs.length() { inputs[index] } else { None }
-    outcomes.push(self.call(method, name, input))
+    outcomes.push(self.call(verb, name, input))
   }
   let status = status_of(outcomes)
   json_answer(status, encode_reply(outcomes, batch~))
@@ -157,7 +162,7 @@ pub fn Server::handle(
 /// One procedure's answer, or the failure that stands in for it.
 fn Server::call(
   self : Server,
-  method : String,
+  verb : String,
   path : String,
   input : Json?,
 ) -> Outcome {
@@ -173,7 +178,7 @@ fn Server::call(
       return Failed(failure)
     }
   }
-  if method == "GET" && procedure.kind is Mutation {
+  if verb == "GET" && procedure.kind is Mutation {
     // A mutation is not something to repeat by following a link: tRPC's HTTP handler
     // refuses a GET for one, and so does this.
     let failure = failure_of(
@@ -183,7 +188,7 @@ fn Server::call(
     )
     return Failed(failure)
   }
-  if method != "GET" && method != "POST" {
+  if verb != "GET" && verb != "POST" {
     let failure = failure_of(
       "METHOD_NOT_SUPPORTED",
       "Only GET and POST are answers this protocol speaks",
@@ -197,7 +202,7 @@ fn Server::call(
 ///|
 /// The status a batch of answers is carried under: the first failure's, or 200 when every
 /// call succeeded. tRPC's own `initResponse` looks at the first error it finds.
-fn status_of(outcomes : Array[Outcome]) -> Int {
+fn status_of(outcomes : Array[Outcome]) -> Int32 {
   for outcome in outcomes {
     match outcome {
       Failed(failure) => return failure.http_status
