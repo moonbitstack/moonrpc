@@ -162,7 +162,7 @@
 
 <section class="section wrap">
   <div class="eyebrow">what it carries</div>
-  <h2 class="h">A complete gRPC stack</h2>
+  <h2 class="h">A complete RPC stack</h2>
   <p class="lede">Everything here is implemented in the library, not deferred to a sidecar or proxy.</p>
   <div class="cards three">
     <div class="card"><span class="ix">①</span><h3>Real gRPC</h3><p>Wire-compatible gRPC over HTTP/2 — no proxy, no envoy, no translation layer.</p></div>
@@ -177,6 +177,9 @@
     <div class="card"><span class="ix">⑩</span><h3>Apache Thrift</h3><p>Binary and compact protocols over framed transport, independent of HTTP/2 — Apache's own cross test calls it in both directions.</p></div>
     <div class="card"><span class="ix">⑪</span><h3>Thrift IDL compiler</h3><p>A .thrift file in, MoonBit types, codecs, services and constants out.</p></div>
     <div class="card"><span class="ix">⑫</span><h3>Stats &amp; channelz</h3><p>Per-call observability, and the canonical grpc.channelz.v1 service to read it.</p></div>
+    <div class="card"><span class="ix">⑬</span><h3>Connect</h3><p>The Connect protocol over HTTP/1.1 and HTTP/2, protobuf or JSON — checked by the official conformance suite from both sides.</p></div>
+    <div class="card"><span class="ix">⑭</span><h3>tRPC</h3><p>trpc.group's binary protocol: four call kinds, one method per cardinality, against tRPC-Go and tRPC-Python.</p></div>
+    <div class="card"><span class="ix">⑮</span><h3>tRPC for TypeScript</h3><p>The trpc.io protocol — JSON over HTTP with its batching envelope, against <code>@trpc/client</code> and <code>@trpc/server</code>.</p></div>
   </div>
 </section>
 

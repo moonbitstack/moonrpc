@@ -1,6 +1,6 @@
 ---
 name: moonrpc
-description: "gRPC over HTTP/2 and Apache Thrift for MoonBit: serve or call a typed method, stream in either direction, add metadata, deadlines, retries, TLS or compression, and compile .proto or .thrift into MoonBit. Use when a task involves an RPC service, a gRPC client or server, server reflection, health checking, or binary RPC between programs."
+description: "gRPC over HTTP/2, Apache Thrift, tRPC and Connect for MoonBit: serve or call a typed method, stream in either direction, add metadata, deadlines, retries, TLS or compression, and compile .proto or .thrift into MoonBit. Use when a task involves an RPC service, a gRPC client or server, server reflection, health checking, a Connect endpoint, a trpc.group or trpc.io peer, or binary RPC between programs."
 ---
 
 # moonrpc
@@ -149,6 +149,73 @@ async fn stream_over_trpc(port : Int32) -> Unit raise {
 Two things to remember about the protocol: the total length in the head counts the head
 itself, and a frame whose header length is zero is a streaming frame rather than a unary one
 without a header.
+
+## Connect, when the peer is a Connect client
+
+The Connect protocol runs beside gRPC on the same handlers: one message in the body, the
+outcome in the HTTP status, or a run of five-octet envelopes for a stream. A route names the
+message types a JSON body is read as, so one handler answers a protobuf caller and a JSON one.
+
+```moonbit native
+async fn connect_echo_server() -> Unit {
+  let server = @net.ConnectServer::new()
+  server.add("/connect.Echo/Say", {
+    input: ".connect.EchoRequest",
+    output: ".connect.EchoReply",
+    handler: @stream.Handler::Unary((_ctx, req) => req),
+  })
+  // One listener for both HTTP versions: the HTTP/2 preface decides which driver takes it.
+  server.serve(port=12000)
+}
+```
+
+A caller picks its transport — `net::Http1Transport` or `net::Http2Transport` — and the same
+`Client` drives either:
+
+```moonbit native
+async fn call_connect(transport : @net.Http1Transport) -> Unit raise {
+  let client : @connect.Client[@net.Http1Transport] = @connect.Client::new(transport)
+  let reply = client.unary("/connect.Echo/Say", b"hi")
+  assert_eq(reply.messages[0], b"hi")
+}
+```
+
+## tRPC for TypeScript, when the peer is a `@trpc/server` app
+
+This is a different protocol from the `trpc.group` one above: JSON over HTTP, the call's path
+in the URL, and the input either as the body or in `?input=`. A query must be a GET — the
+TypeScript server answers a POST to one with `405` — and a mutation must be a POST.
+
+```moonbit native
+fn trpcio_service() -> @trpcio.Server {
+  let server = @trpcio.Server::new()
+  server.query("greet.hello", input => Ok({ "greeting": Json::string("hello") }))
+  server.mutation("greet.remember", input => {
+    let name = match input {
+      Some(value) => value
+      None => Json::null()
+    }
+    Ok({ "name": name })
+  })
+  server
+}
+```
+
+`net::serve_trpcio` puts it on a socket, and `net::trpcio_client` calls one; a batch travels
+as one request per kind, the queries as a GET and the mutations as a POST.
+
+```moonbit native
+async fn call_trpcio(port : Int32) -> Unit raise {
+  let client = @net.trpcio_client("127.0.0.1", port, base="/trpc")
+  let greeting = client.query("greet.hello", input=Json::string("moon"))
+  // One request, three answers, in the order they were asked for.
+  let outcomes = client.batch([
+    @trpcio.Call::new("greet.hello", input=Json::string("batch")),
+    @trpcio.Call::new("greet.remember", input={ "name": Json::string("moon") }, mutation=true),
+  ])
+  println(greeting.to_string() + outcomes.length().to_string())
+}
+```
 
 ## Rules that catch people out
 
