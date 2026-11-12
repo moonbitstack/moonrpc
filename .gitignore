@@ -3,16 +3,11 @@
 !.moonignore
 _*
 target/
-
 examples/*/pkg.generated.mbti
 src/examples/browser/**/pkg.generated.mbti
-docs/engine/
 src/examples/guide/**/pkg.generated.mbti
+docs/engine/
 scripts/interop/bin/
-
-# A suite run's log, when one is fetched for reading.
-suite.log
-
-# TypeScript interop peer: the tree `npm ci` builds, but not the lockfile that pins it — the
-# peer's versions are part of what the interop job asserts, so they are committed.
 scripts/interop/**/node_modules/
+scripts/interop/**/package-lock.json
+suite.log
