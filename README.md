@@ -12,7 +12,7 @@
 
 > Moved on mooncakes from `Lfan-ke/moonrpc` to `moonbitstack/moonrpc`.
 
-`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing, a stats observable and a channelz registry, and service-config driven retries with WaitForReady. Beside it sits a Thrift stack of its own: the binary, compact and header transports, a processor, a client, and an IDL compiler. The client and server engines are pure functions over frames and run on every backend; only the socket drivers in `net` are native.
+`moonrpc` is gRPC over HTTP/2, not gRPC-Web. HTTP/2 framing (RFC 9113) and HPACK (RFC 7541) come from moonhttp; this module is everything gRPC puts on top: all four call kinds, metadata, deadlines, status and rich errors, flow control, TLS with ALPN, message compression, interceptors on both ends, concurrent dispatch on one connection, health checking, server reflection, retries, hedging, backoff and load balancing, a stats observable and a channelz registry, and service-config driven retries with WaitForReady. Beside it sit three more protocol stacks: Thrift (framed, buffered, zlib, HTTP and header transports; binary, compact and JSON protocols; a processor, a client and an IDL compiler), trpc.group's tRPC (all four call kinds, interoperating with tRPC-Go and tRPC-Python), and Connect over HTTP/1.1 and HTTP/2 (the same four call kinds in protobuf or JSON, driven by the official conformance suite from both sides). The client and server engines are pure functions over frames and run on every backend; only the socket drivers in `net` are native.
 
 ```moonbit
 #rpc.message
@@ -356,16 +356,16 @@ over TLS:
 | `grpcurl` (grpc-go) | client | reflection `list`／`describe`, all four | `gzip` | — | yes | pass |
 | grpc-go | client | all four, plus `x-test-*` metadata, a deadline, a rich error detail and a 160 KB message | `gzip` | client chain | yes | pass |
 | grpc-go | server | the same calls, through the generated `GreeterClient` | `gzip` | server chain | yes | pass |
-| Apache Thrift (Go) | client | `ping`, `add`, `double`, `fail`, `note` (ONEWAY) — framed and header transports, binary and compact protocols, the zlib transform | identity | — | no | pass |
+| Apache Thrift (Go) | client | `ping`, `add`, `double`, `fail`, `note` (ONEWAY) — framed, buffered, zlib, HTTP and header transports; binary, compact and JSON protocols; the header zlib transform | identity | — | no | pass |
 | Apache Thrift (Go) | server | the same calls, through `thriftd check` | identity | — | no | pass |
-| Apache Thrift cross test | client | `ThriftTest`: all 23 methods, framed, binary and compact | identity | — | no | pass |
-| Apache Thrift cross test | server | `ThriftTest`: all 23 methods, driven from this side | identity | — | no | pass |
+| Apache Thrift cross test | client | `ThriftTest`: all 23 methods, framed／buffered／zlib／HTTP × binary／compact／json | identity | — | no | pass |
+| Apache Thrift cross test | server | the same 23 methods, driven from this side | identity | — | no | pass |
 | moonrpc | client and server | `greetd check` against `greetd`: all four, metadata, deadline, detail, 160 KB batch | `gzip` | both halves | yes | pass |
-| moonrpc | client and server | `thriftd check` against `thriftd`: `ping`, `add`, `double`, `fail`, `note`, framed and header, binary and compact | `zlib` on header | — | no | pass |
-| tRPC-Go | client | `SayHello` (unary, with `x-test` metadata and a timeout), `Count` (server streaming), an empty name refused | identity | — | no | pass |
-| tRPC-Go | server | the same three calls, through `trpcd check` | identity | — | no | pass |
-| tRPC-Python | client | the same three calls | identity | — | no | pass |
-| tRPC-Python | server | the same three calls, through `trpcd check` | identity | — | no | pass |
+| moonrpc | client and server | `thriftd check` against `thriftd`: `ping`, `add`, `double`, `fail`, `note`; six transports × three protocols | `zlib` on header | — | no | pass |
+| tRPC-Go | client | `SayHello` (unary), `Count` (server streaming), `Sum` (client streaming), `Chat` (bidirectional), with metadata and a timeout | identity | — | no | pass |
+| tRPC-Go | server | the same four calls, through `trpcd check` | identity | — | no | pass |
+| tRPC-Python | client | the same four calls | identity | — | no | pass |
+| tRPC-Python | server | the same four calls, through `trpcd check` | identity | — | no | pass |
 | moonrpc | client and server | `trpcd check` against `trpcd` | identity | — | no | pass |
 
 `cmd/greetd` is the server the first two call; the third runs the same generated client
@@ -383,18 +383,20 @@ with this library's reader. `BatchEcho` carries 40000 `int32`s, which is 160 KB:
 directions need more than one HTTP/2 frame and a window update in the middle of the message,
 which a call that fits in a frame never asks for.
 
-The Thrift rows are the protocol stack, below: TFramedTransport and Apache's header transport,
-with TBinaryProtocol or TCompactProtocol inside either, and the zlib transform the header
-transport can carry. `note` is a ONEWAY method — it must leave no reply on the wire, which the
-call that follows would otherwise read as its own.
+The Thrift rows are the protocol stack below: framed, buffered, zlib, HTTP and header transports,
+with binary, compact or JSON inside each, and the header transport's zlib transform. `note` is a
+ONEWAY method — it must leave no reply on the wire, which the call that follows would otherwise
+read as its own. The tRPC rows run one method per cardinality, the bidirectional one message at
+a time: a server that waited for the send side to close before answering would deadlock against it.
 
 The two `moonrpc` rows are the third pairing, this stack against itself, and they cover what
 no foreign job can: one transport on **both** sides at once. A peer picks its own settings, so
 `grpc-go` over TLS only ever says this server speaks TLS to someone else; `greetd check` says
 this client and this server agree in each of the four configurations, and `thriftd check` says
-the same for the six Thrift ones. `scripts/interop/self_test.sh` is that run, one case per
-configuration. Connect's two halves meet in `connect_wbtest.mbt` over a real socket, and its
-server half is what the 724-case suite in the next section drives with a foreign client.
+the same for every Thrift combination. `scripts/interop/self_test.sh` is that run, one case per
+configuration. Connect's two halves meet in `connect_wbtest.mbt` over a real socket; the official
+suite drives the server half with a foreign client (724 cases) and this client against the
+runner's reference server (876 cases).
 
 ## Conformance
 
@@ -408,11 +410,13 @@ built from a pinned tag with bindings generated by that release's compiler.
 | grpc-go client | the same server over plaintext and TLS, with an interceptor chain | pass |
 | grpc-go server | this client against it, all four call kinds; both answers byte for byte | pass |
 | `grpc.channelz.v1.Channelz` through `grpcurl` | the seven RPCs, the oneofs, the well-known imports | pass |
-| Apache Thrift cross test, client | `ThriftTest` as served here: 23 methods, binary and compact, framed | pass |
-| Apache Thrift cross test, server | the same 23 methods as this client calls them, both protocols | pass |
-| tRPC-Go, both directions | `scripts/interop/trpc_interop.sh`: their codec's frames to this server and this client's frames to their server | pass |
+| Apache Thrift cross test, client | `ThriftTest` as served here: 23 methods × framed／buffered／zlib／HTTP × binary／compact／json | pass |
+| Apache Thrift cross test, server | the same 23 methods as this client calls them, in the same twelve pairings | pass |
+| tRPC-Go, both directions | `scripts/interop/trpc_interop.sh`: their codec's frames to this server and this client's frames to their server, one method per cardinality | pass |
 | tRPC-Python, both directions | the same pairings, with `TrpcClientCodec`/`TrpcServerCodec` | pass |
 | tRPC differential | five requests and three response headers encoded by tRPC-Python 1.0.0, reproduced octet for octet | pass |
+| `connectrpc/conformance`, server | 724 cases: this reference service against the runner's reference client, both HTTP versions, both codecs, identity and gzip | pass |
+| `connectrpc/conformance`, client | 876 cases: this client against the runner's reference server. 856 pass; 20 cancellations are declared in `connect_client_known_failing.txt` | pass |
 
 `scripts/interop/build_thrift_peers.sh` builds the reference client and server;
 `scripts/interop/thrift_cross_test.sh` runs both directions; `src/cmd/thriftcrosstest` is
@@ -421,10 +425,16 @@ nested two deep, maps of maps, sets, a uuid, a `oneway` method, and the two ways
 fail: an exception in the field its `throws` clause numbers, and the application exception a
 processor builds when a handler raises something else.
 
-What none of them covers: Thrift transports other than `TFramedTransport` (unframed,
-buffered, zlib, HTTP), the header and JSON protocols, and the IDL's `SecondService`;
-`testOneway` is answered without the reference servers' sleep. This stack speaks framed
-Thrift in the binary and compact protocols, which is what those rows exercise.
+What the cross test cannot reach is the header transport — its binaries spell that one
+`-protocol header`, and the pair in `scripts/interop/thriftclient` / `thriftserver` is what
+covers it, alongside the self-interop matrix. The IDL's `SecondService` is still outside the
+cross test, and `testOneway` is answered without the reference servers' sleep.
+
+The two Connect rows are the same runner in opposite modes. The server half is gated directly
+by its 724 cases; the client half is gated by `--known-failing`, which still runs every case
+and fails the build if a declared failure starts passing. The twenty it names are all
+`Client Cancellation`: a one-shot POST has no point at which to cancel before its send side
+closes, so a genuinely incremental client transport is what would remove them.
 
 ## Stats and channelz
 
@@ -517,15 +527,30 @@ call can turn it on with `wait_for_ready~` whether or not a config names it.
 
 ## Thrift
 
-A second protocol stack sits beside the gRPC one and shares only the socket layer:
-TFramedTransport, a processor that dispatches by method name, and a client that sends a
-CALL and reads a REPLY. Nothing in `thrift/` imports HTTP/2, HPACK or protobuf.
+A second protocol stack sits beside the gRPC one and shares only the socket layer: a
+processor that dispatches by method name, a client that sends a CALL and reads a REPLY, and
+six ways to put the bytes on the wire. Nothing in `thrift/` imports HTTP/2, HPACK or protobuf.
 
-The wire format is a choice rather than a copy. `Protocol` is the contract; `Binary` and
-`Compact` are two implementations of it — fixed-width big-endian numbers with fixed field
-ids, or zigzag varints with field-id deltas and a double written little-endian. The
-processor, the client request and a service's handlers are written once, against the
-trait, so a service answers either protocol without knowing which one it got.
+The wire format is a choice rather than a copy. `Protocol` is the contract; `Binary`,
+`Compact` and `Json` are three implementations of it — fixed-width big-endian numbers with
+fixed field ids, zigzag varints with field-id deltas and a double written little-endian, or
+TJSONProtocol's arrays and objects keyed by field id. A text format ends a message with a
+bracket rather than with its last field, so the contract also carries `read_message_end`,
+`write_message_end` and `consumed`: the octets a reader has taken. `message_len` uses them to
+find where a message ends when no length was written in front of it.
+
+The processor, the client request and a service's handlers are written once, against the
+trait, so a service answers any of the three without knowing which one it got. The JSON
+implementation is checked against Apache Thrift's own Go encoder: `scripts/interop/thriftjson`
+writes the vectors, and the test reads each with this package and writes it back byte for byte.
+
+`ThriftWire` in `net` picks the transport: `Framed` puts a four-octet length in front of each
+message; `Buffered` writes messages back to back and the reader grows a buffer until
+`message_len` finds a whole one; `Zlib` is one DEFLATE stream in each direction, split at the
+`00 00 ff ff` a synchronising flush leaves — the only marker in DEFLATE that says a message
+ends there, and one decoder must live for the whole connection because the compressor may
+refer back into an earlier message; `Http` is one POST per call. The header transport frames
+its own messages and can carry its zlib transform on top.
 
 ```moonbit native
 async fn serve_and_call_thrift() -> Unit raise {
@@ -559,10 +584,11 @@ async fn serve_and_call_thrift() -> Unit raise {
 
 [`cmd/thriftd`](src/cmd/thriftd/) serves `ping`, `add`, `double`, `fail` and a ONEWAY `note`;
 `thriftd check` calls them, and words after the port pick the bytes on either side —
-`framed` or `header`, `binary` or `compact`, `zlib` for the header transport's transform. CI
-runs an Apache Thrift Go client against it and the moonrpc client against an Apache Thrift Go
-server, in every one of those combinations, and Apache's own cross test drives all 23 methods
-of `ThriftTest` in both directions. Between them they cover the strict message header, `bool`,
+`framed`｜`buffered`｜`zlib`｜`http`｜`header`｜`header-zlib` for the transport and
+`binary`｜`compact`｜`json` for the protocol. CI runs an Apache Thrift Go client against it
+and the moonrpc client against an Apache Thrift Go server in sixteen combinations, and
+Apache's own cross test drives all 23 methods of `ThriftTest` in both directions over twelve
+transport/protocol pairings. Between them they cover the strict message header, `bool`,
 `byte`, `i16`, `i32`, `i64`, `double`, `string`, structs, lists, sets and maps, with a depth
 guard on `skip`. `fail` answers a value in field 0 or an exception in field 1, so the shape a
 `throws` clause gives a reply is checked against Apache's client and server as well.
@@ -634,8 +660,8 @@ async fn fire_and_forget(client : @net.ThriftClient) -> Unit raise {
 ```
 
 [`cmd/thriftcrosstest`](src/cmd/thriftcrosstest/) is Apache's `ThriftTest` service and its
-client, so the whole reference suite — all 23 methods, both protocols — runs against this
-stack in both directions; see [Conformance](#conformance).
+client, so the whole reference suite — all 23 methods, four transports and three protocols —
+runs against this stack in both directions; see [Conformance](#conformance).
 
 [`cmd/thriftc`](src/cmd/thriftc/) compiles a `.thrift` file to MoonBit: enums with their
 numbers, structs with a codec and a `default()`, and each service's `register_*` and
@@ -795,6 +821,13 @@ end the window it may send, `DATA` carries a message, `FEEDBACK` returns window 
 are consumed, and `CLOSE` ends a direction — or resets the stream. `Session` holds one
 connection's streams, so a test drives the server half without a socket.
 
+The client has all four call kinds. `Client::open` returns an `Exchange` the caller drives
+message by message — `send`, `next`, `close` — because a bidirectional call whose server
+answers as it reads deadlocks against a caller that sends everything before reading anything.
+`client_stream` and `bidi` are the two shapes that do not need to interleave, and `stream` is
+one line over `bidi`. `cmd/trpcd` serves one method per cardinality, and its two peers do the
+same against tRPC-Go's and tRPC-Python's own codecs.
+
 | tRPC-Python feature | How this library answers it |
 |:--|:--|
 | Filters (client, server, per-service) | `@client.Interceptor` and the server's interceptor chain, shared with gRPC |
@@ -844,9 +877,11 @@ answer before sending the next one gets one. `Server::serve` is those three step
 that already arrived whole, which is what a driver does when it has the body in hand.
 
 `src/conformance` is the reference service the official suite drives, and `scripts/conformance`
-is the configuration it runs under. CI starts `cmd/conformance`, which reports the port it bound
-on standard output the way the suite expects, and runs `connectconformance --mode server` against
-it over both HTTP versions.
+holds both halves' configurations. CI starts `cmd/conformance`, which reports the port it bound on
+standard output the way the suite expects, and runs `connectconformance --mode server` against it
+over both HTTP versions. The same binary with a `client` argument is the other half: it reads one
+length-delimited `ClientCompatRequest` per case on stdin, drives the call with `connect.Client`,
+and writes the result back in the runner's terms.
 
 That job gates the build: the suite is clean — 724 of 724 cases pass, over both HTTP versions, both
 codecs, and identity and gzip. Every failure it drove out along the way was a disagreement
@@ -865,8 +900,17 @@ whose handler fails is closed at that moment rather than when the caller stops s
 what a full-duplex caller waiting for the error needs. And HTTP/2 field names are lowercased on
 the way out: a capital in one is a connection error the peer answers with `RST_STREAM`.
 
+The client suite is gated too: 876 cases, 856 passing and 20 declared in
+`connect_client_known_failing.txt`. All twenty are cancellations. A one-shot POST writes every
+request envelope and the end-stream envelope as one body, so it has no point at which to cancel
+before the send side closes; the runner still runs them and fails the build if one starts
+passing without the list being updated.
+
 The client is the same protocol from the other side, written against one method rather than a
-socket, so a transport is forty lines:
+socket, so a transport is small. `net::Http1Transport` is the HTTP/1.1 one and
+`net::Http2Transport` speaks the preface, SETTINGS, HPACK headers and flow-controlled DATA over
+HTTP/2; the latter advertises a large window on the connection and the stream up front, or a
+reply past 65535 octets waits for a WINDOW_UPDATE that a read-to-the-end client never sends:
 
 ```moonbit native
 async fn call_echo(transport : @net.Http1Transport) -> Unit raise {
@@ -1051,17 +1095,17 @@ async fn throttled_call(host : String) -> Unit raise {
   dynamic table size update the peer asks for.
 - `-bin` metadata goes out base64-padded. Receivers accept both forms (and
   `metadata_value_from_wire` reads unpadded), and the suite pins the padded form.
-- Thrift: the JSON protocol, and an unframed (`TBufferedTransport`) peer — this reader takes a
-  body that arrives whole, so an unframed message, which has no length in front of it, has
-  nothing to read to. Everything else is served and driven by a real Apache peer: the framed and
-  header transports, the binary and compact protocols inside either, the zlib transform, ONEWAY
-  methods, and both directions of Apache's own cross test.
-- Connect: the server half is what the 724-case suite drives; the client half (`--mode client`)
-  is not yet wired to the suite, so nothing here proves this client against a reference server
-  beyond the grpc-go jobs above.
-- Connect: over `GET` (an idempotent call with its message in query parameters), a message
-  receive limit, TLS to the suite, and compressions other than gzip. `scripts/conformance/connect.yaml`
-  is the statement of scope the runner reads.
+- Thrift: the IDL's `SecondService` is outside Apache's cross test. TJSONProtocol writes a
+  million as `1000000` where Apache's Go encoder writes `1e+06`; both decode to the same
+  double, so the generated vectors avoid that spelling and the corner values have a test of
+  their own.
+- Connect: over `GET` (an idempotent call with its message in query parameters), TLS to the
+  suite, and compressions other than gzip. The client half declares a message receive limit
+  and the server half does not — `scripts/conformance/connect.yaml` and
+  `connect_client.yaml` are the two statements of scope the runner reads.
+- Connect: a client transport that can cancel before its send side closes. The one-shot POST
+  cannot, and those twenty cases are named in `connect_client_known_failing.txt` rather than
+  reported as passing.
 - tRPC: streaming back-pressure is granted per frame consumed rather than tracked against a
   peer's remaining window, so a sender that outruns the window is not throttled; and a
   bidirectional call answers each `DATA` as it arrives but does not run the handler on a task
