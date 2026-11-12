@@ -214,7 +214,10 @@ pub impl @stream.Registrar for Server
 pub struct Session {
   server : Server
   streams : Map[Int64, Live]
+  windows : Map[Int64, Int64]
+  pending : Map[Int64, Array[Bytes]]
 }
+pub fn Session::bidi_stream(Self, Int64) -> Bool
 pub fn Session::handle(Self, Frame) -> Array[Bytes]
 pub fn Session::new(Server) -> Self
 pub fn Session::open_streams(Self) -> Int32

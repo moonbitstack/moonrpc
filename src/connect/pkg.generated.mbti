@@ -13,7 +13,17 @@ import {
 // Values
 pub fn code_of_status(@wire.Status) -> String
 
+pub fn codec_query_name(Content) -> String
+
+pub let compression_names : Array[String]
+
+pub fn compression_of(String?) -> String
+
+pub fn decode_compression(String, Bytes) -> Bytes?
+
 pub fn decode_envelope(BytesView, at? : Int32) -> (Envelope, Int32)?
+
+pub fn encode_compression(String, Bytes) -> Bytes
 
 pub fn encode_envelope(Bytes, flags? : Byte) -> Bytes
 
@@ -29,7 +39,17 @@ pub let flag_compressed : Byte
 
 pub let flag_end_stream : Byte
 
+pub fn get_target(String, Content, Bytes, String) -> String
+
+pub fn header_of(Array[@header.Header], String) -> String?
+
 pub fn http_status_of(@wire.Status) -> Int32
+
+pub fn is_get_target(String) -> Bool
+
+pub fn known_compression(String) -> Bool
+
+pub fn parse_get_request(String, Array[@header.Header]) -> Request?
 
 pub fn split_envelopes(Bytes) -> (Array[Envelope], Int32)
 

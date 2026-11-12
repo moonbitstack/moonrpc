@@ -14,7 +14,7 @@ struct ScriptedLink {
 
 ///|
 fn ScriptedLink::new(replies : Array[Frame]) -> ScriptedLink {
-  { replies, at: 0, written: [] }
+  { replies, at: 0, written: [], }
 }
 
 ///|
@@ -138,9 +138,13 @@ async test "flow: the client waits for FEEDBACK before sending past the window" 
     e => abort("the call was refused: \{e.to_string()}")
   }
   // Ten octets fit the window exactly.
-  exchange.send(b"0123456789") catch { _ => abort("the first message was refused") }
+  exchange.send(b"0123456789") catch {
+    _ => abort("the first message was refused")
+  }
   // The next one waits for credit, and the FEEDBACK that is already queued is what lets it out.
-  exchange.send(b"abcdefghij") catch { _ => abort("the second message was refused") }
+  exchange.send(b"abcdefghij") catch {
+    _ => abort("the second message was refused")
+  }
   assert_eq(link.written.length(), 3)
   assert_eq(link.written[1].kind, Data)
   assert_eq(link.written[2].kind, Data)
@@ -159,7 +163,7 @@ struct LoggingLink {
 
 ///|
 fn LoggingLink::new(session : Session) -> LoggingLink {
-  { session, replies: [], written: [], at: 0 }
+  { session, replies: [], written: [], at: 0, }
 }
 
 ///|
@@ -195,7 +199,9 @@ async test "flow: a reply that is read is credited back to the far end" {
   exchange.send(b"ask") catch {
     e => abort("the request was refused: \{e.to_string()}")
   }
-  exchange.close() catch { e => abort("the call did not close: \{e.to_string()}") }
+  exchange.close() catch {
+    e => abort("the call did not close: \{e.to_string()}")
+  }
   assert_eq(exchange.replies().length(), 2)
   // Every reply the client took back hands its octets over as credit. The frames it wrote also
   // include the INIT, the request and the CLOSE; only the credits are counted here.

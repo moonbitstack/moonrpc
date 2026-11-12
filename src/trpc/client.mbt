@@ -252,8 +252,7 @@ async fn Exchange::await_window(
         let meta = StreamFeedbackMeta::decode(frame.payload) catch {
           _ => StreamFeedbackMeta::new()
         }
-        self.send_window = self.send_window +
-          meta.window_increment.to_int64()
+        self.send_window = self.send_window + meta.window_increment.to_int64()
       }
       Data => {
         self.credit(frame.payload.length())
