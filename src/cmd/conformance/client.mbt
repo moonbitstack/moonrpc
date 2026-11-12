@@ -31,6 +31,7 @@ priv struct Case {
   mut request_delay_ms : Int32
   // Which way the caller gives up, and after how long.
   mut cancel_kind : Int32
+  mut cancel_present : Bool
   mut cancel_millis : Int32
   mut cancel_responses : Int32
 }
@@ -126,6 +127,7 @@ fn Case::decode(bytes : Bytes) -> Case raise @proto.PbError {
     timeout_ms: None,
     request_delay_ms: 0,
     cancel_kind: 0,
+    cancel_present: false,
     cancel_millis: 0,
     cancel_responses: 0,
   }
@@ -152,6 +154,7 @@ fn Case::decode(bytes : Bytes) -> Case raise @proto.PbError {
       18 => c.request_delay_ms = reader.read_varint().to_int()
       19 => {
         let (kind, millis, responses) = read_cancel(reader.read_len_delim())
+        c.cancel_present = true
         c.cancel_kind = kind
         c.cancel_millis = millis
         c.cancel_responses = responses
@@ -324,51 +327,56 @@ async fn perform(case : Case) -> Result_ {
   } else {
     []
   }
-  // A call with a deadline is the caller's to give up on: the header tells the far end what it
-  // has left, and a caller that stopped waiting only when the far end said so would wait for
-  // a server that is under no obligation to hurry.
-  let attempt : Result[@connect.Reply?, @connect.Failure] = match
-    case.timeout_ms {
-    Some(millis) =>
-      Ok(
-        @async.with_timeout_opt(millis, () => {
-          match case.cancel_kind {
-            2 =>
-              cancel_after(
-                case, path, content, messages, metadata, encoding, accept,
-              )
-            _ => post(case, path, content, messages, metadata, encoding, accept)
-          }
-        }),
-      ) catch {
-        @connect.CallFailed(failure) => Err(failure)
-        e =>
-          Err({
-            status: DeadlineExceeded,
-            message: e.to_string(),
-            details: [],
-            headers: [],
-            trailers: [],
-            payloads: [],
-          })
-      }
-    None =>
-      Ok(
-        Some(
-          match case.cancel_kind {
-            2 =>
-              // The caller gives up a stated time after closing its send side. The call runs
-              // on its own task so it can be abandoned; if it finished first, that is it.
-              cancel_after(
-                case, path, content, messages, metadata, encoding, accept,
-              )
-            _ => post(case, path, content, messages, metadata, encoding, accept)
-          },
-        ),
-      ) catch {
-        @connect.CallFailed(failure) => Err(failure)
-        e => raise e
-      }
+  // A case that asks for cancellation is driven over an incremental exchange; every other
+  // case is one POST. The two paths are different transports, not a flag on one: a one-shot
+  // POST has no point at which to cancel before its send side closes.
+  let attempt : Result[@connect.Reply?, @connect.Failure] = if case.cancel_present {
+    Ok(
+      Some(
+        run_exchange(case, path, content, messages, metadata, encoding, accept),
+      ),
+    ) catch {
+      @connect.CallFailed(failure) => Err(failure)
+      e =>
+        Err({
+          status: Unknown,
+          message: e.to_string(),
+          details: [],
+          headers: [],
+          trailers: [],
+          payloads: [],
+        })
+    }
+  } else {
+    // A call with a deadline is the caller's to give up on: the header tells the far end what
+    // it has left, and a caller that waited only for the far end would wait for a server that
+    // is under no obligation to hurry.
+    match case.timeout_ms {
+      Some(millis) =>
+        Ok(
+          @async.with_timeout_opt(millis, () => {
+            post(case, path, content, messages, metadata, encoding, accept)
+          }),
+        ) catch {
+          @connect.CallFailed(failure) => Err(failure)
+          e =>
+            Err({
+              status: DeadlineExceeded,
+              message: e.to_string(),
+              details: [],
+              headers: [],
+              trailers: [],
+              payloads: [],
+            })
+        }
+      None =>
+        Ok(
+          Some(post(case, path, content, messages, metadata, encoding, accept)),
+        ) catch {
+          @connect.CallFailed(failure) => Err(failure)
+          e => raise e
+        }
+    }
   }
   // `with_timeout_opt` answers `None` when the deadline passed, which is the failure the
   // protocol names for it.
@@ -411,15 +419,15 @@ async fn perform(case : Case) -> Result_ {
       None => payloads.push(payload)
     }
   }
-  let kept = match case.cancel_kind {
-    // Giving up after a number of answers keeps the answers that arrived before giving up.
-    3 =>
-      if payloads.length() > case.cancel_responses {
-        payloads[0:case.cancel_responses].to_owned()
-      } else {
-        payloads
-      }
-    _ => payloads
+  // Only the answers that arrived before the caller gave up are reported. A case cancelled
+  // after a stated number of them keeps exactly that many; every other cancellation keeps
+  // whatever the exchange had already read, which is none for a half-duplex call and the
+  // per-message answers for a full-duplex one.
+  let kept = if case.cancel_kind == 3 &&
+    payloads.length() > case.cancel_responses {
+    payloads[0:case.cancel_responses].to_owned()
+  } else {
+    payloads
   }
   let (headers, trailers, failure) = match outcome {
     Ok(reply) => (reply.headers, reply.trailers, in_message_error)
@@ -451,20 +459,17 @@ async fn perform(case : Case) -> Result_ {
       Some(error) => Some(error)
       // Giving up is an outcome of the call, whichever way it happened: the answers that did
       // arrive are kept and the failure is the one the protocol names for it.
-      None =>
-        if case.cancel_kind != 0 {
-          Some(error_bytes(1, ""))
-        } else {
-          None
-        }
+      None => if case.cancel_present { Some(error_bytes(1, "")) } else { None }
     },
   }
 }
 
 ///|
-/// Give up a stated time after the send side closed. The call is abandoned, and what it managed
-/// to read first is kept — a server that answers as it reads may have answered everything.
-async fn cancel_after(
+/// Drive one cancellation case over an incremental exchange. The request head goes out first,
+/// each message is its own write, and the call ends — or is abandoned — at the point the case
+/// names. A cancellation is a real abort of the request in flight, not a driver that stopped
+/// reading and then reported a made-up status.
+async fn run_exchange(
   case : Case,
   path : String,
   content : @connect.Content,
@@ -473,33 +478,74 @@ async fn cancel_after(
   encoding : String?,
   accept : Array[String],
 ) -> @connect.Reply {
-  let done : Ref[@connect.Reply?] = Ref(None)
-  @async.with_task_group(g => {
-    let task = g.spawn(() => {
-      let reply = post(
-        case, path, content, messages, metadata, encoding, accept,
-      ) catch {
-        _ => return
-      }
-      done.val = Some(reply)
-    })
-    @async.sleep(case.cancel_millis)
-    if done.val is None {
-      task.cancel()
-    }
-  })
-  match done.val {
-    Some(reply) => reply
-    None =>
-      raise @connect.CallFailed({
-        status: Cancelled,
-        message: "",
-        details: [],
-        headers: [],
-        trailers: [],
-        payloads: [],
-      })
+  let stream : &@connect.StreamTransport = if case.http_version == 2 {
+    (
+      @net.Http2StreamTransport::new(case.host, case.port) :
+      &@connect.StreamTransport)
+  } else {
+    (
+      @net.Http1StreamTransport::new(case.host, case.port) :
+      &@connect.StreamTransport)
   }
+  let exchange = @connect.Exchange::open(
+    stream,
+    path,
+    content,
+    metadata~,
+    encoding?,
+    accept~,
+    timeout_millis?=case.timeout_ms,
+  )
+  // A full-duplex server answers each request as it reads it, so those answers have arrived
+  // before the caller gives up. A half-duplex one waits for the send side to close, and there
+  // is nothing to read yet — reading here would block until the cancellation was already due.
+  let full_duplex = case.stream_type == stream_full_bidi
+  for message in messages {
+    exchange.send(message)
+    if full_duplex {
+      ignore(exchange.next() catch { _ => None })
+    }
+  }
+  match case.cancel_kind {
+    // Cancel instead of closing the send side: every request has gone out, but the end-stream
+    // envelope never does, and the connection is aborted.
+    1 => exchange.cancel()
+    // Close the send side, then give up a stated time later. If the call answered first, that
+    // answer is the outcome; otherwise the exchange is cancelled while its reply is in flight.
+    2 => {
+      exchange.close_send()
+      let finished = @async.with_timeout_opt(case.cancel_millis, () => {
+        exchange.finish()
+      }) catch {
+        _ => None
+      }
+      match finished {
+        Some(reply) => {
+          exchange.close()
+          return reply
+        }
+        None => exchange.cancel()
+      }
+    }
+    // Close the send side, read the stated number of answers, then stop reading and abort.
+    3 => {
+      exchange.close_send()
+      for _ in 0..<case.cancel_responses {
+        ignore(exchange.next() catch { _ => None })
+      }
+      exchange.cancel()
+    }
+    // A `cancel` message with no timing means cancel as soon as the send side is closed.
+    _ => {
+      exchange.close_send()
+      exchange.cancel()
+    }
+  }
+  // A cancelled exchange answers with CANCELED; anything it read first is in `payloads`, and
+  // the driver decides how much of that the case is allowed to report.
+  let reply = exchange.finish()
+  exchange.close()
+  reply
 }
 
 ///|

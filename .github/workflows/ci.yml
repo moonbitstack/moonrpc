@@ -799,9 +799,8 @@ jobs:
             -- ./_build/native/debug/build/cmd/conformance/conformance.exe
 
   # The other half of the official Connect suite: this client under test, calling the runner's
-  # reference server. The one-shot POST transport cannot issue a cancellation before its send
-  # side closes, so those twenty cases are named in the known-failing file. The runner still
-  # runs them, and fails the build if one starts passing without the list being updated.
+  # reference server. Every case is gated directly — including the cancellation cases, which
+  # run over the incremental transport in `net::Http1StreamTransport` / `Http2StreamTransport`.
   connect-client-conformance:
     name: Connect conformance (client)
     runs-on: ubuntu-26.04
@@ -839,5 +838,4 @@ jobs:
           "$RUNNER_TEMP/connectconformance" \
             --mode client \
             --conf scripts/conformance/connect_client.yaml \
-            --known-failing @scripts/conformance/connect_client_known_failing.txt \
             -- ./_build/native/debug/build/cmd/conformance/conformance.exe client

@@ -319,64 +319,8 @@ fn read_stream(
   let (envelopes, _at) = split_envelopes(body)
   for envelope in envelopes {
     if envelope.is_end_stream() {
-      // The end-stream message may be compressed like any other: a peer that compresses its
-      // envelopes compresses this one too, and the metadata it carries is inside.
-      let payload = if envelope.is_compressed() {
-        @gzip.gunzip(envelope.payload[:]) catch {
-          _ => b""
-        }
-      } else {
-        envelope.payload
-      }
-      let value = @moonjson.loads(
-        @utf8.decode_lossy(payload)[:],
-        @moonjson.strict,
-      ) catch {
-        _ => Json::null()
-      }
-      match value {
-        Object(members) => {
-          // `null` in the error field means the call succeeded. Only an object is an error;
-          // dumping a `null` here would make every clean stream look like a failure.
-          match members.get("error") {
-            Some(error) =>
-              match error {
-                Object(_) =>
-                  trailers.push({
-                    name: b"connect-error",
-                    value: @utf8.encode(@moonjson.dumps(error)),
-                  })
-                _ => ()
-              }
-            None => ()
-          }
-          match members.get("metadata") {
-            Some(Object(metadata)) =>
-              for name, item in metadata {
-                match item {
-                  String(text) =>
-                    trailers.push({
-                      name: @utf8.encode(name),
-                      value: @utf8.encode(text),
-                    })
-                  Array(values) =>
-                    for one in values {
-                      match one {
-                        String(text) =>
-                          trailers.push({
-                            name: @utf8.encode(name),
-                            value: @utf8.encode(text),
-                          })
-                        _ => ()
-                      }
-                    }
-                  _ => ()
-                }
-              }
-            _ => ()
-          }
-        }
-        _ => ()
+      for trailer in trailers_of_end(envelope) {
+        trailers.push(trailer)
       }
     } else if envelope.is_compressed() {
       let inflated : Result[Bytes, Error] = Ok(
@@ -401,6 +345,67 @@ fn read_stream(
     }
   }
   (messages, trailers)
+}
+
+///|
+/// The trailing metadata an end-stream envelope carries, with an `error` object relayed as
+/// the protocol's own error header. The end-stream message may itself be compressed, and a
+/// `null` error means the call succeeded — only an object is a failure.
+fn trailers_of_end(envelope : Envelope) -> Array[@header.Header] {
+  let trailers : Array[@header.Header] = []
+  let payload = if envelope.is_compressed() {
+    @gzip.gunzip(envelope.payload[:]) catch {
+      _ => b""
+    }
+  } else {
+    envelope.payload
+  }
+  let value = @moonjson.loads(@utf8.decode_lossy(payload)[:], @moonjson.strict) catch {
+    _ => Json::null()
+  }
+  match value {
+    Object(members) => {
+      match members.get("error") {
+        Some(error) =>
+          match error {
+            Object(_) =>
+              trailers.push({
+                name: b"connect-error",
+                value: @utf8.encode(@moonjson.dumps(error)),
+              })
+            _ => ()
+          }
+        None => ()
+      }
+      match members.get("metadata") {
+        Some(Object(metadata)) =>
+          for name, item in metadata {
+            match item {
+              String(text) =>
+                trailers.push({
+                  name: @utf8.encode(name),
+                  value: @utf8.encode(text),
+                })
+              Array(values) =>
+                for one in values {
+                  match one {
+                    String(text) =>
+                      trailers.push({
+                        name: @utf8.encode(name),
+                        value: @utf8.encode(text),
+                      })
+                    _ => ()
+                  }
+                }
+              _ => ()
+            }
+          }
+        _ => ()
+      }
+    }
+    _ => ()
+  }
+  trailers
 }
 
 ///|
