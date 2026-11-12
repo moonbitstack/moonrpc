@@ -254,9 +254,11 @@ async test "channel: retries stop at the absolute deadline, not once per attempt
 async test "channel: a call past its deadline is cancelled with DEADLINE_EXCEEDED" {
   @async.with_task_group(g => {
     let server = @socket.TcpServer::TcpServer(
-      @socket.Addr::parse("127.0.0.1:18084"),
+      @socket.Addr::parse("127.0.0.1:0"),
       reuse_addr=true,
     )
+    // Port 0: the system picks one, so two tests never ask for the same number.
+    let port_slow = server.addr.port()
     let task = g.spawn(() => {
       server.run_forever((conn, _addr) => {
         let engine = @moonrpc.H2Server::new()
@@ -267,7 +269,7 @@ async test "channel: a call past its deadline is cancelled with DEADLINE_EXCEEDE
       })
     })
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18084)
+    let chan = Channel::connect("127.0.0.1", port_slow)
     // the server takes ~400ms to answer; the client's deadline is 120ms.
     let reply = chan.unary("/slow.S/Wait", b"x", timeout_millis=120)
     assert_eq(reply.grpc_status, @moonrpc.Status::code(DeadlineExceeded))
@@ -474,9 +476,11 @@ async test "channel: a refused stream is sent again at once, with no policy" {
   @async.with_task_group(g => {
     let served = Ref(0)
     let server = @socket.TcpServer::TcpServer(
-      @socket.Addr::parse("127.0.0.1:18094"),
+      @socket.Addr::parse("127.0.0.1:0"),
       reuse_addr=true,
     )
+    // Port 0: the system picks one, so two tests never ask for the same number.
+    let port_refusing = server.addr.port()
     let task = g.spawn(() => {
       server.run_forever((conn, _addr) => {
         let engine = @moonrpc.H2Server::new()
@@ -490,7 +494,7 @@ async test "channel: a refused stream is sent again at once, with no policy" {
       })
     })
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18094)
+    let chan = Channel::connect("127.0.0.1", port_refusing)
     let reply = chan.unary("/r.R/Once", b"x")
     assert_eq(reply.grpc_status, 0)
     assert_eq(reply.messages[0] == b"ok:x", true)

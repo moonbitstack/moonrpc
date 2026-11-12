@@ -67,9 +67,11 @@ async test "channel: a stream and unary calls run side by side" {
 async test "channel: a reader whose deadline passes leaves the socket to the next call" {
   @async.with_task_group(g => {
     let server = @socket.TcpServer::TcpServer(
-      @socket.Addr::parse("127.0.0.1:18203"),
+      @socket.Addr::parse("127.0.0.1:0"),
       reuse_addr=true,
     )
+    // Port 0: the system picks one, so two tests never ask for the same number.
+    let port_reader = server.addr.port()
     let task = g.spawn(() => {
       server.run_forever((conn, _addr) => {
         let engine = @moonrpc.H2Server::new()
@@ -80,7 +82,7 @@ async test "channel: a reader whose deadline passes leaves the socket to the nex
       })
     })
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18203)
+    let chan = Channel::connect("127.0.0.1", port_reader)
     let reading = g.spawn(() => {
       chan.unary("/slow.S/Wait", b"a", timeout_millis=120)
     })
@@ -101,9 +103,11 @@ async test "channel: a reader whose deadline passes leaves the socket to the nex
 async test "channel: a waiting call honours its own deadline" {
   @async.with_task_group(g => {
     let server = @socket.TcpServer::TcpServer(
-      @socket.Addr::parse("127.0.0.1:18204"),
+      @socket.Addr::parse("127.0.0.1:0"),
       reuse_addr=true,
     )
+    // Port 0: the system picks one, so two tests never ask for the same number.
+    let port_waiting = server.addr.port()
     let task = g.spawn(() => {
       server.run_forever((conn, _addr) => {
         let engine = @moonrpc.H2Server::new()
@@ -114,7 +118,7 @@ async test "channel: a waiting call honours its own deadline" {
       })
     })
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18204)
+    let chan = Channel::connect("127.0.0.1", port_waiting)
     let reading = g.spawn(() => chan.unary("/slow.S/Wait", b"a"))
     @async.sleep(20)
     let waiting = chan.unary("/slow.S/Wait", b"b", timeout_millis=120)
@@ -129,9 +133,11 @@ async test "channel: a waiting call honours its own deadline" {
 async test "channel: a lost connection ends every call waiting on it" {
   @async.with_task_group(g => {
     let server = @socket.TcpServer::TcpServer(
-      @socket.Addr::parse("127.0.0.1:18205"),
+      @socket.Addr::parse("127.0.0.1:0"),
       reuse_addr=true,
     )
+    // Port 0: the system picks one, so two tests never ask for the same number.
+    let port_lost = server.addr.port()
     let task = g.spawn(() => {
       server.run_forever((conn, _addr) => {
         ignore(conn.read_exactly(@http2.preface.length()))
@@ -140,7 +146,7 @@ async test "channel: a lost connection ends every call waiting on it" {
       })
     })
     @async.sleep(300)
-    let chan = Channel::connect("127.0.0.1", 18205)
+    let chan = Channel::connect("127.0.0.1", port_lost)
     let ended = Ref(0)
     let settled = @async.with_timeout_opt(3000, () => {
       @async.with_task_group(calls => {
