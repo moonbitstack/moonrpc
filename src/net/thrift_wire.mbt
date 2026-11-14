@@ -47,12 +47,19 @@ pub fn ZlibOut::new() -> ZlibOut {
 ///|
 /// One message, compressed: the header the first time, the block, and the flush that lets the
 /// peer read it now.
-pub fn ZlibOut::write(self : ZlibOut, body : Bytes) -> Bytes {
+pub fn ZlibOut::write(
+  self : ZlibOut,
+  body : Bytes,
+) -> Bytes raise @thrift.ThriftError {
   let out = @buffer.Buffer()
   out.write_bytes(self.header)
   self.header = b""
-  out.write_bytes(self.inner.push(body[:]))
-  out.write_bytes(self.inner.flush())
+  try {
+    out.write_bytes(self.inner.push(body[:]))
+    out.write_bytes(self.inner.flush())
+  } catch {
+    _ => raise @thrift.Malformed("the zlib stream would not deflate")
+  }
   out.to_bytes()
 }
 

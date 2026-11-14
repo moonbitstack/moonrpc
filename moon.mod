@@ -1,6 +1,6 @@
 name = "moonbitstack/moonrpc"
 
-version = "0.22.0"
+version = "0.22.1"
 
 readme = "README.md"
 
@@ -64,20 +64,20 @@ import {
   "moonbitlang/async@0.22.5",
   "moonbitstack/moonbase@0.5.0",
   "moonbitstack/moonjson@0.5.0",
-  "moonbitstack/moonproto@0.1.2",
-  "moonbitstack/moonzip@0.3.8",
+  "moonbitstack/moonproto@0.2.0",
+  "moonbitstack/moonzip@0.4.0",
   "moonbitstack/moonhttp@0.16.0",
-  "moonbitstack/moonurl@0.2.6",
-  "moonbitstack/moonvar@0.2.2",
+  "moonbitstack/moonurl@0.3.0",
+  "moonbitstack/moonvar@0.3.0",
   "moonbitstack/moondate@0.1.7",
   "moonbitstack/moonward@0.2.3",
   "moonbitstack/moonast@0.3.0",
   "moonbitlang/parser@0.4.6",
-  "moonbitstack/moonnet@0.1.12",
+  "moonbitstack/moonnet@0.2.0",
   "moonbitstack/moontls@0.9.17",
   "moonbitstack/mooncred@0.7.0",
   "moonbitstack/mooncrypt@0.5.0",
-  "moonbitstack/moonseed@0.1.3",
+  "moonbitstack/moonseed@0.2.0",
 }
 
 source = "src"
