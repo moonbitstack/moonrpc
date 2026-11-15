@@ -1,6 +1,6 @@
 name = "moonbitstack/moonrpc"
 
-version = "0.22.1"
+version = "0.22.2"
 
 readme = "README.md"
 
@@ -70,10 +70,10 @@ import {
   "moonbitstack/moonurl@0.3.0",
   "moonbitstack/moonvar@0.3.0",
   "moonbitstack/moondate@0.1.7",
-  "moonbitstack/moonward@0.2.3",
+  "moonbitstack/moonward@0.3.0",
   "moonbitstack/moonast@0.3.0",
   "moonbitlang/parser@0.4.6",
-  "moonbitstack/moonnet@0.2.0",
+  "moonbitstack/moonnet@0.2.1",
   "moonbitstack/moontls@0.9.17",
   "moonbitstack/mooncred@0.7.0",
   "moonbitstack/mooncrypt@0.5.0",
