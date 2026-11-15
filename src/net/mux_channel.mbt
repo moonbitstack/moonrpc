@@ -303,12 +303,6 @@ pub async fn BidiStream::recv(self : BidiStream) -> Bytes? {
 }
 
 ///|
-/// Drive keepalive on this channel: after `keepalive_time` ms of no traffic, send an HTTP/2
-/// PING; if its ACK doesn't come back within `keepalive_timeout` ms the connection is
-/// declared dead and closed (← gRPC `keepalive_time`/`keepalive_timeout`). The read pump
-/// records incoming activity and PING ACKs. Spawn this alongside `read_pump`.
-
-///|
 /// How the call ended, once `recv` has returned `None`: the status, its message and the trailers,
 /// rich error details among them. The stream's bookkeeping on the channel goes with it, so this
 /// is read once.
@@ -320,6 +314,10 @@ pub fn BidiStream::reply(self : BidiStream) -> @moonrpc.CallReply {
 }
 
 ///|
+/// Drive keepalive on this channel: after `keepalive_time` ms of no traffic, send an HTTP/2
+/// PING; if its ACK doesn't come back within `keepalive_timeout` ms the connection is
+/// declared dead and closed (← gRPC `keepalive_time`/`keepalive_timeout`). The read pump
+/// records incoming activity and PING ACKs. Spawn this alongside `read_pump`.
 pub async fn MuxChannel::run_keepalive(
   self : MuxChannel,
   keepalive_time~ : Int64,
