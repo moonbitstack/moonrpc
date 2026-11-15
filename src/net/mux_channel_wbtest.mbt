@@ -95,6 +95,43 @@ async test "mux channel: a streaming reply is read message by message via a bidi
 }
 
 ///|
+async test "mux channel: a bidi stream tells how it ended, a failure's status and message included" {
+  @async.with_task_group(g => {
+    let server = GrpcServer::new()
+    server.register_server_streaming("/count.C/Fail", (ctx, req) => {
+      ctx.fail(@moonrpc.Status::code(NotFound), "no such count")
+      [req]
+    })
+    server.register_server_streaming("/count.C/Up", (_ctx, req) => [req])
+    let port = server.bind(port=0).port()
+    let ts = g.spawn(() => server.serve())
+    @async.sleep(300)
+    let ch = MuxChannel::connect("127.0.0.1", port)
+    let tp = g.spawn(() => ch.read_pump())
+    let failing = ch.open_bidi("/count.C/Fail")
+    failing.send(b"n")
+    failing.close_send()
+    while failing.recv() is Some(_) {
+      ()
+    }
+    let ended = failing.reply()
+    assert_eq(ended.grpc_status, @moonrpc.Status::code(NotFound))
+    assert_eq(ended.grpc_message, "no such count")
+    assert_true(ch.inboxes.get(failing.id) is None)
+    let fine = ch.open_bidi("/count.C/Up")
+    fine.send(b"m")
+    fine.close_send()
+    while fine.recv() is Some(_) {
+      ()
+    }
+    assert_eq(fine.reply().grpc_status, 0)
+    ts.cancel()
+    let _ = tp.wait()
+    ch.close()
+  })
+}
+
+///|
 async test "mux channel: many concurrent calls on one connection each get their own reply" {
   @async.with_task_group(g => {
     let server = GrpcServer::new()
