@@ -16,3 +16,7 @@ import {
 pkgtype(kind: "executable")
 
 formatter(ignore: [ "greet.g.mbt" ])
+
+import {
+  "moonbitlang/async",
+} for "wbtest"

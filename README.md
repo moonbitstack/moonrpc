@@ -209,6 +209,12 @@ pub struct Notice {
 }
 ```
 
+From those declarations `cmd/rpc` writes the codec of each message, the service's
+`register(server)`, a typed client and the `descriptor()` reflection serves, into a `.g.mbt`
+beside them; the shape is in the [guide](docs/guide.html), section 13. `oneof`, `import` and
+custom options are not expressible as annotations yet, and [Not yet](#not-yet) says what that
+leaves to hand-written descriptors.
+
 The rules that decide the transcription:
 
 - A file is named after the declaration file it is written from — `notice.mbt` describes

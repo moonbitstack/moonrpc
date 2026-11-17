@@ -7,7 +7,8 @@
 // Two descriptions of one service is one description too many unless they are
 // held together, so this program compiles the `.proto` at run time and checks
 // the two against each other: the descriptor each produces, the octets each
-// writes for one message, and a call on the generated service.
+// writes for one message, and a call on the generated service. The generated
+// client — one typed method per rpc — is driven in `proto_source_wbtest.mbt`.
 //
 //     moon run src/examples/30-proto-source
 

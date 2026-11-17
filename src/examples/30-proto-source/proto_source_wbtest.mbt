@@ -160,3 +160,81 @@ test "one call on the generated service, under the name the .proto gives" {
   assert_eq(back.call_count, 42L)
   assert_eq(back.cached, true)
 }
+
+///|
+/// A `Caller` over the two pure engines, so the client `cmd/rpc` generated can be driven with
+/// no socket: the service registers on a fresh server, the stream opens, the requests go out,
+/// the send side half-closes, and the frames are carried across until the client has its reply.
+struct InMemory {
+  greeting : String
+}
+
+///|
+pub impl @moonrpc.Caller for InMemory with fn invoke(
+  self,
+  path,
+  requests,
+  metadata,
+  timeout_millis,
+  retry,
+) {
+  ignore(metadata)
+  ignore(timeout_millis)
+  ignore(retry)
+  let server = @moonrpc.H2Server::new()
+  Greeter::{ greeting: self.greeting, }.register(server)
+  let client = @moonrpc.H2Client::new()
+  let id = client.open(path)
+  let to_server : Array[@http2.Frame] = [..client.preface()]
+  for request in requests {
+    to_server.append(client.send(id, request))
+  }
+  to_server.append(client.close_send(id))
+  let to_client : Array[@http2.Frame] = [..server.preface()]
+  let mut si = 0
+  let mut ci = 0
+  while !client.is_done(id) {
+    if si < to_server.length() {
+      to_client.append(server.feed(to_server[si]))
+      si += 1
+    } else if ci < to_client.length() {
+      to_server.append(client.feed(to_client[ci]))
+      ci += 1
+    } else {
+      break
+    }
+  }
+  client.reply(id)
+}
+
+///|
+// The generated client, one method per rpc, each returning what the .proto says the reply is:
+// a message for the unary call, an array for the stream out, a message folded from the stream
+// in, and an array for both directions.
+async test "the generated client calls all four kinds, typed" {
+  let client = GreeterClient::new(InMemory::{ greeting: "hello", })
+  let request : HelloRequest = {
+    name: "Leo",
+    tags: ["a"],
+    nickname: None,
+    mood: Calm,
+    extras: { "calls": 42L },
+    badge: { label: "chief", },
+  }
+  let said = client.say_hello(request) catch { e => abort("say_hello: \{e}") }
+  assert_eq(said.message, "hello, Leo")
+  assert_eq(said.call_count, 42L)
+  assert_eq(said.badges[0].label, "calm")
+  let counted = client.count_to({ n: 3, }) catch {
+    e => abort("count_to: \{e}")
+  }
+  assert_eq(counted.map(n => n.value), [1, 2, 3])
+  let summed = client.add_up([{ value: 2, }, { value: 5, }]) catch {
+    e => abort("sum: \{e}")
+  }
+  assert_eq(summed.value, 7)
+  let echoed = client.echo([{ value: 1, }, { value: 2, }]) catch {
+    e => abort("echo: \{e}")
+  }
+  assert_eq(echoed.map(n => n.value), [2, 1])
+}

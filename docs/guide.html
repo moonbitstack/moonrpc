@@ -481,7 +481,37 @@ pub struct Notice {
   level : Level                // Level level
   counts : Map[String, Int64]  // map&lt;string, int64&gt;
 }</code></pre>
-  <p class="note"><span class="src"></span> Fields are numbered in declaration order from 1, so only a field that skips a number carries one; moving a field in the struct moves its tag. Enum values are numbered by their MoonBit tags and named after the enum and themselves, which is why <code>Quiet</code> is <code>LEVEL_QUIET</code>. A file is named after the declaration file it is written from — <code>notice.mbt</code> describes <code>notice.proto</code> — and the package is the part of the service's name before the service.</p>
+    <p class="note"><span class="src"></span> Fields are numbered in declaration order from 1, so only a field that skips a number carries one; moving a field in the struct moves its tag. Enum values are numbered by their MoonBit tags and named after the enum and themselves, which is why <code>Quiet</code> is <code>LEVEL_QUIET</code>. A file is named after the declaration file it is written from — <code>notice.mbt</code> describes <code>notice.proto</code> — and the package is the part of the service's name before the service.</p>
+  <p class="lede">From those declarations <code>cmd/rpc</code> writes the codec of every message, the registration of the service, a typed client, and the descriptor reflection serves. The service declarations are the same ones §4 shows; what the generator adds is the wire form each message already carries a tag for.</p>
+  <pre><code>// what cmd/rpc writes for greet.mbt — greet.g.mbt, generated, never edited by hand
+pub fn[R : @moonrpc.Registrar] Greeter::register(self : Greeter, server : R) -&gt; Unit {
+  server.register_handler(
+    "/greet.v1.Greeter/SayHello",
+    @moonrpc.unary((ctx, req : HelloRequest) =&gt; Greeter::say_hello(self, ctx, req)),
+  )
+  // CountTo with server_streaming, Sum with client_streaming, Echo with bidi
+}
+
+pub struct GreeterClient[C] { channel : C }
+
+pub async fn[C : @moonrpc.Caller] GreeterClient::say_hello(
+  self : GreeterClient[C],
+  req : HelloRequest,
+  metadata? : Array[@moonrpc.Header],
+  timeout_millis? : Int32,
+  retry? : @moonrpc.Retry,
+) -&gt; HelloReply {
+  self.channel.invoke(
+    "/greet.v1.Greeter/SayHello",
+    [@moonrpc.Message::encode(req)],
+    metadata.unwrap_or([]),
+    timeout_millis,
+    retry,
+  ).reply()
+}
+
+pub fn descriptor() -&gt; @moonrpc.FileDescriptor   // the file reflection serves</code></pre>
+  <p class="note"><span class="src"></span> The declarations decide the call kind, so there is one handler shape per RPC and a client method that returns what the reply is: a message, an array of them, or an array folded from a client stream. <code>oneof</code>, <code>import</code> and custom options are not expressible as annotations yet — a file using them needs those messages written by hand, and the descriptor model does carry oneofs when they are.</p>
   <pre><code>// the file, compiled at run time: the descriptor and the JSON mapping in one value
 let schema = @moonrpc.Schema::compile([("notice.proto", text)])
 
