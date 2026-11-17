@@ -88,6 +88,41 @@ async fn serve_connect(server : @net.ConnectServer) -> Unit raise {
 }
 ```
 
+## Write the messages a .proto describes
+
+The codec is derived from the structs, not from the file, so a `.proto` that exists already is
+transcribed once and the two are kept in step. A field's tag is where it stands in the struct,
+from 1, unless it says `#rpc.field(number="...")`; `T?` is `optional T`, `Array[T]` is
+`repeated T`, `Map[K, V]` is `map<K, V>`. An enum's values are numbered by their MoonBit tags
+and named after the enum and themselves, so `Quiet` is `LEVEL_QUIET`, and a number the enum
+does not know reads as its first value.
+
+```moonbit
+#rpc.enum
+pub enum Level { Unspecified = 0; Quiet = 1; Loud = 5 }
+
+// message Reading {
+//   string path = 1;
+//   repeated string keys = 4;
+//   optional string note = 5;
+//   Level level = 6;
+// }
+#rpc.message
+pub struct Reading {
+  path : String
+  #rpc.field(number="4")
+  keys : Array[String]
+  note : String?
+  level : Level
+}
+```
+
+`cmd/rpc` compiles those declarations into the codec of each message, `Reading::register(server)`,
+`descriptor()` and a client; wire it in as a `dev_build` rule in the package's `moon.pkg`. The
+file's own descriptor is a run-time value as well, so the transcription is checkable: compile
+the `.proto` and compare its `FileDescriptor` with `descriptor()`, and compare the octets the
+codec writes with the ones `Schema::to_bytes` writes from the same JSON.
+
 ## Compile a .proto instead of building descriptors by hand
 
 `Schema::compile` reads `.proto` source into the descriptor model, so a service defined in IDL

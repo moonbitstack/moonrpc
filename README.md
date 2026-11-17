@@ -167,6 +167,89 @@ dev_build(rule: "rpc", input: "service.mbt", output: "service.g.mbt")
 formatter(ignore: [ "service.g.mbt" ])
 ```
 
+## From a `.proto` file
+
+A service usually starts as a `.proto` file. There is no protoc plugin to run here: the file
+is the schema the other side of the connection compiles, and the declarations the generator
+reads are that schema written in MoonBit — the same messages, the same tags, the same types,
+spelled in the language the code lives in.
+
+```proto
+syntax = "proto3";
+
+package notice.v1;
+
+enum Level {
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_QUIET = 1;
+  LEVEL_LOUD = 5;
+}
+
+message Notice {
+  string title = 1;
+  repeated string tags = 4;
+  optional string body = 5;
+  Level level = 6;
+  map<string, int64> counts = 7;
+}
+```
+
+```moonbit
+#rpc.enum
+pub enum Level { Unspecified = 0; Quiet = 1; Loud = 5 }
+
+#rpc.message
+pub struct Notice {
+  title : String
+  #rpc.field(number="4")
+  tags : Array[String]
+  body : String?               // optional string
+  level : Level                // Level level
+  counts : Map[String, Int64]  // map<string, int64>
+}
+```
+
+The rules that decide the transcription:
+
+- A file is named after the declaration file it is written from — `notice.mbt` describes
+  `notice.proto` — since the name is what reflection reports and what an `import` in another
+  file writes. The package is the part of the service's `name` before the service.
+- Fields are numbered in declaration order from 1, so only a field that skips a number carries
+  `#rpc.field(number=...)`; moving a field in the struct moves its tag.
+- Enum values are numbered by their MoonBit tags and named after the enum and themselves:
+  `Quiet` is `LEVEL_QUIET`. A value the enum does not know reads as its first.
+- `T?` is `optional T`, `Array[T]` is `repeated T`, `Map[K, V]` is `map<K, V>`, and a field
+  holding another message names that MoonBit type.
+- A message nested in another is `#rpc.message(name="Reply.Badge")` — `.notice.v1.Reply.Badge`
+  on the wire — and a service is a struct whose `#rpc.method`s are the RPCs, each named in
+  PascalCase. Returning an array is `stream` on the reply, taking one is `stream` on the
+  request, both is a bidirectional stream.
+
+The `.proto` also compiles at run time, which is what makes the transcription checkable
+rather than a claim: it becomes a descriptor and a `Schema`, and those say what the bytes and
+the JSON for a message have to be.
+
+```moonbit
+test "the .proto compiles, and reads the message the declarations describe" {
+  let text =
+    #|syntax = "proto3";
+    #|package notice.v1;
+    #|message Notice { string title = 1; }
+  let schema = @moonrpc.Schema::compile([("notice.proto", text)]) catch {
+    _ => abort("the schema did not compile")
+  }
+  let json = schema.to_json(".notice.v1.Notice", b"\x0a\x03Leo") catch {
+    _ => abort("the message did not decode")
+  }
+  assert_eq(@moonjson.dumps(json), "{\"title\":\"Leo\"}")
+}
+```
+
+[`30-proto-source`](src/examples/30-proto-source/) runs that comparison in full: the descriptor
+the file produces against the one the declarations produce, the octets the generated codec
+writes against the ones the `.proto`'s schema writes, and a call on the service. Change a tag
+on either side and one of its checks fails.
+
 ## The four call kinds by hand
 
 Annotations generate these calls, and a handler registered at run time is written the same way.

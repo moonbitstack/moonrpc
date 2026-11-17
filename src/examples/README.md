@@ -41,6 +41,7 @@ moon run src/examples/07-unary-call
 | 27 | [`server-guards`](27-server-guards/) | What a server refuses: a request whose request line is not gRPC's (415 / 405 / 400), a stream over the advertised concurrency limit, DATA past the receive window, a frame interleaved into a field block, and a call that outruns its `grpc-timeout` |
 | 28 | [`retry-hedging`](28-retry-hedging/) | The retry policy's should-retry decisions and backoff schedule, and the hedging policy's start / commit decisions |
 | 29 | [`thrift-idl`](29-thrift-idl/) | A `.thrift` file compiled by `cmd/thriftc`: an included file's type and service, an enum, a struct with an optional field, a list, a map and bytes, its codec in both Thrift protocols, and the derived service's registration and client |
+| 30 | [`proto-source`](30-proto-source/) | A `.proto` file and the declarations that describe it: every tag, type, enum number and rpc shape, checked against the file's own descriptor and against the octets its schema writes |
 
 Everything here is pure and runs on every backend (`moon check --target all`); the native
 `@net.Channel` and `@net.GrpcServer` drive these same codecs over a real socket.
@@ -51,4 +52,8 @@ The guide's three writing-style variants live in [`guide/`](guide/): `annotation
 
 [`29-thrift-idl/`](29-thrift-idl/) is generated: `greet.thrift` and the
 `shared.thrift` it includes in, `greet.g.mbt` out, by `moon run src/cmd/thriftc`. CI reruns the compiler with `--check`, so the generated
-file cannot drift from the IDL it came from.
+file cannot drift from the IDL it came from. [`30-proto-source/`](30-proto-source/) is the
+same arrangement for protobuf, in the other direction: `greet.mbt` is written by hand from
+`greet.proto`, `greet.g.mbt` comes from `cmd/rpc`, and the program compiles the `.proto` at
+run time to check that the two descriptions agree. `scripts/gen_proto_source.py` copies the
+file into the package as text, since MoonBit cannot embed a file at build time.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>moonrpc — Guide</title>
-<meta name="description" content="A progressive guide to moonrpc: define messages, handle the four gRPC call kinds, run the pure client/server engines in memory or over a real socket, and compile a Thrift IDL to the same kinds of service.">
+<meta name="description" content="A progressive guide to moonrpc: define messages from a .proto or as annotated structs, handle the four gRPC call kinds, run the pure client/server engines in memory or over a real socket, and compile a Thrift IDL to the same kinds of service.">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -448,7 +448,51 @@ let reply = chan.unary("/greet.Greeter/SayHello", request)</code></pre>
 </section>
 
 <section class="section wrap">
-  <h2 class="h">13 &middot; Thrift beside gRPC</h2>
+  <h2 class="h">13 &middot; From a .proto file</h2>
+  <p class="lede">A service usually arrives as a <code>.proto</code> file. Nothing is generated from that file here: it is the schema the other side of the connection compiles, and the declarations the generator reads are the same schema written out in MoonBit. Two descriptions of one service are safe only while something holds them together, so the file compiles at run time as well, and what it says is checked against what the declarations say.</p>
+  <pre><code>// notice.proto
+syntax = "proto3";
+
+package notice.v1;
+
+enum Level {
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_QUIET = 1;
+  LEVEL_LOUD = 5;
+}
+
+message Notice {
+  string title = 1;
+  repeated string tags = 4;
+  optional string body = 5;
+  Level level = 6;
+  map&lt;string, int64&gt; counts = 7;
+}</code></pre>
+  <pre><code>// notice.mbt — the same schema as declarations
+#rpc.enum
+pub enum Level { Unspecified = 0; Quiet = 1; Loud = 5 }
+
+#rpc.message
+pub struct Notice {
+  title : String
+  #rpc.field(number="4")
+  tags : Array[String]
+  body : String?               // optional
+  level : Level                // Level level
+  counts : Map[String, Int64]  // map&lt;string, int64&gt;
+}</code></pre>
+  <p class="note"><span class="src"></span> Fields are numbered in declaration order from 1, so only a field that skips a number carries one; moving a field in the struct moves its tag. Enum values are numbered by their MoonBit tags and named after the enum and themselves, which is why <code>Quiet</code> is <code>LEVEL_QUIET</code>. A file is named after the declaration file it is written from — <code>notice.mbt</code> describes <code>notice.proto</code> — and the package is the part of the service's name before the service.</p>
+  <pre><code>// the file, compiled at run time: the descriptor and the JSON mapping in one value
+let schema = @moonrpc.Schema::compile([("notice.proto", text)])
+
+// a message the generated codec wrote, read back by the schema the .proto compiled to
+let json = schema.to_json(".notice.v1.Notice", bytes)
+let same = schema.to_bytes(".notice.v1.Notice", json) == bytes</code></pre>
+  <p class="note"><span class="src"></span> <code>src/examples/30-proto-source</code> runs that in full and fails loudly when the two drift: the descriptor the file produces against the one the declarations produce, the octets of each, the JSON spelling — lowerCamelCase names, enums by name, <code>int64</code> as a string — and one call on the generated service. The descriptor is also what reflection serves, so a peer can ask the running server for the shape of the file.</p>
+</section>
+
+<section class="section wrap">
+  <h2 class="h">14 &middot; Thrift beside gRPC</h2>
   <p class="lede">The same module also speaks Apache Thrift: <code>TBinaryProtocol</code> and <code>TCompactProtocol</code> over <code>TFramedTransport</code>, written against one <code>Protocol</code> trait, so the processor, the client request and <code>skip</code> exist once. A Thrift peer is a different conversation from a gRPC one — nothing here goes through HTTP/2.</p>
   <pre><code>// serve it on 9090; a Compact here would be the other protocol, same service
 let processor = @thrift.Processor::new()
@@ -531,7 +575,7 @@ processor.add_oneway("notify", proto =&gt; {
 
 <section class="section wrap">
   <h2 class="h">Where to next</h2>
-  <p class="lede">The <a href="api.html">API reference</a> lists every public item by package. The <a href="showcase.html">Showcase</a> runs the real engine in your browser. The repository's <code>src/examples/*</code> cover HTTP/2 frames, HPACK, flow control, health, reflection, deadlines, retries, the Thrift protocols and the IDL compiler.</p>
+  <p class="lede">The <a href="api.html">API reference</a> lists every public item by package. The <a href="showcase.html">Showcase</a> runs the real engine in your browser. The repository's <code>src/examples/*</code> cover HTTP/2 frames, HPACK, flow control, health, reflection, deadlines, retries, a <code>.proto</code> transcribed to declarations and checked against itself, the Thrift protocols and the IDL compiler.</p>
   <p><a class="btn" href="index.html">Back to home</a></p>
 </section>
 
