@@ -72,7 +72,7 @@ import {
   "moonbitstack/moondate@0.1.7",
   "moonbitstack/moonward@0.3.0",
   "moonbitstack/moonast@0.3.0",
-  "moonbitlang/parser@0.4.6",
+  "moonbitlang/parser@0.4.9",
   "moonbitstack/moonnet@0.2.1",
   "moonbitstack/moontls@0.9.17",
   "moonbitstack/mooncred@0.7.0",
