@@ -870,6 +870,21 @@ jobs:
           grep -qE 'Total cases: [1-9]' /tmp/deadline-tls.txt
           grep -qE '[1-9][0-9]* passed, 0 failed' /tmp/deadline-tls.txt
 
+      # The `Timeouts` group over TLS, the other declared flake, run the same way: alone, with
+      # nothing tolerated. A case here is a deadline the reference service answers at once, so
+      # what a machine can get wrong is only how long the surrounding handshake takes; one at a
+      # time it is a handshake and nothing else. Same two counts checked, for the same reason.
+      - name: the TLS timeout class, one RPC at a time
+        run: |
+          "$RUNNER_TEMP/connectconformance" \
+            --mode server \
+            --conf scripts/conformance/connect.yaml \
+            --run 'Timeouts/**/TLS:true/**' \
+            --parallel 1 \
+            -- ./_build/native/debug/build/cmd/conformance/conformance.exe | tee /tmp/timeouts-tls.txt
+          grep -qE 'Total cases: [1-9]' /tmp/timeouts-tls.txt
+          grep -qE '[1-9][0-9]* passed, 0 failed' /tmp/timeouts-tls.txt
+
   # The other half of the official Connect suite: this client under test, calling the runner's
   # reference server. Every case is gated directly — including the cancellation cases, which
   # run over the incremental transport in `net::Http1StreamTransport` / `Http2StreamTransport`.

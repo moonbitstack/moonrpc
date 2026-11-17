@@ -18,6 +18,19 @@
 # nothing tolerated (`--run 'Deadline Propagation/**/TLS:true/**'`), because at one RPC at a time
 # the handshakes no longer compete and all seventy pass. If that second run ever fails, this list
 # stops being an explanation and becomes an excuse.
+#
+# The second class is `Timeouts` over TLS, written as one pattern rather than as a line per case:
+# the runner reads wildcards here, so `Timeouts/**/TLS:true/**` says every permutation of that
+# group over TLS and nothing else. The group asks for a deadline far shorter than the delay the
+# handler reports, and expects `DEADLINE_EXCEEDED`; what fails, intermittently and only over TLS,
+# is the client's read of that error's body — the runner reports `unexpected end of JSON input`.
+# Cleartext passes every time, at the same deadline. What the class measures is therefore how much
+# of a two-second budget a handshake leaves, and a handshake here is the 0.49 s above.
+#
+# A flake is a claim, so it is checked the same way the other class is: CI runs this one with
+# `--parallel 1` and nothing tolerated, below. If that run fails, the class is a bug in the
+# timeout path and not a property of the machine, and this pattern belongs to `--known-failing`
+# or nowhere until it is fixed.
 Deadline Propagation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_BR/TLS:true/client-stream/success
 Deadline Propagation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_BR/TLS:true/server-stream/success
 Deadline Propagation/HTTPVersion:1/Protocol:PROTOCOL_CONNECT/Codec:CODEC_JSON/Compression:COMPRESSION_BR/TLS:true/unary/success
@@ -88,3 +101,4 @@ Deadline Propagation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/C
 Deadline Propagation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_SNAPPY/TLS:true/client-stream/success
 Deadline Propagation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_SNAPPY/TLS:true/server-stream/success
 Deadline Propagation/HTTPVersion:2/Protocol:PROTOCOL_CONNECT/Codec:CODEC_PROTO/Compression:COMPRESSION_SNAPPY/TLS:true/unary/success
+Timeouts/**/TLS:true/**
