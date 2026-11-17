@@ -1,0 +1,18 @@
+// The schema next to this package as declarations, plus the checks that the two
+// agree: the descriptor the generator derives from `greet.mbt` and the one the
+// `.proto` compiles to, the wire bytes the generated codec writes and the ones
+// the `.proto`'s own schema writes, and one call on the generated service.
+//
+//     moon run src/examples/30-proto-source
+import {
+  "moonbitstack/moonrpc",
+  "moonbitstack/moonrpc/proto",
+  "moonbitstack/moonjson",
+  "moonbitstack/moonbase/base16",
+  "moonbitstack/moonhttp/http2",
+  "moonbitlang/core/encoding/utf8",
+}
+
+pkgtype(kind: "executable")
+
+formatter(ignore: [ "greet.g.mbt" ])
